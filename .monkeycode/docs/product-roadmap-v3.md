@@ -18,12 +18,12 @@
 
 ### M1 会话体验补全(小步快跑,单任务 0.5~1 天)
 
-- [ ] 1.1 **好友朋友圈流**:实现 `/friend/:userId/moments` 真实时间线(现占位),复用 moments 数据层,加 `author_id` 过滤与分页
-- [ ] 1.2 **消息草稿**:每会话本地草稿(输入即存、切换恢复),会话列表显示 `[草稿]` 前缀
-- [ ] 1.3 **会话置顶/免打扰**:云端 `conversation_prefs(user_id, peer_id, pinned, muted)` 表+RLS;置顶分组排序,免打扰会话不弹未读横幅只累计角标
-- [ ] 1.4 **引用回复**:消息长按"引用",气泡内嵌灰条引文;schema 加 `messages.reply_to_id`
-- [ ] 1.5 **会话内搜索**:ChatDetail 顶部搜索历史消息(LIKE 分页即可,万条内够用)
-- [ ] 1.6 **输入状态指示**:realtime presence 广播 typing,对端显示"正在输入"(3s 超时消失)——克制版:仅单聊、不存库
+- [x] 1.1 **好友朋友圈流**:实现 `/friend/:userId/moments` 真实时间线(现占位),复用 moments 数据层,加 `author_id` 过滤与分页(cf7d924)
+- [x] 1.2 **消息草稿**:每会话本地草稿(输入即存、切换恢复),会话列表显示 `[草稿]` 前缀(ec7e087,按用户隔离持久化;发送成功清草稿)
+- [x] 1.3 **会话置顶/免打扰**:云端 `conversation_prefs(user_id, peer_id, pinned, muted)` 表+RLS;置顶分组排序,免打扰不弹数字角标改灰点提示(f4d4f7f,长按/右键操作面板;schema 已应用生产)
+- [x] 1.4 **引用回复**:消息长按"引用",气泡内嵌灰条引文(QuoteStrip,撤回/不可见降级);schema 加 `messages.reply_to_id`+条件索引(bb39ad5,已应用生产)
+- [x] 1.5 **会话内搜索**:ChatDetail NavBar 搜索入口,云端 ilike(LIKE 通配符转义),结果点击滚动定位+闪烁高亮,未加载范围降级提示(d60814f)
+- [x] 1.6 **输入状态指示**:typing:<pair> presence 频道,输入 2s 节流广播、停止 5s 自动消失、发送/失焦即撤销,NavBar 显示「正在输入…」——克制版:仅单聊、不存库(2b151a1)
 
 ### M2 图片消息与内容增强(1~2 天)
 
