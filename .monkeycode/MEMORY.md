@@ -10,7 +10,7 @@ This file records user instructions, preferences, and teachings for reference in
 - Category: Build & Compilation
 - Instructions:
   - 构建：`npm run build`（vite 7，产物 dist/，纯静态，vite-plugin-pwa 同时生成 sw.js）
-  - 测试：`npm run test`（vitest run，60 个用例：lib 纯函数 + 组件测试；`test:e2e` 跑 Playwright，公开页 6 例无需凭据，chat 流由 E2E_USER_A/B_* 环境变量门控）
+  - 测试：`npm run test`（vitest run，60 个用例：lib 纯函数 + 组件测试；`test:e2e` 跑 Playwright 共 8 例：公开页 6 例无需凭据 + 云端聊天流 2 例由 E2E_USER_A/B_* 环境变量门控）
   - 代码检查：`npm run lint`（eslint 10 flat config，标准：0 errors，警告基线 10 条存量）
   - 提交前必须三项全部通过
 
@@ -64,4 +64,15 @@ This file records user instructions, preferences, and teachings for reference in
   - ProfileGate 启动时自愈：云端确认无资料行会自动用本地缓存 `insertProfile` 重建
   - PostgREST 缺列错误码为 PGRST204，文案是单引号（`Could not find the 'nickname' column`）；代码内 `isMissingColumn`（src/lib/profiles.js）已兼容单双引号两种文案
   - 排查此类问题用 `auth/v1/signup`（autoconfirm）拿到 access_token 后带 `Authorization: Bearer` 直接 REST 实测，比猜测表结构可靠
-  - 调试遗留测试账号前缀 `qa.`（qa.smoke/qa.probe/qa.fix/qa.norm，密码 qaTest123456），可在 Supabase 后台 Authentication → Users 删除
+  - 调试遗留测试账号前缀 `qa.`（qa.smoke/qa.probe/qa.fix/qa.norm，密码 qaTest123456），邮箱含历史 Date.now() 时间戳无法复原，只能由用户在 Supabase 后台 Authentication → Users 删除
+
+[云端 e2e 账号开通与凭据轮换]
+- Date: 2026-11-20
+- Context: Discovered by Agent while provisioning E2E_USER_A/B 云端账号（用户授权 agent 全自主解决技术问题）
+- Category: Operations & Deployment
+- Instructions:
+  - 开通脚本：`e2e/provision-accounts.mjs`（凭据全经环境变量传入，脚本本身无秘密）：mail.tm 一次性邮箱 → signup → 轮询邮件取验证链接 → 密码登录确认 → REST 预建 profiles
+  - mail.tm API 陷阱：注册地址中的 `.` 会被静默剥离，后续请求必须用创建响应返回的 `address`；inboxkitten/mail.gw 在本环境不可达
+  - 账号在 Supabase 永久有效（邮箱过期不影响登录，登录只需 email+password）；当前 A=e2e_a_dfb10dccc971、B=e2e_b_64a1c9ed8fb4
+  - 凭据轮换流程：重跑脚本开新号 → 写 `/tmp/opencode/e2e-env.sh`（chmod 600，仓库外）→ `gh secret set E2E_USER_A/B_*`（共 9 项 secrets 已全部配好，含 VITE_SUPABASE_*、BACKUP_ENCRYPTION_KEY）
+  - BACKUP_ENCRYPTION_KEY 副本在 `.monkeycode/secrets/backup-key.txt`（已 gitignore）；GitHub secret 只写不可读，用户转存后应删除该文件
