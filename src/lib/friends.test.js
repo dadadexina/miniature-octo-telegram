@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('./supabase', () => ({ supabase: {} }))
 
-const { mapFriend } = await import('./friends')
+const { mapFriend, FRIENDS_SQL } = await import('./friends')
 
 describe('mapFriend', () => {
   it('映射 friends 表行', () => {
@@ -20,5 +20,14 @@ describe('mapFriend', () => {
 
   it('空行返回 null', () => {
     expect(mapFriend(null)).toBeNull()
+  })
+})
+
+describe('FRIENDS_SQL', () => {
+  it('包含删除好友的策略与授权', () => {
+    expect(FRIENDS_SQL).toContain('grant select, insert, delete on table public.friends to authenticated')
+    expect(FRIENDS_SQL).toContain('friends_delete_own')
+    expect(FRIENDS_SQL).toContain('for delete')
+    expect(FRIENDS_SQL).toContain('using (auth.uid() = owner_id)')
   })
 })

@@ -10,7 +10,7 @@ export const FRIENDS_SQL = `create table if not exists public.friends (
 );
 
 grant usage on schema public to anon, authenticated;
-grant select, insert on table public.friends to authenticated;
+grant select, insert, delete on table public.friends to authenticated;
 
 alter table public.friends enable row level security;
 
@@ -25,6 +25,12 @@ create policy "friends_insert_own"
 on public.friends for insert
 to authenticated
 with check (auth.uid() = owner_id);
+
+drop policy if exists "friends_delete_own" on public.friends;
+create policy "friends_delete_own"
+on public.friends for delete
+to authenticated
+using (auth.uid() = owner_id);
 
 create index if not exists friends_owner_idx on public.friends (owner_id);
 create index if not exists friends_friend_idx on public.friends (friend_id);
@@ -67,6 +73,18 @@ export async function upsertFriend(meId, friendId) {
   const { error } = await supabase
     .from('friends')
     .insert({ owner_id: meId, friend_id: friendId }, { ignoreDuplicates: true })
+  if (error) {
+    return { ok: false, error: error.message, permission: isPermissionError(error) }
+  }
+  return { ok: true }
+}
+
+export async function deleteFriend(meId, friendId) {
+  const { error } = await supabase
+    .from('friends')
+    .delete()
+    .eq('owner_id', meId)
+    .eq('friend_id', friendId)
   if (error) {
     return { ok: false, error: error.message, permission: isPermissionError(error) }
   }

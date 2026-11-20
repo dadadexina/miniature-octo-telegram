@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { fetchFriends, upsertFriend } from './lib/friends'
-import { involvesUser, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
+import { deleteFriend, fetchFriends, upsertFriend } from './lib/friends'
+import { involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
 import { fetchProfilesByIds } from './lib/profiles'
 import { supabase } from './lib/supabase'
 
@@ -604,6 +604,29 @@ export function StoreProvider({ children }) {
           }
         })
         syncFriendToCloud(me, profile.id)
+        return { ok: true }
+      },
+
+      removeFriend(friendId) {
+        const me = state.currentUserId
+        if (!me || !friendId) return { ok: false, error: '参数错误' }
+        patch((prev) => ({
+          ...prev,
+          friendships: prev.friendships.filter(
+            (f) =>
+              !(f.userId === me && f.friendId === friendId) &&
+              !(f.userId === friendId && f.friendId === me)
+          ),
+          messages: prev.messages.filter((m) => !isPairMessage(m, me, friendId)),
+        }))
+        setInbox((prev) => prev.filter((m) => !isPairMessage(m, me, friendId)))
+        setUnread((prev) => {
+          if (!(friendId in prev)) return prev
+          const next = { ...prev }
+          delete next[friendId]
+          return next
+        })
+        if (isUuid(me) && isUuid(friendId)) deleteFriend(me, friendId)
         return { ok: true }
       },
 

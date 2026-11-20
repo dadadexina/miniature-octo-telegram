@@ -15,10 +15,10 @@
 
 ## P1 — 交付后一周内
 
-- [ ] **7. 删除好友**：CLOUD_SQL 增加 friends delete 策略（`using (auth.uid() = owner_id)`）+ `deleteFriend()` + UI 长按/资料页入口；同步清理本地会话
+- [x] **7. 删除好友**：已实现 —— `friends_delete_own` 策略 + `grant delete` 并入 CLOUD_SQL（需在 SQL 编辑器重新执行一次）；`deleteFriend()`；store `removeFriend` 同步清理本地好友镜像对、本机会话消息、收件箱与未读；通讯录「编辑」模式行内确认删除 ｜ 边界：单向删除（对方云端记录保留）；云端历史消息未删除，重新登录后该会话可能随收件箱重新出现，彻底删除列为 P2
 - [ ] **8. e2e 测试**：Playwright 覆盖「注册→完善资料→搜索加好友→互发消息→未读角标」；CI 增加 e2e job（需两个自动注册测试账号）
 - [ ] **9. 错误监控**：接入 Sentry（或 Supabase Logs + 前端 window.onerror 上报），捕获 ErrorBoundary 兜住的异常
-- [ ] **10. 分包优化**：`manualChunks` 拆出 supabase-js / react 全家桶，目标主 chunk gzip < 80KB
+- [x] **10. 分包优化**：`manualChunks` 拆出 react / supabase vendor；构建产物主 chunk gzip 14.53KB、react 59.28KB、supabase 59.72KB，均低于 80KB 目标
 - [ ] **11. 数据备份**：`pg_dump` 定时导出（Supabase 后台可下载，或 GitHub Actions 定时任务 + service_role 密钥，注意密钥只存 CI Secrets）
 
 ## P2 — 可选

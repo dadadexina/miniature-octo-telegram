@@ -6,12 +6,14 @@ import { searchProfileByUsername } from '../lib/profiles'
 import { useStore } from '../store'
 
 export default function Contacts() {
-  const { currentUser, avatarColor, profile, friendsOf, isFriend, addFriendFromProfile, searchUser, suggestedUsers } = useStore()
+  const { currentUser, avatarColor, profile, friendsOf, isFriend, addFriendFromProfile, removeFriend, searchUser, suggestedUsers } = useStore()
   const [keyword, setKeyword] = useState('')
   const [queried, setQueried] = useState('')
   const [results, setResults] = useState(null)
   const [searching, setSearching] = useState(false)
   const [toast, setToast] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [confirmId, setConfirmId] = useState('')
   const friends = friendsOf(currentUser.id)
   const suggested = suggestedUsers()
 
@@ -62,6 +64,16 @@ export default function Contacts() {
     setKeyword('')
     setQueried('')
     setResults(null)
+  }
+
+  const onRemove = (friend) => {
+    setConfirmId('')
+    const result = removeFriend(friend.id)
+    if (!result.ok) {
+      showToast(result.error || '删除失败')
+      return
+    }
+    showToast('已删除好友')
   }
 
   const meName = profile?.nickname || currentUser.nickname
@@ -172,23 +184,79 @@ export default function Contacts() {
         ) : null}
 
         <section className="mt-2 border-y border-eink-divider bg-eink-bar">
-          <div className="px-4 py-2 text-[13px] text-eink-sub">我的好友 ({friends.length})</div>
+          <div className="flex items-center justify-between px-4 py-2">
+            <span className="text-[13px] text-eink-sub">我的好友 ({friends.length})</span>
+            {friends.length ? (
+              <button
+                type="button"
+                className="text-[13px] font-medium text-eink-ink underline underline-offset-2"
+                onClick={() => {
+                  setEditing(!editing)
+                  setConfirmId('')
+                }}
+              >
+                {editing ? '完成' : '编辑'}
+              </button>
+            ) : null}
+          </div>
           {friends.length === 0 ? (
             <p className="px-4 py-10 text-center text-[14px] text-eink-sub">暂无好友，快去搜索添加吧</p>
           ) : (
-            friends.map((friend) => (
-              <Link
-                key={friend.id}
-                to={`/chat/${friend.id}`}
-                className="flex items-center gap-3 border-t border-eink-divider px-4 py-3 active:bg-[#E7E5DD]"
-              >
-                <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={40} />
-                <div className="min-w-0">
-                  <div className="truncate text-[16px]">{friend.nickname}</div>
-                  <div className="truncate text-[12px] text-eink-sub">ID: {friend.publicId || friend.username || ''}</div>
+            friends.map((friend) =>
+              editing ? (
+                <div key={friend.id} className="border-t border-eink-divider">
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={40} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[16px]">{friend.nickname}</div>
+                      <div className="truncate text-[12px] text-eink-sub">
+                        ID: {friend.publicId || friend.username || ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-none border border-eink-line/40 bg-eink-paper px-3 py-1.5 text-[13px] text-eink-ink active:bg-eink-pressed"
+                      onClick={() => setConfirmId(friend.id)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                  {confirmId === friend.id ? (
+                    <div className="flex items-center justify-between gap-3 border-t border-eink-divider bg-eink-paper px-4 py-2.5">
+                      <span className="text-[13px] text-eink-sub">删除后本机聊天记录将清空，确定？</span>
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          className="rounded-none border border-eink-line/40 bg-eink-paper px-3 py-1 text-[13px] text-eink-ink active:bg-eink-pressed"
+                          onClick={() => setConfirmId('')}
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-none bg-eink-ink px-3 py-1 text-[13px] text-eink-paper active:bg-eink-pressed"
+                          onClick={() => onRemove(friend)}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
-              </Link>
-            ))
+              ) : (
+                <Link
+                  key={friend.id}
+                  to={`/chat/${friend.id}`}
+                  className="flex items-center gap-3 border-t border-eink-divider px-4 py-3 active:bg-[#E7E5DD]"
+                >
+                  <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={40} />
+                  <div className="min-w-0">
+                    <div className="truncate text-[16px]">{friend.nickname}</div>
+                    <div className="truncate text-[12px] text-eink-sub">ID: {friend.publicId || friend.username || ''}</div>
+                  </div>
+                </Link>
+              )
+            )
           )}
         </section>
       </div>
