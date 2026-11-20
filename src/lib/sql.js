@@ -31,6 +31,10 @@ alter table public.profiles add column if not exists nickname text not null defa
 alter table public.profiles add column if not exists username text;
 alter table public.messages add column if not exists content text;
 
+-- 解除旧外键（messages 已直接约束到 auth.users；旧外键指向 profiles 会拦截未建资料用户的消息）
+alter table public.messages drop constraint if exists messages_sender_id_fkey;
+alter table public.messages drop constraint if exists messages_receiver_id_fkey;
+
 grant usage on schema public to anon, authenticated;
 grant select, insert, update on table public.profiles to authenticated;
 grant select, insert on table public.messages to authenticated;

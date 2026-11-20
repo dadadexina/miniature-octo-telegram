@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import SetupProfile from './SetupProfile'
-import { fetchProfileById, updateProfileNickname } from '../lib/profiles'
+import { fetchProfileById, insertProfile, updateProfileNickname } from '../lib/profiles'
 import { useStore } from '../store'
 
 export default function ProfileGate({ children }) {
@@ -36,6 +36,15 @@ export default function ProfileGate({ children }) {
         setFetchError(result.ok ? '' : result.error || '')
         applyProfileToUser(userId, cached)
         setCloudProfile(cached, false)
+        if (result.ok && !result.profile) {
+          insertProfile({ id: userId, nickname: cached.nickname || '', username: cached.username || null }).then((repair) => {
+            if (!alive) return
+            if (repair.ok && repair.profile) {
+              applyProfileToUser(userId, repair.profile)
+              setCloudProfile(repair.profile, true)
+            }
+          })
+        }
         return
       }
       setFetchError(result.ok ? '' : result.error || '读取资料失败')
