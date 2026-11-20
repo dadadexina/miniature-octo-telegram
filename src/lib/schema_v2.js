@@ -50,6 +50,64 @@ alter table public.messages add column if not exists recalled_at timestamptz;
 alter table public.messages add column if not exists reply_to_id bigint references public.messages (id) on delete set null;
 create index if not exists messages_reply_to_idx on public.messages (reply_to_id) where reply_to_id is not null;
 
+alter table public.messages add column if not exists attachments jsonb;
+
+insert into storage.buckets (id, name, public)
+values ('message_media', 'message_media', false)
+on conflict (id) do nothing;
+
+-- 图片消息媒体:目录名为「配对键」(两个 uuid 排序后 __ 连接),仅会话双方可读写
+drop policy if exists "msg_media_select_pair" on storage.objects;
+create policy "msg_media_select_pair" on storage.objects for select
+to authenticated
+using (
+  bucket_id = 'message_media'
+  and (
+    split_part((storage.foldername(name))[1], '__', 1) = auth.uid()::text
+    or split_part((storage.foldername(name))[1], '__', 2) = auth.uid()::text
+  )
+);
+
+drop policy if exists "msg_media_insert_pair" on storage.objects;
+create policy "msg_media_insert_pair" on storage.objects for insert
+to authenticated
+with check (
+  bucket_id = 'message_media'
+  and (
+    split_part((storage.foldername(name))[1], '__', 1) = auth.uid()::text
+    or split_part((storage.foldername(name))[1], '__', 2) = auth.uid()::text
+  )
+);
+
+drop policy if exists "msg_media_update_pair" on storage.objects;
+create policy "msg_media_update_pair" on storage.objects for update
+to authenticated
+using (
+  bucket_id = 'message_media'
+  and (
+    split_part((storage.foldername(name))[1], '__', 1) = auth.uid()::text
+    or split_part((storage.foldername(name))[1], '__', 2) = auth.uid()::text
+  )
+)
+with check (
+  bucket_id = 'message_media'
+  and (
+    split_part((storage.foldername(name))[1], '__', 1) = auth.uid()::text
+    or split_part((storage.foldername(name))[1], '__', 2) = auth.uid()::text
+  )
+);
+
+drop policy if exists "msg_media_delete_pair" on storage.objects;
+create policy "msg_media_delete_pair" on storage.objects for delete
+to authenticated
+using (
+  bucket_id = 'message_media'
+  and (
+    split_part((storage.foldername(name))[1], '__', 1) = auth.uid()::text
+    or split_part((storage.foldername(name))[1], '__', 2) = auth.uid()::text
+  )
+);
+
 create table if not exists public.moments (
   id uuid primary key default gen_random_uuid(),
   author_id uuid not null references auth.users (id) on delete cascade,

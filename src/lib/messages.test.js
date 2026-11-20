@@ -10,6 +10,7 @@ const {
   isUuid,
   mapMessage,
   mergeMessages,
+  parseAttachments,
   peerIdOf,
 } = await import('./messages')
 
@@ -48,6 +49,31 @@ describe('mapMessage', () => {
   it('透传 reply_to_id 为 replyToId', () => {
     expect(mapMessage(row({ reply_to_id: 42 })).replyToId).toBe(42)
     expect(mapMessage(row()).replyToId).toBe('')
+  })
+
+  it('attachments 为对象时透传,行缺失时为 null', () => {
+    const att = { type: 'image', path: 'p/q.jpg', width: 10, height: 20 }
+    expect(mapMessage(row({ attachments: att })).attachments).toEqual(att)
+    expect(mapMessage(row()).attachments).toBeNull()
+  })
+})
+
+describe('parseAttachments', () => {
+  it('对象直接返回', () => {
+    const att = { type: 'image', path: 'a.jpg' }
+    expect(parseAttachments(att)).toBe(att)
+  })
+
+  it('合法 JSON 字符串解析为对象', () => {
+    expect(parseAttachments('{"type":"image","path":"a.jpg"}')).toEqual({ type: 'image', path: 'a.jpg' })
+  })
+
+  it('空值、坏 JSON、非对象值返回 null', () => {
+    expect(parseAttachments(null)).toBeNull()
+    expect(parseAttachments('')).toBeNull()
+    expect(parseAttachments('{bad json')).toBeNull()
+    expect(parseAttachments('123')).toBeNull()
+    expect(parseAttachments(42)).toBeNull()
   })
 })
 

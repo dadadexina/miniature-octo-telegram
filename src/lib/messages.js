@@ -5,6 +5,20 @@ export function isUuid(id = '') {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
 }
 
+export function parseAttachments(raw) {
+  if (!raw) return null
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      return parsed && typeof parsed === 'object' ? parsed : null
+    } catch {
+      return null
+    }
+  }
+  if (typeof raw === 'object') return raw
+  return null
+}
+
 export function mapMessage(row) {
   if (!row) return null
   const fromId = row.sender_id || row.from_id || ''
@@ -19,6 +33,7 @@ export function mapMessage(row) {
     time,
     recalledAt: row.recalled_at ? new Date(row.recalled_at).getTime() : null,
     replyToId: row.reply_to_id ?? '',
+    attachments: parseAttachments(row.attachments),
     raw: row,
   }
 }
@@ -66,9 +81,10 @@ export async function fetchHiddenIds(meId) {
   return { ok: true, ids: (data || []).map((row) => row.message_id) }
 }
 
-export async function insertMessage({ senderId, receiverId, content, replyToId = '' }) {
+export async function insertMessage({ senderId, receiverId, content, replyToId = '', attachments = null }) {
   const payload = { sender_id: senderId, receiver_id: receiverId, content }
   if (replyToId) payload.reply_to_id = replyToId
+  if (attachments) payload.attachments = attachments
   const { data, error } = await supabase
     .from('messages')
     .insert(payload)

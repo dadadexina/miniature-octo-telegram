@@ -4,6 +4,7 @@ import AuthBar from '../components/AuthBar'
 import Avatar from '../components/Avatar'
 import CopySql from '../components/CopySql'
 import NavBar from '../components/NavBar'
+import SignedImage from '../components/SignedImage'
 import CallOverlay from '../components/CallOverlay'
 import useKeyboardInset from '../hooks/useKeyboardInset'
 import {
@@ -17,6 +18,8 @@ import {
   recallMessage,
   searchThreadMessages,
 } from '../lib/messages'
+import { downscaleImageFile } from '../lib/imagePipeline'
+import { MESSAGE_MEDIA_LIMITS, uploadMessageBlob } from '../lib/messageMedia'
 import { supabase } from '../lib/supabase'
 import { friendlyInsertError } from '../lib/syncHelpers'
 import { useStore } from '../store'
@@ -68,6 +71,9 @@ export default function ChatDetail() {
   const typingChannelRef = useRef(null)
   const peerTypingTimer = useRef(null)
   const lastTrackRef = useRef(0)
+  const [attach, setAttach] = useState(null)
+  const [viewerUrl, setViewerUrl] = useState(null)
+  const fileInputRef = useRef(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const listRef = useRef(null)
   const bottomRef = useRef(null)
@@ -93,7 +99,11 @@ export default function ChatDetail() {
     const q = msgById.get(String(replyToId))
     if (!q) return { name: '', text: '[原消息已不可见]' }
     if (q.recalledAt) return { name: nameOfSender(q.fromId), text: '[已撤回的消息]' }
-    return { name: nameOfSender(q.fromId), text: quoteExcerpt(q.text || '') }
+    const excerpted = quoteExcerpt(q.text || '')
+    return {
+      name: nameOfSender(q.fromId),
+      text: excerpted || (q.attachments?.type === 'image' ? '[图片]' : ''),
+    }
   }
 
   const scrollToBottom = (smooth = true) => {
@@ -169,6 +179,8 @@ export default function ChatDetail() {
     setSearchQ('')
     setSearchResults([])
     setFlashMsgId(null)
+    setAttach(null)
+    setViewerUrl(null)
   }, [peerId])
 
   useEffect(() => {
@@ -242,7 +254,29 @@ export default function ChatDetail() {
     )
   }
 
-  const sendCloudMessage = async (content, tmpId, replyToId = '') => {
+  const sendCloudMessage = async (content, tmpId, replyToId = '', media = null) => {
+    let attachments = null
+    if (media?.blob) {
+      setPendingList((prev) =>
+        prev.map((item) => (item.tmpId === tmpId ? { ...item, status: 'uploading', error: '' } : item))
+      )
+      const up = await uploadMessageBlob({
+        blob: media.blob,
+        width: media.width || 0,
+        height: media.height || 0,
+        meId: currentUser.id,
+        peerId,
+      })
+      if (!up.ok) {
+        setPendingList((prev) =>
+          prev.map((item) =>
+            item.tmpId === tmpId ? { ...item, status: 'failed', error: up.error || '图片上传失败' } : item
+          )
+        )
+        return
+      }
+      attachments = { type: 'image', path: up.path, width: up.width, height: up.height }
+    }
     setPendingList((prev) =>
       prev.map((item) => (item.tmpId === tmpId ? { ...item, status: 'sending', error: '' } : item))
     )
@@ -251,6 +285,7 @@ export default function ChatDetail() {
       receiverId: peerId,
       content,
       replyToId,
+      attachments,
     })
     if (!result.ok) {
       setPendingList((prev) =>
@@ -301,28 +336,68 @@ export default function ChatDetail() {
     typingChannelRef.current?.untrack().catch(() => {})
   }
 
+  const handlePickFile = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setAttach({ status: 'processing', error: '' })
+    const scaled = await downscaleImageFile(file, MESSAGE_MEDIA_LIMITS)
+    if (!scaled.ok) {
+      setAttach({ status: 'error', error: scaled.error })
+      return
+    }
+    const url =
+      typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(scaled.blob) : ''
+    setAttach({
+      status: 'ready',
+      blob: scaled.blob,
+      url,
+      width: scaled.width || 0,
+      height: scaled.height || 0,
+      error: '',
+    })
+  }
+
   const submit = async (e) => {
     e.preventDefault()
     const content = text.trim()
-    if (!content) return
+    const media =
+      attach?.status === 'ready' && attach.blob
+        ? { blob: attach.blob, width: attach.width, height: attach.height, url: attach.url }
+        : null
+    if (!content && !media) return
     if (cloudReady) {
       const tmpId = makeTmpId()
       const quote = quoteMsg
         ? {
             replyToId: quoteMsg.id,
             name: nameOfSender(quoteMsg.fromId),
-            text: quoteMsg.recalledAt ? '[已撤回的消息]' : quoteExcerpt(quoteMsg.text || ''),
+            text:
+              quoteMsg.recalledAt
+                ? '[已撤回的消息]'
+                : quoteExcerpt(quoteMsg.text || '') ||
+                  (quoteMsg.attachments?.type === 'image' ? '[图片]' : ''),
           }
         : null
       setPendingList((prev) => [
         ...prev,
-        { tmpId, text: content, time: Date.now(), status: 'sending', error: '', reply: quote },
+        {
+          tmpId,
+          text: content,
+          time: Date.now(),
+          status: media ? 'uploading' : 'sending',
+          error: '',
+          reply: quote,
+          image: media?.url || '',
+          media,
+        },
       ])
       setText('')
       setQuoteMsg(null)
+      setAttach(null)
       stopTypingSignal()
       requestAnimationFrame(() => scrollToBottom(true))
-      await sendCloudMessage(content, tmpId, quote?.replyToId || '')
+      await sendCloudMessage(content, tmpId, quote?.replyToId || '', media)
       return
     }
     const result = sendMessage(peerId, content)
@@ -570,6 +645,9 @@ export default function ChatDetail() {
                     <div className={`flex max-w-[78%] flex-col ${mine ? 'items-end' : 'items-start'}`}>
                       <Bubble mine={mine}>
                         {msg.replyToId ? <QuoteStrip mine={mine} quote={resolveQuote(msg.replyToId)} /> : null}
+                        {msg.attachments?.type === 'image' ? (
+                          <SignedImage attachment={msg.attachments} onView={setViewerUrl} />
+                        ) : null}
                         {msg.text}
                       </Bubble>
                       {read ? (
@@ -639,6 +717,14 @@ export default function ChatDetail() {
                       <span className="bubble-tail bubble-tail-mine" />
                       <div className="break-words whitespace-pre-wrap rounded-none bg-eink-ink px-2.5 py-[7px] text-[16px] leading-[22px] text-eink-paper">
                         {item.reply ? <QuoteStrip mine quote={item.reply} /> : null}
+                        {item.image ? (
+                          <img
+                            src={item.image}
+                            alt=""
+                            className="mb-1 max-w-full border border-eink-divider object-cover opacity-80"
+                            style={{ width: 160, filter: 'grayscale(1) contrast(1.05)' }}
+                          />
+                        ) : null}
                         {item.text}
                       </div>
                     </div>
@@ -649,13 +735,15 @@ export default function ChatDetail() {
                           type="button"
                           data-testid="retry-send"
                           className="shrink-0 border border-eink-line/40 bg-eink-bar px-2 py-0.5 text-[12px] text-eink-ink active:bg-eink-pressed"
-                          onClick={() => sendCloudMessage(item.text, item.tmpId, item.reply?.replyToId || '')}
+                          onClick={() => sendCloudMessage(item.text, item.tmpId, item.reply?.replyToId || '', item.media || null)}
                         >
                           重试
                         </button>
                       </div>
                     ) : (
-                      <span className="mt-0.5 px-1 text-[11px] text-eink-faint">发送中...</span>
+                      <span className="mt-0.5 px-1 text-[11px] text-eink-faint">
+                        {item.status === 'uploading' ? '图片上传中...' : '发送中...'}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -669,6 +757,35 @@ export default function ChatDetail() {
         className="composer safe-bottom border-t border-eink-divider bg-eink-bar"
         onSubmit={submit}
       >
+        {attach ? (
+          <div
+            data-testid="attach-preview"
+            className="flex items-center gap-2 border-b border-eink-divider px-2 py-1.5"
+          >
+            {attach.status === 'processing' ? (
+              <span className="text-[12px] text-eink-sub">处理图片中...</span>
+            ) : null}
+            {attach.status === 'error' ? (
+              <span className="text-[12px] text-eink-sub" data-testid="attach-error">{attach.error}</span>
+            ) : null}
+            {attach.status === 'ready' && attach.url ? (
+              <img
+                src={attach.url}
+                alt="附件预览"
+                className="h-14 w-14 border border-eink-divider object-cover"
+                style={{ filter: 'grayscale(1) contrast(1.05)' }}
+              />
+            ) : null}
+            <button
+              type="button"
+              data-testid="attach-clear"
+              className="ml-auto shrink-0 border border-eink-line/40 bg-eink-bar px-2 py-0.5 text-[12px] text-eink-ink active:bg-eink-pressed"
+              onClick={() => setAttach(null)}
+            >
+              移除
+            </button>
+          </div>
+        ) : null}
         {quoteMsg ? (
           <div className="flex items-center gap-2 px-2 pt-1.5">
             <div
@@ -689,6 +806,29 @@ export default function ChatDetail() {
           </div>
         ) : null}
         <div className="flex items-center gap-2 px-2 py-1.5">
+        {cloudReady ? (
+          <>
+            <button
+              type="button"
+              data-testid="attach-btn"
+              aria-label="发送图片"
+              className="flex h-9 w-9 shrink-0 items-center justify-center border border-eink-line/25 bg-eink-bar text-eink-ink active:bg-eink-pressed"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              data-testid="attach-input"
+              className="hidden"
+              onChange={handlePickFile}
+            />
+          </>
+        ) : null}
         <input
           ref={inputRef}
           className="h-9 min-w-0 flex-1 rounded-none border border-eink-line/25 bg-eink-bar px-3 text-[16px] outline-none"
@@ -708,12 +848,27 @@ export default function ChatDetail() {
         <button
           type="submit"
           className="h-9 shrink-0 rounded-none bg-eink-ink px-3.5 text-[15px] text-eink-paper active:bg-eink-pressed disabled:bg-eink-disabled"
-          disabled={!text.trim()}
+          disabled={!text.trim() && !(attach?.status === 'ready' && attach.blob)}
         >
           发送
         </button>
         </div>
       </form>
+
+      {viewerUrl ? (
+        <div
+          data-testid="image-viewer"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4"
+          onClick={() => setViewerUrl(null)}
+        >
+          <img
+            src={viewerUrl}
+            alt="图片大图"
+            className="max-h-full max-w-full object-contain"
+            style={{ filter: 'grayscale(1) contrast(1.05)' }}
+          />
+        </div>
+      ) : null}
 
       {callState !== CALL_IDLE ? (
         <CallOverlay

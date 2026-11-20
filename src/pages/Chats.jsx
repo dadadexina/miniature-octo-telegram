@@ -187,7 +187,9 @@ export default function Chats() {
                       <span className="text-eink-ink">{drafts[friend.id]}</span>
                     </>
                   ) : last ? (
-                    `${last.fromId === currentUser.id ? '我: ' : ''}${last.text}`
+                    `${last.fromId === currentUser.id ? '我: ' : ''}${
+                      last.text || (last.attachments?.type === 'image' ? '[图片]' : '')
+                    }`
                   ) : (
                     '点击开始聊天'
                   )}
