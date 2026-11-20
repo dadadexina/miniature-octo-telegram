@@ -4,6 +4,7 @@ import AuthBar from '../components/AuthBar'
 import Avatar from '../components/Avatar'
 import CopySql from '../components/CopySql'
 import NavBar from '../components/NavBar'
+import LongTextBody from '../components/LongTextBody'
 import SignedImage from '../components/SignedImage'
 import CallOverlay from '../components/CallOverlay'
 import useKeyboardInset from '../hooks/useKeyboardInset'
@@ -648,7 +649,7 @@ export default function ChatDetail() {
                         {msg.attachments?.type === 'image' ? (
                           <SignedImage attachment={msg.attachments} onView={setViewerUrl} />
                         ) : null}
-                        {msg.text}
+                        <LongTextBody text={msg.text} />
                       </Bubble>
                       {read ? (
                         <span data-testid="read-receipt" className="mt-0.5 px-1 text-[11px] text-eink-faint">
@@ -725,7 +726,7 @@ export default function ChatDetail() {
                             style={{ width: 160, filter: 'grayscale(1) contrast(1.05)' }}
                           />
                         ) : null}
-                        {item.text}
+                        <LongTextBody text={item.text} />
                       </div>
                     </div>
                     {item.status === 'failed' ? (
