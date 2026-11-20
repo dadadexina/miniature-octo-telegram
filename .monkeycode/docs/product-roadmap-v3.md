@@ -29,7 +29,7 @@
 
 ### M2 图片消息与内容增强(1~2 天)
 
-- [ ] 2.1 **图片消息**:Storage 桶 `message_media`(私有读,签名 URL)+ `messages.attachments jsonb`;发送走 canvas 降采样(复用头像管线),气泡内灰度渲染、点击全屏
+- [x] 2.1 **图片消息**(ddd9ed2,生产冒烟 27 项全过):Storage 桶 `message_media`(私有读,签名 URL)+ `messages.attachments jsonb`;发送走 canvas 降采样(复用头像管线),气泡内灰度渲染、点击全屏
 - [ ] 2.2 **长文卡片**(差异化):超过约 200 字自动折叠为"展开阅读"卡片,契合文字优先定位
 - [ ] 2.3 **内容举报/屏蔽词**:举报消息与朋友圈入口 → `reports` 表(insert-only RLS);为将来社区治理留接口
 

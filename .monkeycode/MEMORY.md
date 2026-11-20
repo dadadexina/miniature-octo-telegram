@@ -122,7 +122,7 @@ This file records user instructions, preferences, and teachings for reference in
   - 本仓库安装的 postgrest-js(supabase-js 2.119.2 内置)中 `insert(values, opts)` 只接受 `{count, defaultToNull}`,传 `{ignoreDuplicates:true}` 会被静默忽略(不发 Prefer 头),重复键插入返回 409 23505
   - 幂等写入必须用 `.upsert(payload, { ignoreDuplicates: true, onConflict: '<唯一约束列>' })`(friends/blockUser/hideMessage/likeMoment 四处已改,commit 05663b9)
   - 生产 e2e 拉黑用例曾因此类残留行翻转动作而失败:serial 用例对共享后端状态敏感,跑生产套件前确认 `blocks` 等表无 e2e 账号残留行(调试脚本 /tmp/opencode/debug-block*.mjs 可经 UI 清理)
-  - 验证基线(2026-11-20):vitest 87/87、lint 0 errors/13 warnings、本地与生产 e2e 均 11/11、朋友圈生产冒烟(发布/点赞/评论/删除)全绿;生产 bundle 是否更新可 grep `dist/assets` 产物特征串对比线上同名 chunk
+  - 验证基线(2026-11-20,M2.1 后):vitest 150/150、lint 0 errors/18 warnings、e2e 11/11、生产冒烟 `/tmp/opencode/smoke-m1.mjs` 27 项断言(T1~T8,含图片消息 T8)全绿;生产 bundle 是否更新可 grep `dist/assets` 产物特征串对比线上同名 chunk
 
 [SPA 返回按钮:勿用 window.history.length 判断应用内历史]
 - Date: 2026-11-20
@@ -154,3 +154,13 @@ This file records user instructions, preferences, and teachings for reference in
   - 对端状态读取:`channel.presenceState()[key]` 是数组;key 即加入频道时 config.presence.key
   - 冒烟脚本坑:`E2E_USER_*_USERNAME` 是 publicId(如 e2e_b_xxx)而非 uuid;`/chat/:id` 路由必须用真实 uuid(publicId 传入会因 isUuid 失败静默降级本地演示模式,页面提示「当前好友是本地演示用户」);uuid 可从水合后的 localStorage `wechat-chat-app-v3` users[].publicId 反查
   - 消息气泡操作菜单:点 `[data-msg-id] .bubble, div` 的 first() 可能命中 TimeDivider 冒泡到容器关闭菜单;应直接点气泡文本 getByText(exact)
+
+[托管 Supabase 可直接用 psql 创建 Storage 桶与 storage.objects RLS 策略]
+- Date: 2026-11-20
+- Context: Discovered by Agent while applying M2.1 图片消息 message_media 桶与配对目录策略
+- Category: Operations & Deployment
+- Instructions:
+  - `.monkeycode/secrets/db-url.txt` 的 postgres 角色对 `storage` schema 有完整权限:`insert into storage.buckets`、`create policy on storage.objects` 均可经 psql 直接执行,无需 Dashboard 或 service_role key
+  - 私有媒体对象策略模板:对象路径首段为业务键(如配对目录 `<uuidA>__<uuidB>`),用 `split_part((storage.foldername(name))[1], '__', n) = auth.uid()::text` 校验成员身份;select/insert/update/delete 四条都要建
+  - 排序连接的配对键注意 delete 策略也应对双方开放(split 1 或 split 2 命中 auth.uid()),只判 split 1 会造成仅字典序小的一方可删
+  - 渲染私有对象一律 `createSignedUrl(path, expiresIn)`(消息图 900s),签名结果不入库;每次挂载组件重新签
