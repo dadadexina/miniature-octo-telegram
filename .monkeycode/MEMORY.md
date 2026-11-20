@@ -50,7 +50,8 @@ This file records user instructions, preferences, and teachings for reference in
 - Category: Troubleshooting & Debugging
 - Instructions:
   - 线上旧版 `profiles` 表原生只有 `id`/`username`/`avatar_url`/`created_at`；`nickname` 列由 CLOUD_SQL 的 `ADD COLUMN IF NOT EXISTS` 规范化补齐（已于 2026-11-20 执行生效）
-  - 线上 `messages` 存在旧外键 `messages_sender_id_fkey`/`messages_receiver_id_fkey` 引用 `profiles(id)`：**收发双方都必须先有 profiles 行**，否则发消息报 23503。应用侧由 ProfileGate 强制建立资料保证此前提
+  - 线上 `messages` 旧外键 `messages_*_id_fkey`（指向 `profiles(id)`）已于 2026-11-20 通过 CLOUD_SQL 的 DROP CONSTRAINT 移除，否则会拦截云端无 profiles 行的用户发消息（409/23503）；现由指向 `auth.users` 的 `messages_sender_fk`/`messages_receiver_fk` 保障完整性
+  - ProfileGate 启动时自愈：云端确认无资料行会自动用本地缓存 `insertProfile` 重建
   - PostgREST 缺列错误码为 PGRST204，文案是单引号（`Could not find the 'nickname' column`）；代码内 `isMissingColumn`（src/lib/profiles.js）已兼容单双引号两种文案
   - 排查此类问题用 `auth/v1/signup`（autoconfirm）拿到 access_token 后带 `Authorization: Bearer` 直接 REST 实测，比猜测表结构可靠
   - 调试遗留测试账号前缀 `qa.`（qa.smoke/qa.probe/qa.fix/qa.norm，密码 qaTest123456），可在 Supabase 后台 Authentication → Users 删除
