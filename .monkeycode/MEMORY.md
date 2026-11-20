@@ -122,3 +122,12 @@ This file records user instructions, preferences, and teachings for reference in
   - 幂等写入必须用 `.upsert(payload, { ignoreDuplicates: true, onConflict: '<唯一约束列>' })`(friends/blockUser/hideMessage/likeMoment 四处已改,commit 05663b9)
   - 生产 e2e 拉黑用例曾因此类残留行翻转动作而失败:serial 用例对共享后端状态敏感,跑生产套件前确认 `blocks` 等表无 e2e 账号残留行(调试脚本 /tmp/opencode/debug-block*.mjs 可经 UI 清理)
   - 验证基线(2026-11-20):vitest 87/87、lint 0 errors/13 warnings、本地与生产 e2e 均 11/11、朋友圈生产冒烟(发布/点赞/评论/删除)全绿;生产 bundle 是否更新可 grep `dist/assets` 产物特征串对比线上同名 chunk
+
+[SPA 返回按钮:勿用 window.history.length 判断应用内历史]
+- Date: 2026-11-20
+- Context: Discovered by Agent while fixing FriendProfile back button (用户反馈外链直开时返回无效/退出应用,commit 43ce3c8)
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - `window.history.length` 统计整个标签页历史(含站外条目),外链/webview 直开二级页时 `navigate(-1)` 会退出应用
+  - 正确判定:优先 `window.history.state?.idx > 0`(react-router v7 BrowserRouter),MemoryRouter 场景回退 `location.key !== 'default'`;无应用内历史则兜底跳一级页(replace)
+  - 二级页(聊天详情/资料页)在 Layout 之外,TabBar 随路由切换隐藏/恢复属预期;Playwright `waitForURL` 在 lazy 页面 chunk 加载完成前就会 resolve,断言 DOM 前需再等待 1s+,否则会把旧页面元素(如 TabBar)误计为新页面的
