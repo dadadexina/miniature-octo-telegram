@@ -164,3 +164,14 @@ This file records user instructions, preferences, and teachings for reference in
   - 私有媒体对象策略模板:对象路径首段为业务键(如配对目录 `<uuidA>__<uuidB>`),用 `split_part((storage.foldername(name))[1], '__', n) = auth.uid()::text` 校验成员身份;select/insert/update/delete 四条都要建
   - 排序连接的配对键注意 delete 策略也应对双方开放(split 1 或 split 2 命中 auth.uid()),只判 split 1 会造成仅字典序小的一方可删
   - 渲染私有对象一律 `createSignedUrl(path, expiresIn)`(消息图 900s),签名结果不入库;每次挂载组件重新签
+
+[沙箱出网白名单不含 peerjs.com,WebRTC 真实接通需外部网络验证]
+- Date: 2026-11-20
+- Context: Discovered by Agent while 接入 PeerJS 语音通话后做双端联调
+- Category: Environment Configuration
+- Instructions:
+  - 本沙箱出网为白名单制:github/api、npm、supabase、vercel 可达,`0.peerjs.com` TCP 443 直接超时(浏览器 `wss://0.peerjs.com` 报 "closed before established")
+  - 因此 PeerJS 云信令的**成功链路**(振铃→接听→音频)无法在沙箱内验证,只能用失败链路脚本验证 UI 与错误提示
+  - 验证脚本:`/tmp/opencode/call-failpath.mjs`(支持 `CALL_BASE`,5 项断言);真实接通需用户在普通网络双开浏览器验证
+  - 代码已支持 `VITE_PEER_HOST/PORT/PATH/KEY/SECURE` 切自建 PeerServer,换服务器无需改业务代码
+  - 通话可用的前提:双方均为云端登录账号且各自停留在与对方的聊天页(当前版本 Peer 仅在 ChatDetail 内创建)
