@@ -10,6 +10,7 @@
 - [x] **3. 账号注销**：Edge Function 源码（`supabase/functions/delete-account/index.ts`）+ 「我的」页注销入口级联清理已实现 ｜ **待用户**：Dashboard → Edge Functions 部署 `delete-account`
 - [x] **4. 隐私政策 / 用户协议**：`/legal/terms`、`/legal/privacy` 页面，登录页与「我的」页已挂链接
 - [x] **5. LICENSE**：MIT（仓库根目录，如需换协议告知）
+- [ ] **2b. 邮件服务 SMTP 配置**：内置发信限每小时约 2 封（实测触发 `email rate limit exceeded`，导致「忘记密码」提示繁忙）。需在 Auth → SMTP Settings 启用自有 SMTP（QQ 邮箱 `smtp.qq.com:465` + 16 位授权码即可），验证/重置邮件才具备生产可用性 ｜ **待用户**：后台填写
 - [ ] **6. 正式托管**：选定静态托管（Vercel / Netlify / OSS+CDN），注入构建期变量 `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`，Supabase Auth URL Configuration 添加生产域名 ｜ **待用户**：确定托管平台
 
 ## P1 — 交付后一周内
