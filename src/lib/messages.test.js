@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('./supabase', () => ({ supabase: {} }))
 
 const {
+  escapeLikePattern,
   groupConversations,
   involvesUser,
   isPairMessage,
@@ -84,5 +85,15 @@ describe('groupConversations', () => {
     const grouped = groupConversations('me', msgs)
     expect(grouped.map((g) => g.peerId)).toEqual(['c', 'b'])
     expect(grouped[1].last.text).toBe('最新')
+  })
+})
+
+describe('escapeLikePattern', () => {
+  it('转义 LIKE 通配符', () => {
+    expect(escapeLikePattern('100%')).toBe('100\\%')
+    expect(escapeLikePattern('a_b')).toBe('a\\_b')
+    expect(escapeLikePattern('50,off')).toBe('50,off')
+    expect(escapeLikePattern('')).toBe('')
+    expect(escapeLikePattern(null)).toBe('')
   })
 })

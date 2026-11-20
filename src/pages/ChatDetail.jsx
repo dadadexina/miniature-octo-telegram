@@ -15,6 +15,7 @@ import {
   isPairMessage,
   isUuid,
   recallMessage,
+  searchThreadMessages,
 } from '../lib/messages'
 import { supabase } from '../lib/supabase'
 import { friendlyInsertError } from '../lib/syncHelpers'
@@ -57,6 +58,12 @@ export default function ChatDetail() {
   const [hiddenIds, setHiddenIds] = useState(() => new Set())
   const [activeMsgId, setActiveMsgId] = useState(null)
   const [quoteMsg, setQuoteMsg] = useState(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [flashMsgId, setFlashMsgId] = useState(null)
+  const flashTimer = useRef(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const listRef = useRef(null)
   const bottomRef = useRef(null)
@@ -154,7 +161,45 @@ export default function ChatDetail() {
     setPendingList([])
     setHiddenIds(new Set())
     setQuoteMsg(null)
+    setSearchOpen(false)
+    setSearchQ('')
+    setSearchResults([])
+    setFlashMsgId(null)
   }, [peerId])
+
+  useEffect(() => {
+    if (!searchOpen) return undefined
+    const q = searchQ.trim()
+    if (!q) {
+      setSearchResults([])
+      setSearching(false)
+      return undefined
+    }
+    let alive = true
+    setSearching(true)
+    const t = setTimeout(async () => {
+      let msgs = []
+      if (cloudReady) {
+        const res = await searchThreadMessages({ userId: currentUser.id, peerId, query: q, limit: 50 })
+        if (res.ok) msgs = res.messages
+      } else {
+        const lq = q.toLowerCase()
+        msgs = messagesWith(peerId).filter((m) => (m.text || '').toLowerCase().includes(lq))
+      }
+      if (!alive) return
+      setSearchResults(
+        msgs
+          .filter((m) => !m.recalledAt && !hiddenIds.has(m.id))
+          .sort((x, y) => y.time - x.time)
+          .slice(0, 50)
+      )
+      setSearching(false)
+    }, 300)
+    return () => {
+      alive = false
+      clearTimeout(t)
+    }
+  }, [searchOpen, searchQ, cloudReady, currentUser?.id, peerId, hiddenIds, messagesWith])
 
   if (!currentUser) return <Navigate to="/login" replace />
 
@@ -191,6 +236,26 @@ export default function ChatDetail() {
     setPendingList((prev) => prev.filter((item) => item.tmpId !== tmpId))
     mergeInbox([result.message])
     requestAnimationFrame(() => scrollToBottom(true))
+  }
+
+
+  const jumpToResult = (msg) => {
+    setSearchOpen(false)
+    setSearchQ('')
+    setSearchResults([])
+    const idStr = String(msg.id)
+    requestAnimationFrame(() => {
+      const node = document.querySelector(`[data-msg-id="${idStr}"]`)
+      if (!node) {
+        setHint('该消息不在已加载范围，可先点「加载更早的消息」')
+        return
+      }
+      setHint('')
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setFlashMsgId(idStr)
+      if (flashTimer.current) clearTimeout(flashTimer.current)
+      flashTimer.current = setTimeout(() => setFlashMsgId(null), 1500)
+    })
   }
 
   const submit = async (e) => {
@@ -298,6 +363,15 @@ export default function ChatDetail() {
         left={<Back onClick={() => navigate('/chats')} />}
         right={
           <div className="relative flex items-center gap-1">
+            <button
+              type="button"
+              data-testid="msg-search-open"
+              className="flex h-9 w-9 items-center justify-center"
+              aria-label="搜索聊天记录"
+              onClick={() => setSearchOpen((v) => !v)}
+            >
+              <SearchIcon />
+            </button>
             <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => onCall('audio')} aria-label="语音通话（演示）" title="演示功能">
               <PhoneIcon />
             </button>
@@ -331,6 +405,58 @@ export default function ChatDetail() {
         }
       />
 
+
+      {searchOpen ? (
+        <div data-testid="msg-search-bar" className="shrink-0 border-b border-eink-divider bg-eink-bar px-2 py-1.5">
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              data-testid="msg-search-input"
+              className="h-8 min-w-0 flex-1 rounded-none border border-eink-line/25 bg-eink-paper px-2 text-[14px] outline-none"
+              type="text"
+              placeholder="搜索聊天记录"
+              maxLength={64}
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+            />
+            <button
+              type="button"
+              data-testid="msg-search-close"
+              className="shrink-0 px-2 py-1 text-[13px] text-eink-sub active:text-eink-ink"
+              onClick={() => {
+                setSearchOpen(false)
+                setSearchQ('')
+                setSearchResults([])
+              }}
+            >
+              关闭
+            </button>
+          </div>
+          {searching ? (
+            <p className="px-1 py-2 text-[12px] text-eink-faint">搜索中...</p>
+          ) : searchQ.trim() && searchResults.length === 0 ? (
+            <p data-testid="msg-search-empty" className="px-1 py-2 text-[12px] text-eink-faint">
+              没有匹配的消息
+            </p>
+          ) : null}
+          <div className="max-h-[45vh] overflow-y-auto no-scrollbar">
+            {searchResults.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                data-testid="msg-search-result"
+                className="block w-full border-b border-eink-divider/60 px-1 py-2 text-left active:bg-eink-pressed"
+                onClick={() => jumpToResult(m)}
+              >
+                <span className="block text-[11px] text-eink-faint">
+                  {formatChatTime(m.time)} · {m.fromId === currentUser.id ? '我' : peer.nickname}
+                </span>
+                <span className="mt-0.5 block truncate text-[13px] text-eink-ink">{m.text}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div
         ref={listRef}
         className="min-h-0 flex-1 overflow-y-auto px-2.5 py-3 no-scrollbar"
@@ -382,7 +508,11 @@ export default function ChatDetail() {
               }
               const read = mine && peerReadTs > 0 && peerReadTs >= msg.time
               return (
-                <div key={msg.id} data-msg-id={msg.id}>
+                <div
+                  key={msg.id}
+                  data-msg-id={msg.id}
+                  className={flashMsgId === String(msg.id) ? 'bg-[#E4E2DA] transition-colors duration-300' : 'transition-colors duration-300'}
+                >
                   {showTime ? <TimeDivider time={msg.time} /> : null}
                   <div
                     className={`mb-3 flex items-start gap-2 ${mine ? 'flex-row-reverse' : ''}`}
@@ -585,6 +715,15 @@ function Bubble({ mine, children }) {
         {children}
       </div>
     </div>
+  )
+}
+
+function SearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <circle cx="8" cy="8" r="5.2" stroke="#191919" strokeWidth="1.6" />
+      <path d="m12.2 12.2 3.3 3.3" stroke="#191919" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
   )
 }
 

@@ -80,6 +80,35 @@ export async function insertMessage({ senderId, receiverId, content, replyToId =
   return { ok: true, message: mapMessage(data) }
 }
 
+export function escapeLikePattern(q) {
+  return String(q || '').replace(/[%_\\]/g, (c) => `\\${c}`)
+}
+
+export async function searchThreadMessages({ userId, peerId, query, limit = 50 }) {
+  const q = String(query || '').trim()
+  if (!userId || !peerId || !q) return { ok: true, messages: [] }
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+      .or(`sender_id.eq.${peerId},receiver_id.eq.${peerId}`)
+      .ilike('content', `%${escapeLikePattern(q)}%`)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (error) {
+      return { ok: false, error: error.message, messages: [], permission: isPermissionError(error) }
+    }
+    const messages = (data || [])
+      .map(mapMessage)
+      .filter((m) => isPairMessage(m, userId, peerId))
+      .sort((a, b) => a.time - b.time)
+    return { ok: true, messages }
+  } catch {
+    return { ok: false, error: '网络异常', messages: [] }
+  }
+}
+
 export const THREAD_PAGE_SIZE = 50
 export const INBOX_LIMIT = 500
 
