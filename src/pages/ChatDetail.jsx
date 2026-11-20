@@ -208,7 +208,9 @@ export default function ChatDetail() {
   useEffect(() => {
     if (!cloudReady) return undefined
     const pairKey = [currentUser.id, peerId].sort().join('__')
-    const ch = supabase.channel(`typing:${pairKey}`)
+    const ch = supabase.channel(`typing:${pairKey}`, {
+      config: { presence: { key: currentUser.id, enabled: true } },
+    })
     ch.on('presence', { event: 'sync' }, () => {
       const state = ch.presenceState()
       if (state[peerId]?.length) {
@@ -292,7 +294,7 @@ export default function ChatDetail() {
     const nowTs = Date.now()
     if (nowTs - lastTrackRef.current < 2000) return
     lastTrackRef.current = nowTs
-    ch.track({ key: currentUser.id, typing: true }).catch(() => {})
+    ch.track({ typing: true }).catch(() => {})
   }
 
   const stopTypingSignal = () => {
