@@ -36,6 +36,16 @@ create table if not exists public.message_hides (
   primary key (message_id, user_id)
 );
 
+create table if not exists public.conversation_prefs (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  peer_id uuid not null references auth.users (id) on delete cascade,
+  pinned boolean not null default false,
+  muted boolean not null default false,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, peer_id),
+  check (user_id <> peer_id)
+);
+
 alter table public.messages add column if not exists recalled_at timestamptz;
 
 create table if not exists public.moments (
@@ -149,6 +159,7 @@ grant select, insert, update, delete on table public.friend_requests to authenti
 grant select, insert, delete on table public.blocks to authenticated;
 grant select, insert, update on table public.read_cursors to authenticated;
 grant select, insert on table public.message_hides to authenticated;
+grant select, insert, update on table public.conversation_prefs to authenticated;
 grant select, insert, update on table public.messages to authenticated;
 grant select, insert, delete on table public.moments to authenticated;
 grant select, insert, delete on table public.moment_likes to authenticated;
@@ -169,6 +180,7 @@ alter table public.friend_requests enable row level security;
 alter table public.blocks enable row level security;
 alter table public.read_cursors enable row level security;
 alter table public.message_hides enable row level security;
+alter table public.conversation_prefs enable row level security;
 alter table public.moments enable row level security;
 alter table public.moment_likes enable row level security;
 alter table public.moment_comments enable row level security;
@@ -228,6 +240,18 @@ to authenticated using (auth.uid() = user_id);
 drop policy if exists "mh_insert_own" on public.message_hides;
 create policy "mh_insert_own" on public.message_hides for insert
 to authenticated with check (auth.uid() = user_id);
+
+drop policy if exists "cp_select_own" on public.conversation_prefs;
+create policy "cp_select_own" on public.conversation_prefs for select
+to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "cp_insert_own" on public.conversation_prefs;
+create policy "cp_insert_own" on public.conversation_prefs for insert
+to authenticated with check (auth.uid() = user_id);
+
+drop policy if exists "cp_update_own" on public.conversation_prefs;
+create policy "cp_update_own" on public.conversation_prefs for update
+to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 drop policy if exists "messages_insert_own" on public.messages;
 create policy "messages_insert_own" on public.messages for insert

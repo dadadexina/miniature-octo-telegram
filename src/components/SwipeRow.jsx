@@ -6,12 +6,14 @@ const OPEN_THRESHOLD = 36
 const OVERDRAG = 16
 const LOCK_SLOP = 6
 
-export default function SwipeRow({ rowId, to, swiped, onOpen, onClose, onDelete, children }) {
+export default function SwipeRow({ rowId, to, swiped, onOpen, onClose, onDelete, onLongPress, pinned = false, children }) {
   const [dx, setDx] = useState(0)
   const [dragging, setDragging] = useState(false)
   const startRef = useRef(null)
   const lockRef = useRef(null)
   const movedRef = useRef(false)
+  const pressRef = useRef(null)
+  const longFiredRef = useRef(false)
 
   useEffect(() => {
     if (dragging) return
@@ -19,12 +21,33 @@ export default function SwipeRow({ rowId, to, swiped, onOpen, onClose, onDelete,
     setDx((prev) => (prev === target ? prev : target))
   }, [swiped, dragging])
 
+  const cancelPress = () => {
+    if (pressRef.current) {
+      clearTimeout(pressRef.current)
+      pressRef.current = null
+    }
+  }
+
+  const startPress = () => {
+    if (!onLongPress) return
+    longFiredRef.current = false
+    cancelPress()
+    pressRef.current = setTimeout(() => {
+      pressRef.current = null
+      longFiredRef.current = true
+      onLongPress()
+    }, 500)
+  }
+
+  useEffect(() => cancelPress, [])
+
   const onTouchStart = (e) => {
     const t = e.touches?.[0]
     if (!t) return
     startRef.current = { x: t.clientX, y: t.clientY }
     lockRef.current = null
     movedRef.current = false
+    startPress()
   }
 
   const onTouchMove = (e) => {
@@ -34,6 +57,7 @@ export default function SwipeRow({ rowId, to, swiped, onOpen, onClose, onDelete,
     const ddy = t.clientY - startRef.current.y
     if (!lockRef.current) {
       if (Math.abs(ddx) < LOCK_SLOP && Math.abs(ddy) < LOCK_SLOP) return
+      cancelPress()
       lockRef.current = Math.abs(ddx) > Math.abs(ddy) ? 'h' : 'v'
       if (lockRef.current !== 'h') {
         startRef.current = null
@@ -51,6 +75,7 @@ export default function SwipeRow({ rowId, to, swiped, onOpen, onClose, onDelete,
   }
 
   const onTouchEnd = () => {
+    cancelPress()
     if (lockRef.current === 'h') {
       if (dx <= -OPEN_THRESHOLD) {
         setDx(-OPEN_W)
@@ -66,12 +91,26 @@ export default function SwipeRow({ rowId, to, swiped, onOpen, onClose, onDelete,
   }
 
   const onClick = (e) => {
+    if (longFiredRef.current) {
+      e.preventDefault()
+      e.stopPropagation()
+      longFiredRef.current = false
+      return
+    }
     if (movedRef.current || swiped) {
       e.preventDefault()
       e.stopPropagation()
       movedRef.current = false
       if (swiped) onClose()
     }
+  }
+
+  const onContextMenu = (e) => {
+    if (!onLongPress) return
+    e.preventDefault()
+    cancelPress()
+    longFiredRef.current = true
+    onLongPress()
   }
 
   return (
@@ -95,10 +134,11 @@ export default function SwipeRow({ rowId, to, swiped, onOpen, onClose, onDelete,
       <Link
         to={to}
         onClick={onClick}
+        onContextMenu={onContextMenu}
         style={{ transform: `translateX(${dx}px)` }}
-        className={`relative flex items-center gap-3 bg-eink-bar px-4 py-3 active:bg-[#E7E5DD] ${
-          dragging ? '' : 'transition-transform duration-200'
-        }`}
+        className={`relative flex items-center gap-3 px-4 py-3 active:bg-[#E7E5DD] ${
+          pinned ? 'border-l-[3px] border-eink-ink bg-[#E9E7DF]' : 'border-l-[3px] border-transparent bg-eink-bar'
+        } ${dragging ? '' : 'transition-transform duration-200'}`}
       >
         {children}
       </Link>

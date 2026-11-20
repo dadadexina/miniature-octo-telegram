@@ -10,6 +10,7 @@ import {
   sendFriendRequest,
 } from './lib/friendRequests'
 import { applyDraft, loadDrafts, saveDrafts } from './lib/drafts'
+import { fetchConversationPrefs, upsertConversationPref } from './lib/conversationPrefs'
 import { fetchHiddenIds, fetchInbox, hideMessage, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
 import { fetchProfilesByIds } from './lib/profiles'
 import { buildCursorMaps, fetchCursorsFor, upsertReadCursor } from './lib/readCursors'
@@ -177,6 +178,15 @@ function applyAuthUser(prev, authUser) {
   return { ...prev, users: [...prev.users, user], currentUserId: user.id }
 }
 
+function prefsToMap(prefs) {
+  const map = {}
+  for (const p of prefs || []) {
+    if (!p?.peerId) continue
+    map[p.peerId] = { pinned: Boolean(p.pinned), muted: Boolean(p.muted) }
+  }
+  return map
+}
+
 const StoreContext = createContext(null)
 
 export function StoreProvider({ children }) {
@@ -194,6 +204,7 @@ export function StoreProvider({ children }) {
   const [peerReadAt, setPeerReadAt] = useState({})
   const [requests, setRequests] = useState({ incoming: [], outgoing: [] })
   const [blockedIds, setBlockedIds] = useState([])
+  const [convPrefs, setConvPrefs] = useState({})
   const [offline, setOffline] = useState(
     () => typeof navigator !== 'undefined' && navigator.onLine === false
   )
@@ -414,14 +425,16 @@ export function StoreProvider({ children }) {
     if (!me || !isUuid(me)) return undefined
     let alive = true
     ;(async () => {
-      const [cursorsRes, blocksRes, hiddenRes] = await Promise.all([
+      const [cursorsRes, blocksRes, hiddenRes, prefsRes] = await Promise.all([
         fetchCursorsFor(me),
         fetchMyBlocks(me),
         fetchHiddenIds(me),
+        fetchConversationPrefs(me),
       ])
       if (!alive) return
       applyCursors(cursorsRes)
       if (blocksRes.ok) setBlockedIds(blocksRes.ids)
+      if (prefsRes.ok) setConvPrefs(prefsToMap(prefsRes.prefs))
       if (hiddenRes.ok) {
         hiddenIdsRef.current = new Set(hiddenRes.ids)
         setHiddenIds(hiddenIdsRef.current)
@@ -436,12 +449,14 @@ export function StoreProvider({ children }) {
   const resyncCloud = useCallback(async () => {
     const me = authUserRef.current?.id
     if (!me || !isUuid(me)) return
-    const [inboxRes, cursorsRes, hiddenRes] = await Promise.all([
+    const [inboxRes, cursorsRes, hiddenRes, prefsRes] = await Promise.all([
       fetchInbox(me),
       fetchCursorsFor(me),
       fetchHiddenIds(me),
+      fetchConversationPrefs(me),
     ])
     if (inboxRes.ok) mergeInbox(inboxRes.messages)
+    if (prefsRes.ok) setConvPrefs(prefsToMap(prefsRes.prefs))
     if (hiddenRes.ok) {
       hiddenIdsRef.current = new Set(hiddenRes.ids)
       setHiddenIds(hiddenIdsRef.current)
@@ -469,6 +484,7 @@ export function StoreProvider({ children }) {
       setPeerReadAt({})
       setRequests({ incoming: [], outgoing: [] })
       setBlockedIds([])
+      setConvPrefs({})
       setActivePeerId(null)
       return undefined
     }
@@ -589,6 +605,7 @@ export function StoreProvider({ children }) {
         setPeerReadAt({})
         setRequests({ incoming: [], outgoing: [] })
         setBlockedIds([])
+        setConvPrefs({})
       } else {
         setAuthUser(data.session.user)
         setUnread(loadUnread(data.session.user.id))
@@ -625,6 +642,7 @@ export function StoreProvider({ children }) {
         setPeerReadAt({})
         setRequests({ incoming: [], outgoing: [] })
         setBlockedIds([])
+        setConvPrefs({})
         setActivePeerId(null)
         setState((prev) => ({ ...prev, currentUserId: null }))
         return
@@ -753,6 +771,32 @@ export function StoreProvider({ children }) {
     return result
   }, [])
 
+  const setConversationPref = useCallback(async (peerId, patch) => {
+    const me = authUserRef.current?.id
+    if (!me || !peerId) return { ok: false, error: '参数错误' }
+    let snapshot = null
+    let next = null
+    setConvPrefs((prev) => {
+      snapshot = prev
+      const cur = prev[peerId] || { pinned: false, muted: false }
+      next = { ...cur, ...patch }
+      if (!next.pinned && !next.muted) {
+        const copy = { ...prev }
+        delete copy[peerId]
+        return copy
+      }
+      return { ...prev, [peerId]: next }
+    })
+    if (isUuid(me)) {
+      const res = await upsertConversationPref({ userId: me, peerId, pinned: next.pinned, muted: next.muted })
+      if (!res.ok) {
+        setConvPrefs(snapshot)
+        return res
+      }
+    }
+    return { ok: true, pref: { peerId, ...next } }
+  }, [])
+
   const currentUser = useMemo(
     () => state.users.find((u) => u.id === state.currentUserId) || null,
     [state.users, state.currentUserId]
@@ -803,6 +847,8 @@ export function StoreProvider({ children }) {
       peerReadAt,
       requests,
       blockedIds,
+      convPrefs,
+      setConversationPref,
       ingestCloudMessage,
       mergeInbox,
       replaceInbox,
@@ -1169,7 +1215,7 @@ export function StoreProvider({ children }) {
         return { ok: true }
       },
     }
-  }, [state, currentUser, authReady, authUser, profile, profileReady, profileSynced, inbox, unread, drafts, setDraft, activePeerId, offline, syncTick, peerReadAt, requests, blockedIds, ingestCloudMessage, mergeInbox, replaceInbox, removeThread, hiddenIds, openPeer, setCloudProfile, syncFriendToCloud, refreshFriendRequests, requestFriendFromProfile, respondToRequest, cancelRequest, setBlockedFor])
+  }, [state, currentUser, authReady, authUser, profile, profileReady, profileSynced, inbox, unread, drafts, setDraft, activePeerId, offline, syncTick, peerReadAt, requests, blockedIds, convPrefs, setConversationPref, ingestCloudMessage, mergeInbox, replaceInbox, removeThread, hiddenIds, openPeer, setCloudProfile, syncFriendToCloud, refreshFriendRequests, requestFriendFromProfile, respondToRequest, cancelRequest, setBlockedFor])
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>
 }

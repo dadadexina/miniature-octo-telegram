@@ -10,7 +10,7 @@ import { useStore } from '../store'
 import { formatTime } from '../utils'
 
 export default function Chats() {
-  const { conversations, avatarColor, currentUser, getUser, upsertUsers, inbox, mergeInbox, unreadOf, syncTick, hiddenIds, removeThread, drafts } = useStore()
+  const { conversations, avatarColor, currentUser, getUser, upsertUsers, inbox, mergeInbox, unreadOf, syncTick, hiddenIds, removeThread, drafts, convPrefs, setConversationPref } = useStore()
   const [swipedId, setSwipedId] = useState(null)
   const [hint, setHint] = useState('')
   const [needSql, setNeedSql] = useState(false)
@@ -106,12 +106,21 @@ export default function Chats() {
   }, [currentUser?.id, mergeInbox, syncTick])
 
   const list = useMemo(() => {
-    if (!cloudOk) return localList
-    return groupConversations(currentUser.id, visibleInbox).map(({ peerId, last }) => ({
-      friend: getUser(peerId) || { id: peerId, nickname: '用户', publicId: '' },
-      last,
-    }))
-  }, [cloudOk, localList, visibleInbox, currentUser?.id, getUser])
+    const base = cloudOk
+      ? groupConversations(currentUser.id, visibleInbox).map(({ peerId, last }) => ({
+          friend: getUser(peerId) || { id: peerId, nickname: '用户', publicId: '' },
+          last,
+        }))
+      : localList
+    return [...base].sort((a, b) => {
+      const pa = convPrefs[a.friend.id]?.pinned ? 1 : 0
+      const pb = convPrefs[b.friend.id]?.pinned ? 1 : 0
+      if (pa !== pb) return pb - pa
+      return (b.last?.time || 0) - (a.last?.time || 0)
+    })
+  }, [cloudOk, localList, visibleInbox, currentUser?.id, getUser, convPrefs])
+
+  const [actionPeer, setActionPeer] = useState(null)
 
   return (
     <div className="flex h-full flex-col">
@@ -143,17 +152,30 @@ export default function Chats() {
               rowId={friend.id}
               to={`/chat/${friend.id}`}
               swiped={swipedId === friend.id}
+              pinned={Boolean(convPrefs[friend.id]?.pinned)}
               onOpen={() => setSwipedId(friend.id)}
               onClose={() => setSwipedId(null)}
+              onLongPress={() => setActionPeer(friend)}
               onDelete={() => {
                 setSwipedId(null)
                 removeThread(friend.id)
               }}
             >
-              <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={48} badge={unreadOf(friend.id)} src={friend.avatarUrl || ''} />
+              <Avatar
+                name={friend.nickname}
+                color={avatarColor(friend.id)}
+                size={48}
+                badge={convPrefs[friend.id]?.muted ? 0 : unreadOf(friend.id)}
+                src={friend.avatarUrl || ''}
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between">
-                  <span className="truncate text-[16px] text-[#191919]">{friend.nickname}</span>
+                  <span className="truncate text-[16px] text-[#191919]">
+                    {friend.nickname}
+                    {convPrefs[friend.id]?.muted && unreadOf(friend.id) > 0 ? (
+                      <span data-testid="muted-dot" className="ml-1.5 inline-block h-1.5 w-1.5 rounded-none bg-eink-sub align-middle" />
+                    ) : null}
+                  </span>
                   <span className="ml-3 shrink-0 text-[12px] text-eink-faint">
                     {last ? formatTime(last.time) : ''}
                   </span>
@@ -175,6 +197,63 @@ export default function Chats() {
           ))
         )}
       </div>
+      {actionPeer ? (
+        <div className="fixed inset-0 z-50" data-testid="row-actions" onMouseDown={() => setActionPeer(null)}>
+          <div className="absolute inset-0 bg-black/25" />
+          <div
+            className="absolute inset-x-0 bottom-0 border-t border-eink-divider bg-eink-paper safe-bottom"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <p className="border-b border-eink-divider px-4 py-2.5 text-center text-[13px] text-eink-sub">
+              {actionPeer.nickname}
+            </p>
+            <button
+              type="button"
+              data-testid="action-pin"
+              className="block w-full border-b border-eink-divider px-4 py-3 text-center text-[15px] text-eink-ink active:bg-eink-pressed"
+              onClick={() => {
+                const next = !convPrefs[actionPeer.id]?.pinned
+                setActionPeer(null)
+                setConversationPref(actionPeer.id, { pinned: next })
+              }}
+            >
+              {convPrefs[actionPeer.id]?.pinned ? '取消置顶' : '置顶会话'}
+            </button>
+            <button
+              type="button"
+              data-testid="action-mute"
+              className="block w-full border-b border-eink-divider px-4 py-3 text-center text-[15px] text-eink-ink active:bg-eink-pressed"
+              onClick={() => {
+                const next = !convPrefs[actionPeer.id]?.muted
+                setActionPeer(null)
+                setConversationPref(actionPeer.id, { muted: next })
+              }}
+            >
+              {convPrefs[actionPeer.id]?.muted ? '取消免打扰' : '消息免打扰'}
+            </button>
+            <button
+              type="button"
+              data-testid="action-delete"
+              className="block w-full border-b border-eink-divider px-4 py-3 text-center text-[15px] text-[#8C2F22] active:bg-eink-pressed"
+              onClick={() => {
+                const id = actionPeer.id
+                setActionPeer(null)
+                removeThread(id)
+              }}
+            >
+              删除会话
+            </button>
+            <button
+              type="button"
+              data-testid="action-cancel"
+              className="block w-full px-4 py-3 text-center text-[15px] text-eink-sub active:bg-eink-pressed"
+              onClick={() => setActionPeer(null)}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

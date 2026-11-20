@@ -125,3 +125,80 @@ describe('SwipeRow 左滑删除', () => {
     expect(link.style.transform).toBe('translateX(-72px)')
   })
 })
+
+function setupLongPress({ pinned = false } = {}) {
+  const onLongPress = vi.fn()
+  render(
+    <MemoryRouter initialEntries={['/']}>
+      <LocationEcho />
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <SwipeRow rowId="peer1" to="/chat/peer1" swiped={false} onOpen={() => {}} onClose={() => {}} onDelete={() => {}} onLongPress={onLongPress} pinned={pinned}>
+              <span>张三</span>
+            </SwipeRow>
+          }
+        />
+        <Route path="/chat/peer1" element={<div>CHAT_DETAIL_PAGE</div>} />
+      </Routes>
+    </MemoryRouter>
+  )
+  return { onLongPress }
+}
+
+const touchAt = (x, y) => ({ touches: [{ clientX: x, clientY: y }] })
+
+describe('SwipeRow 长按与置顶', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('按住 500ms 触发长按', () => {
+    vi.useFakeTimers()
+    const { onLongPress } = setupLongPress()
+    fireEvent.touchStart(screen.getByText('张三'), touchAt(300, 100))
+    vi.advanceTimersByTime(500)
+    expect(onLongPress).toHaveBeenCalledTimes(1)
+  })
+
+  it('未满 500ms 松手不触发长按', () => {
+    vi.useFakeTimers()
+    const { onLongPress } = setupLongPress()
+    fireEvent.touchStart(screen.getByText('张三'), touchAt(300, 100))
+    vi.advanceTimersByTime(300)
+    fireEvent.touchEnd(screen.getByText('张三'))
+    vi.advanceTimersByTime(300)
+    expect(onLongPress).not.toHaveBeenCalled()
+  })
+
+  it('横向滑动取消长按计时', () => {
+    vi.useFakeTimers()
+    const { onLongPress } = setupLongPress()
+    fireEvent.touchStart(screen.getByText('张三'), touchAt(300, 100))
+    fireEvent.touchMove(screen.getByText('张三'), touchAt(280, 100))
+    vi.advanceTimersByTime(600)
+    expect(onLongPress).not.toHaveBeenCalled()
+  })
+
+  it('桌面端右键菜单立即触发长按', () => {
+    const { onLongPress } = setupLongPress()
+    fireEvent.contextMenu(screen.getByText('张三'))
+    expect(onLongPress).toHaveBeenCalledTimes(1)
+  })
+
+  it('长按触发后的点击不跳转', () => {
+    const { onLongPress } = setupLongPress()
+    fireEvent.contextMenu(screen.getByText('张三'))
+    expect(onLongPress).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByText('张三'))
+    expect(screen.getByTestId('loc').textContent).toBe('/')
+  })
+
+  it('置顶行渲染深色左侧条', () => {
+    setupLongPress({ pinned: true })
+    const link = screen.getByText('张三').closest('a')
+    expect(link.className).toContain('border-eink-ink')
+    expect(link.className).toContain('bg-[#E9E7DF]')
+  })
+})
