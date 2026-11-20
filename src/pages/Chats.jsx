@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Avatar from '../components/Avatar'
+import SwipeRow from '../components/SwipeRow'
 import CopySql from '../components/CopySql'
 import NavBar from '../components/NavBar'
 import { fetchInbox, groupConversations, isUuid } from '../lib/messages'
@@ -9,16 +10,36 @@ import { useStore } from '../store'
 import { formatTime } from '../utils'
 
 export default function Chats() {
-  const { conversations, avatarColor, currentUser, getUser, upsertUsers, inbox, mergeInbox, unreadOf, syncTick } = useStore()
+  const { conversations, avatarColor, currentUser, getUser, upsertUsers, inbox, mergeInbox, unreadOf, syncTick, hiddenIds, removeThread } = useStore()
+  const [swipedId, setSwipedId] = useState(null)
   const [hint, setHint] = useState('')
   const [needSql, setNeedSql] = useState(false)
   const [loading, setLoading] = useState(true)
   const [cloudOk, setCloudOk] = useState(false)
   const localList = conversations()
 
+  const visibleInbox = useMemo(() => {
+    if (!hiddenIds.size) return inbox
+    return inbox.filter((m) => !hiddenIds.has(m.id))
+  }, [inbox, hiddenIds])
+
+  useEffect(() => {
+    if (!swipedId) return undefined
+    const closeOnOutside = (e) => {
+      const row = e.target.closest?.('[data-swipe-row]')
+      if (!row || row.getAttribute('data-swipe-row') !== swipedId) setSwipedId(null)
+    }
+    document.addEventListener('touchstart', closeOnOutside, true)
+    document.addEventListener('mousedown', closeOnOutside, true)
+    return () => {
+      document.removeEventListener('touchstart', closeOnOutside, true)
+      document.removeEventListener('mousedown', closeOnOutside, true)
+    }
+  }, [swipedId])
+
   useEffect(() => {
     if (!currentUser?.id || !cloudOk) return undefined
-    const missing = groupConversations(currentUser.id, inbox)
+    const missing = groupConversations(currentUser.id, visibleInbox)
       .map((item) => item.peerId)
       .filter((id) => id && !getUser(id))
     if (!missing.length) return undefined
@@ -37,7 +58,7 @@ export default function Chats() {
     return () => {
       alive = false
     }
-  }, [inbox, cloudOk, currentUser?.id])
+  }, [visibleInbox, cloudOk, currentUser?.id])
 
   useEffect(() => {
     let alive = true
@@ -86,11 +107,11 @@ export default function Chats() {
 
   const list = useMemo(() => {
     if (!cloudOk) return localList
-    return groupConversations(currentUser.id, inbox).map(({ peerId, last }) => ({
+    return groupConversations(currentUser.id, visibleInbox).map(({ peerId, last }) => ({
       friend: getUser(peerId) || { id: peerId, nickname: '用户', publicId: '' },
       last,
     }))
-  }, [cloudOk, localList, inbox, currentUser?.id, getUser])
+  }, [cloudOk, localList, visibleInbox, currentUser?.id, getUser])
 
   return (
     <div className="flex h-full flex-col">
@@ -117,10 +138,17 @@ export default function Chats() {
           </div>
         ) : (
           list.map(({ friend, last }) => (
-            <Link
+            <SwipeRow
               key={friend.id}
+              rowId={friend.id}
               to={`/chat/${friend.id}`}
-              className="flex items-center gap-3 border-b border-eink-divider px-4 py-3 active:bg-[#E7E5DD]"
+              swiped={swipedId === friend.id}
+              onOpen={() => setSwipedId(friend.id)}
+              onClose={() => setSwipedId(null)}
+              onDelete={() => {
+                setSwipedId(null)
+                removeThread(friend.id)
+              }}
             >
               <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={48} badge={unreadOf(friend.id)} src={friend.avatarUrl || ''} />
               <div className="min-w-0 flex-1">
@@ -134,7 +162,7 @@ export default function Chats() {
                   {last ? `${last.fromId === currentUser.id ? '我: ' : ''}${last.text}` : '点击开始聊天'}
                 </p>
               </div>
-            </Link>
+            </SwipeRow>
           ))
         )}
       </div>

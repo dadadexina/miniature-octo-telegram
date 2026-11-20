@@ -9,7 +9,7 @@ import {
   fetchFriendRequests,
   sendFriendRequest,
 } from './lib/friendRequests'
-import { fetchInbox, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
+import { fetchHiddenIds, fetchInbox, hideMessage, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
 import { fetchProfilesByIds } from './lib/profiles'
 import { buildCursorMaps, fetchCursorsFor, upsertReadCursor } from './lib/readCursors'
 import { supabase } from './lib/supabase'
@@ -186,6 +186,7 @@ export function StoreProvider({ children }) {
   const [profileReady, setProfileReady] = useState(false)
   const [profileSynced, setProfileSynced] = useState(false)
   const [inbox, setInbox] = useState([])
+  const [hiddenIds, setHiddenIds] = useState(new Set())
   const [unread, setUnread] = useState({})
   const [readAt, setReadAt] = useState({})
   const [peerReadAt, setPeerReadAt] = useState({})
@@ -201,6 +202,7 @@ export function StoreProvider({ children }) {
   const readAtRef = useRef({})
   const peerReadAtRef = useRef({})
   const inboxIdsRef = useRef(new Set())
+  const hiddenIdsRef = useRef(new Set())
   const stateRef = useRef(state)
   const resyncRef = useRef(null)
   const refreshRequestsRef = useRef(null)
@@ -241,6 +243,7 @@ export function StoreProvider({ children }) {
     const msg = incoming?.raw ? incoming : mapMessage(incoming)
     const me = authUserRef.current?.id
     if (!msg?.id || !involvesUser(msg, me)) return
+    if (hiddenIdsRef.current.has(msg.id)) return
     if (inboxIdsRef.current.has(msg.id)) return
     inboxIdsRef.current.add(msg.id)
     setInbox((prev) => mergeMessages(prev, [msg]))
@@ -265,6 +268,26 @@ export function StoreProvider({ children }) {
     inboxIdsRef.current = new Set(next.map((msg) => msg.id))
     setInbox(next)
   }, [])
+
+  const removeThread = useCallback(
+    async (peerId) => {
+      const me = authUserRef.current?.id
+      if (!me || !peerId) return
+      console.log('准备删除与该用户的聊天', peerId)
+      const doomed = inbox.filter((m) => isPairMessage(m, me, peerId) && !hiddenIdsRef.current.has(m.id))
+      if (doomed.length) {
+        const ids = new Set(doomed.map((m) => m.id))
+        hiddenIdsRef.current = new Set([...hiddenIdsRef.current, ...ids])
+        setHiddenIds(hiddenIdsRef.current)
+        replaceInbox(inbox.filter((m) => !ids.has(m.id)))
+        if (isUuid(me)) await Promise.all(doomed.map((m) => hideMessage(m.id, me)))
+      }
+      readAtRef.current = { ...readAtRef.current, [peerId]: Date.now() }
+      setReadAt(readAtRef.current)
+      setUnread((prev) => ({ ...prev, [peerId]: 0 }))
+    },
+    [inbox, replaceInbox]
+  )
 
   const openPeer = useCallback((peerId) => {
     setActivePeerId(peerId || null)
@@ -379,10 +402,18 @@ export function StoreProvider({ children }) {
     if (!me || !isUuid(me)) return undefined
     let alive = true
     ;(async () => {
-      const [cursorsRes, blocksRes] = await Promise.all([fetchCursorsFor(me), fetchMyBlocks(me)])
+      const [cursorsRes, blocksRes, hiddenRes] = await Promise.all([
+        fetchCursorsFor(me),
+        fetchMyBlocks(me),
+        fetchHiddenIds(me),
+      ])
       if (!alive) return
       applyCursors(cursorsRes)
       if (blocksRes.ok) setBlockedIds(blocksRes.ids)
+      if (hiddenRes.ok) {
+        hiddenIdsRef.current = new Set(hiddenRes.ids)
+        setHiddenIds(hiddenIdsRef.current)
+      }
       await refreshFriendRequests()
     })()
     return () => {
@@ -393,8 +424,16 @@ export function StoreProvider({ children }) {
   const resyncCloud = useCallback(async () => {
     const me = authUserRef.current?.id
     if (!me || !isUuid(me)) return
-    const [inboxRes, cursorsRes] = await Promise.all([fetchInbox(me), fetchCursorsFor(me)])
+    const [inboxRes, cursorsRes, hiddenRes] = await Promise.all([
+      fetchInbox(me),
+      fetchCursorsFor(me),
+      fetchHiddenIds(me),
+    ])
     if (inboxRes.ok) mergeInbox(inboxRes.messages)
+    if (hiddenRes.ok) {
+      hiddenIdsRef.current = new Set(hiddenRes.ids)
+      setHiddenIds(hiddenIdsRef.current)
+    }
     applyCursors(cursorsRes)
     await refreshFriendRequests()
     setSyncTick((tick) => tick + 1)
@@ -408,6 +447,8 @@ export function StoreProvider({ children }) {
     if (!authUser?.id || !isUuid(authUser.id)) {
       inboxIdsRef.current = new Set()
       setInbox([])
+      hiddenIdsRef.current = new Set()
+      setHiddenIds(hiddenIdsRef.current)
       setUnread({})
       readAtRef.current = {}
       setReadAt({})
@@ -506,13 +547,13 @@ export function StoreProvider({ children }) {
     if (!me || !isUuid(me)) return
     setUnread(
       recomputeUnreadCounts({
-        messages: inbox,
+        messages: hiddenIds.size ? inbox.filter((m) => !hiddenIds.has(m.id)) : inbox,
         meId: me,
         readAtMap: readAtRef.current,
         activePeerId: activePeerRef.current,
       })
     )
-  }, [inbox, readAt, activePeerId, authUser?.id])
+  }, [inbox, hiddenIds, readAt, activePeerId, authUser?.id])
 
   useEffect(() => {
     let alive = true
@@ -525,6 +566,8 @@ export function StoreProvider({ children }) {
         setProfileSynced(false)
         inboxIdsRef.current = new Set()
         setInbox([])
+        hiddenIdsRef.current = new Set()
+        setHiddenIds(hiddenIdsRef.current)
         setUnread({})
         readAtRef.current = {}
         setReadAt({})
@@ -557,6 +600,8 @@ export function StoreProvider({ children }) {
         setProfileSynced(false)
         inboxIdsRef.current = new Set()
         setInbox([])
+        hiddenIdsRef.current = new Set()
+        setHiddenIds(hiddenIdsRef.current)
         setUnread({})
         readAtRef.current = {}
         setReadAt({})
@@ -742,6 +787,8 @@ export function StoreProvider({ children }) {
       ingestCloudMessage,
       mergeInbox,
       replaceInbox,
+      removeThread,
+      hiddenIds,
       openPeer,
       refreshFriendRequests,
       requestFriendFromProfile,
@@ -1103,7 +1150,7 @@ export function StoreProvider({ children }) {
         return { ok: true }
       },
     }
-  }, [state, currentUser, authReady, authUser, profile, profileReady, profileSynced, inbox, unread, activePeerId, offline, syncTick, peerReadAt, requests, blockedIds, ingestCloudMessage, mergeInbox, replaceInbox, openPeer, setCloudProfile, syncFriendToCloud, refreshFriendRequests, requestFriendFromProfile, respondToRequest, cancelRequest, setBlockedFor])
+  }, [state, currentUser, authReady, authUser, profile, profileReady, profileSynced, inbox, unread, activePeerId, offline, syncTick, peerReadAt, requests, blockedIds, ingestCloudMessage, mergeInbox, replaceInbox, removeThread, hiddenIds, openPeer, setCloudProfile, syncFriendToCloud, refreshFriendRequests, requestFriendFromProfile, respondToRequest, cancelRequest, setBlockedFor])
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>
 }
