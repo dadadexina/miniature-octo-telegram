@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { authErrorText } from '../lib/authErrors'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../store'
@@ -54,6 +54,7 @@ export default function Login() {
     const { data, error: authError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
+      options: { emailRedirectTo: `${window.location.origin}/login` },
     })
     setLoading(false)
     if (authError) {
@@ -65,7 +66,7 @@ export default function Login() {
       return
     }
     if (data.user && !data.session) {
-      setInfo('账号已创建，但需要邮箱验证。可到 Supabase Authentication → Providers 关闭 Confirm email 后再登录。')
+      setInfo('验证邮件已发送到你的邮箱，完成验证后返回本页登录。')
       return
     }
     if (data.user) {
@@ -73,6 +74,25 @@ export default function Login() {
       return
     }
     setError('注册未完成，请稍后重试')
+  }
+
+  const onForgot = async () => {
+    setError('')
+    setInfo('')
+    if (!email.trim()) {
+      setError('请先输入你的注册邮箱')
+      return
+    }
+    setLoading(true)
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    setLoading(false)
+    if (resetError) {
+      setError(authErrorText(resetError))
+      return
+    }
+    setInfo('重置邮件已发送，请在邮箱中点击链接设置新密码')
   }
 
   return (
@@ -133,6 +153,21 @@ export default function Login() {
         >
           注册
         </button>
+        <button
+          type="button"
+          className="mt-4 self-center text-[13px] text-eink-sub underline disabled:opacity-60"
+          disabled={loading}
+          onClick={onForgot}
+        >
+          忘记密码？
+        </button>
+
+        <p className="mt-8 text-center text-[12px] leading-5 text-eink-sub">
+          注册即代表同意
+          <Link to="/legal/terms" className="mx-1 text-eink-ink underline">用户协议</Link>
+          与
+          <Link to="/legal/privacy" className="mx-1 text-eink-ink underline">隐私政策</Link>
+        </p>
       </form>
     </div>
   )

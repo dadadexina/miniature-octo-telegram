@@ -15,6 +15,9 @@
 ## 功能清单
 
 - 注册 / 登录 / 登出（Supabase Auth，邮箱账号）
+- 忘记密码：邮件链接重置（/reset-password 页）
+- 账号注销：云端级联删除资料 / 好友 / 消息（依赖 delete-account Edge Function）
+- 用户协议与隐私政策页（/legal/terms、/legal/privacy）
 - 单聊消息：发送、历史加载（每页 50 条、支持向前分页）、Realtime 实时推送
 - 会话列表：按最新消息时间排序、未读红点（登录态持久化到 localStorage）
 - 好友系统：云端存储（friends 表）、登录后自动同步与合并本地好友、公开 ID 搜索添加
@@ -55,13 +58,16 @@ npm run test
    - `profiles` 表（含 RLS：登录用户可读，本人可写）
    - `messages` 表（含 RLS：仅收发双方可读写）、realtime publication、复合索引、外键与 4000 字符长度约束
    - `friends` 表（含 RLS：仅本人可读写自己的好友边、外键与索引）
-3. 在 Authentication → Providers → Email 中开启 auto confirm（免邮箱验证）。
-4. 将项目 URL 与 anon key 填入 `.env.local`（参考 `.env.example`）：
+3. 邮箱验证（二选一）：
+   - **正式交付推荐**：在 Authentication → Providers → Email 中开启 Confirm email（应用已支持「等待验证」提示与验证邮件回跳）；同时在 Authentication → URL Configuration 的 Redirect URLs 中加入 `<站点域名>/login` 与 `<站点域名>/reset-password`
+   - 仅演示调试：开启 auto confirm（免验证直接登录）
+4. 部署账号注销 Edge Function：Dashboard → Edge Functions → Create a new function，名称 `delete-account`，内容粘贴仓库中 `supabase/functions/delete-account/index.ts`，Deploy（无需额外配置，运行时自动注入 `SUPABASE_URL` 与 `SUPABASE_SERVICE_ROLE_KEY`）
+5. 将项目 URL 与 anon key 填入 `.env.local`（参考 `.env.example`）：
    ```
    VITE_SUPABASE_URL=https://your-project-ref.supabase.co
    VITE_SUPABASE_ANON_KEY=your-anon-key
    ```
-5. 部署生产环境时，在托管平台的构建环境变量中配置同名的 `VITE_SUPABASE_*` 变量，并在 Supabase Auth → URL Configuration 中将生产域名加入 Site URL 与 Redirect URLs。
+6. 部署生产环境时，在托管平台的构建环境变量中配置同名的 `VITE_SUPABASE_*` 变量，并在 Supabase Auth → URL Configuration 中将生产域名加入 Site URL 与 Redirect URLs。
 
 云端 SQL 未执行时，应用仍可用演示账号在本地模式下运行。
 
@@ -93,8 +99,10 @@ src/
     friends.js           好友表 SQL、fetchFriends、upsertFriend
     authErrors.js        认证错误码翻译
   components/            Avatar、NavBar、TabBar、AuthBar、CallOverlay、CopySql、ErrorBoundary
-  pages/                 各路由页面
+  pages/                 各路由页面（含 ResetPassword 重置密码、Legal 协议/隐私）
   hooks/                 通用 hooks
+supabase/functions/
+  delete-account/        账号注销 Edge Function（Deno，需按上文部署）
 .github/workflows/ci.yml CI：push/PR 自动执行 lint + test + build
 ```
 

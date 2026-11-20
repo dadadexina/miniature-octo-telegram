@@ -5,12 +5,12 @@
 
 ## P0 — 不修不能交付
 
-- [ ] **1. 忘记密码找回**：Login 页增加入口，实现 `supabase.auth.resetPasswordForEmail` + 重置密码页；需在 Supabase Auth → URL Configuration 配置 Redirect URL
-- [ ] **2. 注册邮箱验证**：Supabase 后台开启 email confirmation（Auth → Providers → Email），处理 `signUp` 返回无 session 的「等待验证」态
-- [ ] **3. 账号注销**：设置页提供注销入口；因 anon key 无法删 `auth.users`，需新增 Edge Function（或 SQL 定时清理申请）执行级联删除
-- [ ] **4. 隐私政策 / 用户协议**：新增静态页面（数据收集范围：邮箱、昵称、聊天内容；存储方：Supabase）
-- [ ] **5. LICENSE**：仓库根目录添加开源许可证（建议 MIT，或与需求方确认）
-- [ ] **6. 正式托管**：选定静态托管（Vercel / Netlify / OSS+CDN），注入构建期变量 `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`，Supabase Auth URL Configuration 添加生产域名，预览域名加入允许列表或下线
+- [x] **1. 忘记密码找回**：已实现 Login 入口 + `resetPasswordForEmail` + `/reset-password` 重置页 ｜ **待用户**：Supabase Auth → URL Configuration → Redirect URLs 添加 `<域名>/reset-password` 与 `<域名>/login`
+- [x] **2. 注册邮箱验证**：代码已支持（signUp 带 `emailRedirectTo`、无 session 时显示等待验证提示）｜ **待用户**：Supabase 后台开启 Confirm email（开启前注册的账号不受影响）
+- [x] **3. 账号注销**：Edge Function 源码（`supabase/functions/delete-account/index.ts`）+ 「我的」页注销入口级联清理已实现 ｜ **待用户**：Dashboard → Edge Functions 部署 `delete-account`
+- [x] **4. 隐私政策 / 用户协议**：`/legal/terms`、`/legal/privacy` 页面，登录页与「我的」页已挂链接
+- [x] **5. LICENSE**：MIT（仓库根目录，如需换协议告知）
+- [ ] **6. 正式托管**：选定静态托管（Vercel / Netlify / OSS+CDN），注入构建期变量 `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`，Supabase Auth URL Configuration 添加生产域名 ｜ **待用户**：确定托管平台
 
 ## P1 — 交付后一周内
 
@@ -26,7 +26,7 @@
 - [ ] **13. PWA 离线**：`vite-plugin-pwa` 补 service worker，离线显示本地缓存会话
 - [ ] **14. CD 自动部署**：CI 通过后自动发布到托管平台（GitHub Actions deploy job）
 - [ ] **15. 消息撤回/删除**：产品决策后再做；需 messages update/delete 策略 + 前端状态机
-- [ ] **16. 清理死资源**：删除 `public/vite.svg` 及 manifest/index.html 中的引用残留
+- [x] **16. 清理死资源**：`public/vite.svg` 已移除
 
 ## 验收口径
 

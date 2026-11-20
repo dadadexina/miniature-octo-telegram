@@ -11,6 +11,8 @@ const Discover = lazy(() => import('./pages/Discover'))
 const ChatDetail = lazy(() => import('./pages/ChatDetail'))
 const EditProfile = lazy(() => import('./pages/EditProfile'))
 const Profile = lazy(() => import('./pages/Profile'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const Legal = lazy(() => import('./pages/Legal'))
 
 function Guard({ children }) {
   const { currentUser, authReady } = useStore()
@@ -68,6 +70,9 @@ export default function App() {
               </Guard>
             }
           />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/legal/terms" element={<Legal kind="terms" />} />
+          <Route path="/legal/privacy" element={<Legal kind="privacy" />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
