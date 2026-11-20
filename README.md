@@ -126,7 +126,9 @@ supabase/functions/
 
 ## 部署
 
-`npm run build` 产物为纯静态站点，可部署到任意静态托管（Vercel、Netlify、Nginx 等），无需服务端运行时。构建时需注入 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 环境变量；未注入时站点仍能以本地演示模式运行。已配置 PWA manifest 与矢量图标，支持添加到主屏幕。
+`npm run build` 产物为纯静态站点，可部署到任意静态托管（Vercel、Netlify、Nginx 等），无需服务端运行时。已配置 PWA manifest 与矢量图标，支持添加到主屏幕。
+
+**Vercel（推荐，零配置）**：仓库已含 `vercel.json`（Vite 框架 + SPA rewrites）与 `.env.production`（构建期公开配置：`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`，anon key 设计上随客户端产物公开，安全性由 RLS 保障），导入仓库即可直接部署。其他平台构建时注入同名环境变量，或直接复用 `.env.production`；未注入时站点仍能以本地演示模式运行。部署完成后，需在 Supabase Auth → URL Configuration 将生产域名加入 Site URL 与 Redirect URLs。
 
 ## 数据备份
 

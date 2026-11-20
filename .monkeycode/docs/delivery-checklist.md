@@ -11,7 +11,7 @@
 - [x] **4. 隐私政策 / 用户协议**：`/legal/terms`、`/legal/privacy` 页面，登录页与「我的」页已挂链接
 - [x] **5. LICENSE**：MIT（仓库根目录，如需换协议告知）
 - [x] **2b. 邮件服务 SMTP 配置**：已启用自有 SMTP（QQ `smtp.qq.com:465`，Username=Sender=`471092554@qq.com`）。原授权码格式错误被 QQ 判 535，直连 AUTH 验证正确的 16 位授权码返回 235 后，经 Management API PATCH `smtp_pass`，注册探针端到端发信恢复（status 200 / PASS）
-- [ ] **6. 正式托管**：选定静态托管（Vercel / Netlify / OSS+CDN），注入构建期变量 `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`，Supabase Auth URL Configuration 添加生产域名 ｜ **待用户**：确定托管平台
+- [ ] **6. 正式托管**：用户已选定 Vercel。仓库侧准备完毕（`9b23e03` 后追加）：`vercel.json`（Vite + SPA rewrites）、`.env.production`（VITE_SUPABASE_* 构建期公开配置，anon key 本就随客户端产物下发，RLS 保障安全）、`package.json engines: node 22.x`（匹配 CI 与 Vite 7 要求） ｜ **待用户**：vercel.com GitHub OAuth 导入仓库一键部署（零配置），部署后告知域名，agent 更新 Supabase Auth URL Configuration
 
 ## P1 — 交付后一周内
 
@@ -25,8 +25,9 @@
 
 - [x] **12. 头像上传**：`avatars` Storage bucket（公开只读、每人仅写自己 `<uid>/` 目录，策略并入 CLOUD_SQL）+ `profiles.avatar_url` 列；EditProfile 选图 → canvas 降采样 256px JPEG → 上传 → 写入云端；本地演示模式降级存 dataURL；全站 Avatar 组件支持图片（灰度滤镜、加载失败回退首字块）；云端缺列时提示重跑 SQL ｜ 云端已生效（2026-11-20 用户重跑 CLOUD_SQL，REST 探针确认 `avatars` bucket 存在且公开可读、`client_errors` 表存在）
 - [x] **13. PWA 离线**：`vite-plugin-pwa`（generateSW，registerType autoUpdate）预缓存 16 项静态资源，离线可打开应用壳并读取 localStorage 缓存会话；保留现有 `public/manifest.webmanifest`（`manifest: false` 不重复生成），`navigateFallback: '/index.html'` 兜底 SPA 路由；构建产物 `sw.js` + `registerSW.js` 自动注入
-- [ ] **14. CD 自动部署**：CI 通过后自动发布到托管平台 ｜ **待用户**：确定托管平台后实施（推荐 Vercel git 集成，与 #6 一并解决，无需额外 deploy job）
-- [ ] **15. 消息撤回/删除**：产品决策后再做；需 messages update/delete 策略 + 前端状态机
+- [ ] **14. CD 自动部署**：用户已选定 Vercel——git 集成导入后每次 push 自动构建发布，无需额外 deploy job；随 #6 用户导入即闭环
+- [ ] **15. 消息撤回/删除**：用户决策暂缓（2026-11-20），产品需要时再启动（需 messages update/delete 策略 + 前端状态机）
+- [~] **17. qa.* 遗留测试账号清理**：用户决策不处理（2026-11-20）——惰性账号无危害，保留现状
 - [x] **16. 清理死资源**：`public/vite.svg` 已移除
 
 ## 验收口径
