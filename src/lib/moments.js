@@ -31,13 +31,14 @@ export function mapComment(row) {
   }
 }
 
-export async function fetchMoments({ before, limit = MOMENT_PAGE_SIZE } = {}) {
+export async function fetchMoments({ before, limit = MOMENT_PAGE_SIZE, authorId = '' } = {}) {
   try {
     let query = supabase
       .from('moments')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(limit)
+    if (authorId) query = query.eq('author_id', authorId)
     if (before) query = query.lt('created_at', before)
     const { data, error } = await query
     if (error) {
