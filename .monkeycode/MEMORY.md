@@ -132,3 +132,14 @@ This file records user instructions, preferences, and teachings for reference in
   - `window.history.length` 统计整个标签页历史(含站外条目),外链/webview 直开二级页时 `navigate(-1)` 会退出应用
   - 正确判定:优先 `window.history.state?.idx > 0`(react-router v7 BrowserRouter),MemoryRouter 场景回退 `location.key !== 'default'`;无应用内历史则兜底跳一级页(replace)
   - 二级页(聊天详情/资料页)在 Layout 之外,TabBar 随路由切换隐藏/恢复属预期;Playwright `waitForURL` 在 lazy 页面 chunk 加载完成前就会 resolve,断言 DOM 前需再等待 1s+,否则会把旧页面元素(如 TabBar)误计为新页面的
+
+[CI e2e 与手动冒烟互斥:同一对测试账号并发竞争]
+- Date: 2026-11-20
+- Context: Discovered by Agent while M1 生产冒烟失败排查(T1a typing/T2a 消息送达双失败)
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 每次 push main 会触发 GitHub Actions CI(lint+单测+11 e2e,约 1~2 分钟),e2e 直连生产 Supabase 且使用与 /tmp/opencode/e2e-env.sh 完全相同的 A/B 账号
+  - CI e2e 含拉黑/解禁/删除消息流;与其并发运行手动冒烟会出现消息被 RLS(block)拒收、realtime 缺失等假失败
+  - 手动冒烟前先 `GET /repos/<owner>/<repo>/actions/runs?per_page=3` 确认无 in_progress,并等 CI 完成后再等 1~2 分钟(Supabase 连接池恢复)
+  - 排查消息不通口诀:先 psql 查消息是否落库(区分「未插入」与「未推送」)→ 查 blocks/friends 边 → `select can_message(a,b)` 直接验 RLS 判定 → 页面上找本地模式提示文案(「本地演示用户」「暂无读写权限」「读取消息失败」= fetchThread 失败静默降级本地)
+  - 消息表收发列为 sender_id/receiver_id(无 recipient_id);水合期 friends upsert 偶发 403 噪音与消息链路无关
