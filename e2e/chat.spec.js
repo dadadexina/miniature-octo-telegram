@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+test.describe.configure({ timeout: 120_000 })
+
 const A = {
   email: process.env.E2E_USER_A_EMAIL,
   password: process.env.E2E_USER_A_PASSWORD,
@@ -19,7 +21,7 @@ async function login(page, user) {
   await page.getByPlaceholder('name@example.com').fill(user.email)
   await page.getByPlaceholder('至少 6 位').fill(user.password)
   await page.getByRole('button', { name: '登录', exact: true }).click()
-  await expect(page).toHaveURL(/\/chats$/, { timeout: 20000 })
+  await expect(page).toHaveURL(/\/chats$/, { timeout: 30000 })
 }
 
 async function ensureFriend(page, username) {
@@ -27,23 +29,27 @@ async function ensureFriend(page, username) {
   const search = page.getByPlaceholder('输入用户名 ID 搜索')
   await search.fill(username)
   await search.press('Enter')
-  const addBtn = page.getByRole('button', { name: '添加', exact: true }).first()
-  if (await addBtn.isVisible({ timeout: 8000 }).catch(() => false)) {
+  const results = page.getByTestId('search-results')
+  await expect(results).toBeVisible({ timeout: 20000 })
+  const addBtn = results.getByTestId('search-result-add').first()
+  if (await addBtn.isVisible().catch(() => false)) {
     await addBtn.click()
-    await expect(page.getByText('已添加')).toBeVisible({ timeout: 8000 })
+    await expect(results.getByText('已添加')).toBeVisible({ timeout: 10000 })
   }
 }
 
 async function openChatByUsername(page, username) {
   await page.goto('/contacts')
-  await page.locator('a').filter({ hasText: `ID: ${username}` }).first().click()
-  await expect(page.getByPlaceholder('发送消息')).toBeVisible({ timeout: 15000 })
+  const link = page.getByTestId('friend-entry').filter({ hasText: `ID: ${username}` }).first()
+  await expect(link).toBeVisible({ timeout: 15000 })
+  await link.click()
+  await expect(page.getByPlaceholder('发送消息')).toBeVisible({ timeout: 20000 })
 }
 
 async function sendMessage(page, text) {
   await page.getByPlaceholder('发送消息').fill(text)
   await page.getByRole('button', { name: '发送', exact: true }).click()
-  await expect(page.getByText(text).last()).toBeVisible({ timeout: 15000 })
+  await expect(page.getByText(text).last()).toBeVisible({ timeout: 20000 })
 }
 
 test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
@@ -74,8 +80,8 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
     const pageB = await ctxB.newPage()
     await login(pageB, B)
     await pageB.goto('/chats')
-    await expect(pageB.getByTestId('unread-badge').first()).toBeVisible({ timeout: 20000 })
-    await expect(pageB.getByText(`来自A ${stamp}`).first()).toBeVisible({ timeout: 20000 })
+    await expect(pageB.getByTestId('unread-badge').first()).toBeVisible({ timeout: 30000 })
+    await expect(pageB.getByText(`来自A ${stamp}`).first()).toBeVisible({ timeout: 30000 })
     await ctxB.close()
   })
 })

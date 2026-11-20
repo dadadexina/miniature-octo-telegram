@@ -120,7 +120,7 @@ export default function Contacts() {
         </form>
 
         {results ? (
-          <section className="mt-2 border-y border-eink-divider bg-eink-bar">
+          <section data-testid="search-results" className="mt-2 border-y border-eink-divider bg-eink-bar">
             <div className="px-4 py-2 text-[13px] text-eink-sub">搜索结果</div>
             {results.length === 0 ? (
               <p className="px-4 py-6 text-[14px] text-eink-sub">未找到 ID 为 {queried} 的用户</p>
@@ -138,6 +138,7 @@ export default function Contacts() {
                     ) : (
                       <button
                         type="button"
+                        data-testid="search-result-add"
                         className="rounded-none bg-eink-ink px-3 py-1.5 text-[13px] text-eink-paper active:bg-eink-pressed"
                         onClick={() => onAdd(user)}
                       >
@@ -247,6 +248,7 @@ export default function Contacts() {
                 <Link
                   key={friend.id}
                   to={`/chat/${friend.id}`}
+                  data-testid="friend-entry"
                   className="flex items-center gap-3 border-t border-eink-divider px-4 py-3 active:bg-[#E7E5DD]"
                 >
                   <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={40} src={friend.avatarUrl || ''} />

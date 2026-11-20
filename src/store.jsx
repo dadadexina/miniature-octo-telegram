@@ -119,6 +119,25 @@ function saveUnread(meId, value) {
   }
 }
 
+const READAT_KEY = 'wechat-chat-app-v3:readat:'
+
+function loadReadAt(meId) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(READAT_KEY + meId) || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveReadAt(meId, value) {
+  try {
+    localStorage.setItem(READAT_KEY + meId, JSON.stringify(value || {}))
+  } catch {
+    /* 存储不可用时仅保留内存态 */
+  }
+}
+
 function pairKey(a, b) {
   return [a, b].sort().join('__')
 }
@@ -157,9 +176,11 @@ export function StoreProvider({ children }) {
   const [profileSynced, setProfileSynced] = useState(false)
   const [inbox, setInbox] = useState([])
   const [unread, setUnread] = useState({})
+  const [readAt, setReadAt] = useState({})
   const [activePeerId, setActivePeerId] = useState(null)
   const authUserRef = useRef(null)
   const activePeerRef = useRef(null)
+  const readAtRef = useRef({})
   const inboxIdsRef = useRef(new Set())
   const stateRef = useRef(state)
 
@@ -175,6 +196,15 @@ export function StoreProvider({ children }) {
     if (!authUser?.id) return
     saveUnread(authUser.id, unread)
   }, [authUser?.id, unread])
+
+  useEffect(() => {
+    if (!authUser?.id) return
+    saveReadAt(authUser.id, readAt)
+  }, [authUser?.id, readAt])
+
+  useEffect(() => {
+    readAtRef.current = readAt
+  }, [readAt])
 
   useEffect(() => {
     authUserRef.current = authUser
@@ -203,6 +233,23 @@ export function StoreProvider({ children }) {
       if (msg?.id) inboxIdsRef.current.add(msg.id)
     })
     setInbox((prev) => mergeMessages(prev, incoming))
+    const me = authUserRef.current?.id
+    if (!me || !isUuid(me)) return
+    const counts = {}
+    incoming.forEach((msg) => {
+      if (!msg || msg.toId !== me) return
+      const peer = msg.fromId
+      if (!peer || peer === me || peer === activePeerRef.current) return
+      if ((msg.time || 0) > (readAtRef.current[peer] || 0)) counts[peer] = (counts[peer] || 0) + 1
+    })
+    if (!Object.keys(counts).length) return
+    setUnread((prev) => {
+      const next = { ...prev }
+      Object.keys(counts).forEach((peer) => {
+        next[peer] = Math.max(prev[peer] || 0, counts[peer])
+      })
+      return next
+    })
   }, [])
 
   const replaceInbox = useCallback((list) => {
@@ -214,6 +261,9 @@ export function StoreProvider({ children }) {
   const openPeer = useCallback((peerId) => {
     setActivePeerId(peerId || null)
     if (peerId) {
+      const ts = Date.now()
+      readAtRef.current = { ...readAtRef.current, [peerId]: ts }
+      setReadAt((prev) => ({ ...prev, [peerId]: ts }))
       setUnread((prev) => {
         if (!prev[peerId]) return prev
         const next = { ...prev }
@@ -289,6 +339,8 @@ export function StoreProvider({ children }) {
       inboxIdsRef.current = new Set()
       setInbox([])
       setUnread({})
+      readAtRef.current = {}
+      setReadAt({})
       setActivePeerId(null)
       return undefined
     }
@@ -319,9 +371,13 @@ export function StoreProvider({ children }) {
         inboxIdsRef.current = new Set()
         setInbox([])
         setUnread({})
+        readAtRef.current = {}
+        setReadAt({})
       } else {
         setAuthUser(data.session.user)
         setUnread(loadUnread(data.session.user.id))
+        readAtRef.current = loadReadAt(data.session.user.id)
+        setReadAt(readAtRef.current)
         setState((prev) => applyAuthUser(prev, data.session.user))
       }
       setAuthReady(true)
@@ -343,6 +399,8 @@ export function StoreProvider({ children }) {
         inboxIdsRef.current = new Set()
         setInbox([])
         setUnread({})
+        readAtRef.current = {}
+        setReadAt({})
         setActivePeerId(null)
         setState((prev) => ({ ...prev, currentUserId: null }))
         return
@@ -350,6 +408,8 @@ export function StoreProvider({ children }) {
       if (event === 'INITIAL_SESSION') return
       setAuthUser(session.user)
       setUnread(loadUnread(session.user.id))
+      readAtRef.current = loadReadAt(session.user.id)
+      setReadAt(readAtRef.current)
       setState((prev) => applyAuthUser(prev, session.user))
     })
     return () => {

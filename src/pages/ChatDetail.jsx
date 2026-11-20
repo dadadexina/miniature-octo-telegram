@@ -47,12 +47,12 @@ export default function ChatDetail() {
   const keepScrollRef = useRef(false)
   const keyboardInset = useKeyboardInset()
   const peer = getUser(peerId) || (peerId ? { id: peerId, nickname: '用户', publicId: '' } : null)
+  const cloudReady = Boolean(currentUser) && isUuid(currentUser.id) && isUuid(peerId)
   const localMessages = currentUser && peer ? messagesWith(peerId) : []
   const cloudMessages = currentUser
     ? inbox.filter((msg) => isPairMessage(msg, currentUser.id, peerId))
     : []
-  const messages = useCloud ? cloudMessages : localMessages
-  const cloudReady = currentUser && isUuid(currentUser.id) && isUuid(peerId)
+  const messages = useCloud || (cloudReady && loading) ? cloudMessages : localMessages
 
   const scrollToBottom = (smooth = true) => {
     const node = listRef.current
@@ -128,7 +128,7 @@ export default function ChatDetail() {
     e.preventDefault()
     const content = text.trim()
     if (!content || sending) return
-    if (useCloud && cloudReady) {
+    if (cloudReady) {
       setSending(true)
       const result = await insertMessage({
         senderId: currentUser.id,
