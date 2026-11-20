@@ -8,6 +8,7 @@ import LongTextBody from '../components/LongTextBody'
 import SignedImage from '../components/SignedImage'
 import CallOverlay from '../components/CallOverlay'
 import useKeyboardInset from '../hooks/useKeyboardInset'
+import useVoiceCall from '../hooks/useVoiceCall'
 import {
   canRecall,
   fetchHiddenIds,
@@ -20,6 +21,7 @@ import {
   searchThreadMessages,
 } from '../lib/messages'
 import { downscaleImageFile } from '../lib/imagePipeline'
+import { CALL_STATUS } from '../lib/call'
 import { MESSAGE_MEDIA_LIMITS, uploadMessageBlob } from '../lib/messageMedia'
 import { supabase } from '../lib/supabase'
 import { friendlyInsertError } from '../lib/syncHelpers'
@@ -34,10 +36,6 @@ const REPLIES = [
   '嗯嗯。',
   '这个主意不错。',
 ]
-
-const CALL_IDLE = 'idle'
-const CALL_CALLING = 'calling'
-const CALL_CONNECTED = 'connected'
 
 export default function ChatDetail() {
   const { peerId } = useParams()
@@ -56,8 +54,6 @@ export default function ChatDetail() {
   const [hasMore, setHasMore] = useState(false)
   const [oldestAt, setOldestAt] = useState(null)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [callState, setCallState] = useState(CALL_IDLE)
-  const [callKind, setCallKind] = useState('audio')
   const [pendingList, setPendingList] = useState([])
   const [hiddenIds, setHiddenIds] = useState(() => new Set())
   const [activeMsgId, setActiveMsgId] = useState(null)
@@ -82,6 +78,11 @@ export default function ChatDetail() {
   const replyTimer = useRef(null)
   const keepScrollRef = useRef(false)
   const keyboardInset = useKeyboardInset()
+  const call = useVoiceCall({
+    myId: currentUser?.id,
+    remoteId: peerId,
+    enabled: Boolean(currentUser) && isUuid(currentUser.id) && isUuid(peerId),
+  })
   const peer = getUser(peerId) || (peerId ? { id: peerId, nickname: '用户', publicId: '' } : null)
   const cloudReady = Boolean(currentUser) && isUuid(currentUser.id) && isUuid(peerId)
   const localMessages = currentUser && peer ? messagesWith(peerId) : []
@@ -442,15 +443,6 @@ export default function ChatDetail() {
     navigate('/login', { replace: true })
   }
 
-  const onCall = (kind) => {
-    setCallKind(kind)
-    setCallState(CALL_CALLING)
-  }
-
-  const onHangup = () => {
-    setCallState(CALL_IDLE)
-  }
-
   const loadOlder = async () => {
     if (!cloudReady || loadingMore || !hasMore) return
     setLoadingMore(true)
@@ -492,12 +484,17 @@ export default function ChatDetail() {
             >
               <SearchIcon />
             </button>
-            <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => onCall('audio')} aria-label="语音通话（演示）" title="演示功能">
-              <PhoneIcon />
-            </button>
-            <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => onCall('video')} aria-label="视频通话（演示）" title="演示功能">
-              <VideoIcon />
-            </button>
+            {cloudReady ? (
+              <button
+                type="button"
+                data-testid="call-audio-btn"
+                className="flex h-9 w-9 items-center justify-center"
+                onClick={call.start}
+                aria-label="语音通话"
+              >
+                <PhoneIcon />
+              </button>
+            ) : null}
             {cloudReady ? (
               <button
                 type="button"
@@ -871,13 +868,19 @@ export default function ChatDetail() {
         </div>
       ) : null}
 
-      {callState !== CALL_IDLE ? (
+      {call.status !== CALL_STATUS.IDLE ? (
         <CallOverlay
-          kind={callKind}
-          state={callState === CALL_CONNECTED ? CALL_CONNECTED : CALL_CALLING}
+          state={call.status}
+          seconds={call.seconds}
+          muted={call.muted}
+          error={call.error}
           peer={peer}
           color={avatarColor(peer.id)}
-          onHangup={onHangup}
+          remoteStream={call.remoteStream}
+          onAnswer={call.answer}
+          onDecline={call.decline}
+          onHangup={call.hangup}
+          onToggleMute={call.toggleMute}
         />
       ) : null}
     </div>
@@ -959,14 +962,6 @@ function PhoneIcon() {
   )
 }
 
-function VideoIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-      <rect x="3.5" y="6.5" width="12" height="11" rx="2" stroke="#191919" strokeWidth="1.6" />
-      <path d="M15.5 10.5 20 8v8l-4.5-2.5v-3Z" stroke="#191919" strokeWidth="1.6" strokeLinejoin="round" />
-    </svg>
-  )
-}
 
 function Back({ onClick }) {
   return (
