@@ -9,19 +9,29 @@ This file records user instructions, preferences, and teachings for reference in
 - Context: Discovered by Agent while completing delivery task list
 - Category: Build & Compilation
 - Instructions:
-  - 构建：`npm run build`（vite 7，产物 dist/，纯静态）
-  - 测试：`npm test`（vitest run，25 个用例：lib 纯函数 + 组件测试）
-  - 代码检查：`npm run lint`（eslint 10 flat config，标准：0 errors，允许 warning）
+  - 构建：`npm run build`（vite 7，产物 dist/，纯静态，vite-plugin-pwa 同时生成 sw.js）
+  - 测试：`npm run test`（vitest run，60 个用例：lib 纯函数 + 组件测试；`test:e2e` 跑 Playwright，公开页 6 例无需凭据，chat 流由 E2E_USER_A/B_* 环境变量门控）
+  - 代码检查：`npm run lint`（eslint 10 flat config，标准：0 errors，警告基线 10 条存量）
   - 提交前必须三项全部通过
 
-[npm 安装依赖必须加 --legacy-peer-deps]
+[npm 安装依赖必须 legacy-peer-deps（已固化为 .npmrc）]
 - Date: 2026-11-20
-- Context: Discovered by Agent while upgrading vitest（npm arborist 在 vitest 4 的 browser peer 循环链上崩溃：Cannot read properties of null (reading 'edgesOut')）
+- Context: Discovered by Agent while upgrading vitest 与接入 vite-plugin-pwa（arborist 在 vitest 4 browser peer 循环链崩溃；CI `npm ci` 严格 peer 校验因 workbox-build 的 ajv@8 与 eslint 的 ajv@6 嵌套冲突而失败）
 - Category: Environment Configuration
 - Instructions:
-  - 本项目安装/升级依赖使用 `npm install ... --legacy-peer-deps`，否则 arborist 可能崩溃
+  - 仓库根 `.npmrc` 已设 `legacy-peer-deps=true`，**不可删除**：本地 npm install 与 CI `npm ci` 都依赖它，否则 arborist 崩溃或 ERESOLVE 拒装
+  - 新增依赖后若 CI `npm ci` 报 lockfile 不同步，先 `npm install --package-lock-only` 重生 lock 再 `npm ci --dry-run` 验证
   - @testing-library/react 需手动补装 peer 依赖 @testing-library/dom
-  - 依赖版本组合（勿随意升降）：vite ^7 + vitest ^4 + eslint ^10 + eslint-plugin-react-hooks ^7 + react-router-dom ^7 + react 18
+  - 依赖版本组合（勿随意升降）：vite ^7 + vitest ^4 + eslint ^10 + eslint-plugin-react-hooks ^7 + react-router-dom ^7 + react 18 + vite-plugin-pwa 2（manifest:false，沿用 public/manifest.webmanifest）
+
+[GitHub Actions 工作流与 API 查询]
+- Date: 2026-11-20
+- Context: Discovered by Agent while delivering CI/e2e/backup workflows
+- Category: Operations & Deployment
+- Instructions:
+  - 工作流：`ci.yml`（verify：npm ci+lint+test+build；e2e：Playwright 公开页用例）、`backup.yml`（每日 03:15 UTC pg_dump→AES-256 加密→artifact 30 天；需 Secrets：SUPABASE_DB_URL、BACKUP_ENCRYPTION_KEY）
+  - 匿名 curl api.github.com 会触发 rate limit；查 runs 需认证：`TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git -c credential.helper= -c credential.helper=/root/gitcred-netrc.sh credential fill | sed -n 's/^password=//p')` 后带 `Authorization: Bearer`（勿回显 token）
+  - 推送命令固定：`git -c credential.helper= -c credential.helper=/root/gitcred-netrc.sh push origin main`
 
 [Supabase 配置来自 .env.local，代码零硬编码]
 - Date: 2026-11-20
