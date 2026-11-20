@@ -66,6 +66,19 @@ This file records user instructions, preferences, and teachings for reference in
   - 排查此类问题用 `auth/v1/signup`（autoconfirm）拿到 access_token 后带 `Authorization: Bearer` 直接 REST 实测，比猜测表结构可靠
   - 调试遗留测试账号前缀 `qa.`（qa.smoke/qa.probe/qa.fix/qa.norm，密码 qaTest123456），邮箱含历史 Date.now() 时间戳无法复原，只能由用户在 Supabase 后台 Authentication → Users 删除
 
+[Supabase Management API 自助运维(经用户一次性 token)]
+- Date: 2026-11-20
+- Context: Discovered by Agent while closing #6 Auth URL 切换与 #11 备份闭环(用户提供 sbp_ token,事后应提醒吊销)
+- Category: Operations & Deployment
+- Instructions:
+  - 认证配置:`GET/PATCH https://api.supabase.com/v1/projects/<ref>/config/auth`(site_url、uri_allow_list、smtp 均可 API 改,无需用户进后台)
+  - DB 密码轮换:`PATCH /v1/projects/<ref>/database/password` body `{"password":"..."}`;轮换后连接串即 `postgresql://postgres.<ref>:<新密码>@<pooler_host>:5432/postgres`
+  - **连接串勿猜主机**:`GET /v1/projects/<ref>/config/database/pooler` 返回精确 host/user/port(本项目是 aws-1-ap-northeast-1.pooler.supabase.com,Session 模式 5432 可 IPv4 直连;aws-0 上报 ENOTFOUND tenant;`db.<ref>.supabase.co` 仅 AAAA/IPv6,沙箱与 GH runner 均不可达)
+  - 免 SQL Editor 执行 SQL:`POST /v1/projects/<ref>/database/query`(以后 CLOUD_SQL 变更可自助执行,不再依赖用户重跑)
+  - OpenAPI 全量端点藏在 `https://api.supabase.com/api/v1/json` 返回的 Scalar HTML 里,`'"openapi"'` 处 `json.JSONDecoder().raw_decode` 可抽出
+  - pg_dump 客户端必须 ≥ 服务端(现为 PG 17.12):apt 默认源太旧,用 PGDG(`apt.postgresql.org`,键 ACCC4CF8);本地全库 dump 实测 438KB/28s 成功
+  - `gh secret set` 用 `--body "$VAR"`;曾疑似 `--body -`(stdin)写入污染导致 pg_dump 把值当本地库名连 unix socket 失败,workflow 里已加 `url_len+scheme` 自检防再犯
+
 [生产托管:Vercel 部署与域名探测经验]
 - Date: 2026-11-20
 - Context: Discovered by Agent while delivering #6 正式托管（Vercel git 集成）

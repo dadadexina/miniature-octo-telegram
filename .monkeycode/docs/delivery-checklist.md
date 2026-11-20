@@ -11,7 +11,7 @@
 - [x] **4. 隐私政策 / 用户协议**：`/legal/terms`、`/legal/privacy` 页面，登录页与「我的」页已挂链接
 - [x] **5. LICENSE**：MIT（仓库根目录，如需换协议告知）
 - [x] **2b. 邮件服务 SMTP 配置**：已启用自有 SMTP（QQ `smtp.qq.com:465`，Username=Sender=`471092554@qq.com`）。原授权码格式错误被 QQ 判 535，直连 AUTH 验证正确的 16 位授权码返回 235 后，经 Management API PATCH `smtp_pass`，注册探针端到端发信恢复（status 200 / PASS）
-- [x] **6. 正式托管**：Vercel git 集成部署成功（2026-11-20），生产域名 `https://miniature-octo-telegram-puce.vercel.app`（200：标题/manifest/sw.js/SPA 兜底全正常，`.env.production` + `vercel.json` 零配置生效）。注：Vercel 项目子域带随机颜色后缀（-puce），无后缀裸域名属他人占位（探测返回 451 勿误判） ｜ **待用户**：Supabase Auth → URL Configuration 将 Site URL 改为生产域名并追加 `https://miniature-octo-telegram-puce.vercel.app/**` 到 Redirect URLs（保留预览域名双跑）
+- [x] **6. 正式托管**：Vercel git 集成部署成功（2026-11-20），生产域名 `https://miniature-octo-telegram-puce.vercel.app`（200：标题/manifest/sw.js/SPA 兜底全正常，`.env.production` + `vercel.json` 零配置生效）。注：Vercel 项目子域带随机颜色后缀（-puce），无后缀裸域名属他人占位（探测返回 451 勿误判）｜ Supabase Auth URL Configuration 已切生产域名（Management API 核实：site_url + login/reset-password 重定向 4 条齐备，预览域名保留双跑）
 
 ## P1 — 交付后一周内
 
@@ -19,7 +19,7 @@
 - [x] **8. e2e 测试**：Playwright 已接入（`npm run test:e2e`，webServer 自动拉起 preview:4173），全量 8 例全过：`e2e/public.spec.js` 公开页 6 例 + `e2e/chat.spec.js` 云端双人聊天流 2 例（登录/搜索加好友/发消息/未读角标+预览往返）。云端账号由 `e2e/provision-accounts.mjs`（mail.tm 一次性邮箱）自动开通，GitHub Secrets 9 项已配齐（VITE_SUPABASE_* + E2E_USER_A/B_*）。期间修复两个真实缺陷：ChatDetail 竞态（云端对快速发送误入本地路径，`cloudReady` 强制云端发送）与会话未读角标缺失（新增 `readAt` 本地已读水位，`mergeInbox` 重算未读）
 - [x] **9. 错误监控**：轻量自建方案已上线（`41a179b`）：`client_errors` 表（insert-only RLS）+ `src/lib/telemetry.js` 限流上报（12 条/60s、同键 5s 冷却）+ window.onerror / unhandledrejection / ErrorBoundary 捕获，`__APP_VERSION__` 随版本注入 ｜ **可选升级**：接入 Sentry 需用户提供 DSN
 - [x] **10. 分包优化**：`manualChunks` 拆出 react / supabase vendor；构建产物主 chunk gzip 14.53KB、react 59.28KB、supabase 59.72KB，均低于 80KB 目标
-- [x] **11. 数据备份**：`.github/workflows/backup.yml` 每日 03:15 UTC pg_dump → AES-256 加密 → 密文 artifact 保留 30 天（公开仓库 artifact 可被任意下载，故强制加密）。README 含恢复步骤。`BACKUP_ENCRYPTION_KEY` 已由 agent 生成并写入 Secrets（本地副本 `.monkeycode/secrets/backup-key.txt`，请用户转存后删除该文件）；缺 `SUPABASE_DB_URL` 时优雅跳过路径已实测验证（workflow_dispatch run success，guard 短路输出配置指引） ｜ **待用户**：提供 `SUPABASE_DB_URL`（Dashboard → Project Settings → Database → Connection string，URI 版）后执行 `gh secret set SUPABASE_DB_URL` 即闭环
+- [x] **11. 数据备份**：全链路闭环（2026-11-20 实测绿）。`BACKUP_ENCRYPTION_KEY` + `SUPABASE_DB_URL` 均已配齐；DB 密码经 Management API `PATCH /database/password` 轮换（旧密码作废），连接串走 Supavisor **Session 模式 `aws-1-ap-northeast-1.pooler.supabase.com:5432`**（`db.*.supabase.co` 仅 IPv6，runner/沙箱不可达；aws-0 无此租户）。workflow_dispatch 实测：pg_dump 17.12 全库 438KB（含 auth/storage/public 全部核心表）→ AES-256 加密 → artifact `db-backup-*`（30 天）。runner 自带 client 16 低于服务端会拒 dump，已改 PGDG 源装最新客户端 ｜ 密钥副本：`当前工作区/.monkeycode/secrets/backup-key.txt` 与 `db-url.txt`（均 gitignore），**待用户转存后提醒删除令牌与副本风险自控**
 
 ## P2 — 可选
 
