@@ -26,11 +26,21 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Install postgres client
+      # Supabase 服务端为 PG17+，runner 自带客户端(16)会因版本过旧拒绝 dump；
+      # 从 PGDG 源装最新客户端（新版 pg_dump 向下兼容旧服务端）
+      - name: Install postgres client (PGDG latest)
         if: steps.guard.outputs.skip != 'true'
         run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
+          pg_dump --version
 
       - name: pg_dump (custom format, compressed)
         if: steps.guard.outputs.skip != 'true'
