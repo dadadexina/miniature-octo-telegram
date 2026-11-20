@@ -10,7 +10,7 @@ import { useStore } from '../store'
 import { formatTime } from '../utils'
 
 export default function Chats() {
-  const { conversations, avatarColor, currentUser, getUser, upsertUsers, inbox, mergeInbox, unreadOf, syncTick, hiddenIds, removeThread } = useStore()
+  const { conversations, avatarColor, currentUser, getUser, upsertUsers, inbox, mergeInbox, unreadOf, syncTick, hiddenIds, removeThread, drafts } = useStore()
   const [swipedId, setSwipedId] = useState(null)
   const [hint, setHint] = useState('')
   const [needSql, setNeedSql] = useState(false)
@@ -116,7 +116,7 @@ export default function Chats() {
   return (
     <div className="flex h-full flex-col">
       <NavBar
-        title="微信"
+        title="消息"
         right={
           <Link to="/me" className="text-[13px] font-medium text-eink-ink underline underline-offset-2">
             我
@@ -159,7 +159,16 @@ export default function Chats() {
                   </span>
                 </div>
                 <p className="mt-1 truncate text-[13px] text-eink-sub">
-                  {last ? `${last.fromId === currentUser.id ? '我: ' : ''}${last.text}` : '点击开始聊天'}
+                  {drafts[friend.id] ? (
+                    <>
+                      <span data-testid="draft-prefix" className="mr-1 font-medium text-eink-ink">[草稿]</span>
+                      <span className="text-eink-ink">{drafts[friend.id]}</span>
+                    </>
+                  ) : last ? (
+                    `${last.fromId === currentUser.id ? '我: ' : ''}${last.text}`
+                  ) : (
+                    '点击开始聊天'
+                  )}
                 </p>
               </div>
             </SwipeRow>

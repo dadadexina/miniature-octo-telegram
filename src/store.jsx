@@ -9,6 +9,7 @@ import {
   fetchFriendRequests,
   sendFriendRequest,
 } from './lib/friendRequests'
+import { applyDraft, loadDrafts, saveDrafts } from './lib/drafts'
 import { fetchHiddenIds, fetchInbox, hideMessage, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
 import { fetchProfilesByIds } from './lib/profiles'
 import { buildCursorMaps, fetchCursorsFor, upsertReadCursor } from './lib/readCursors'
@@ -189,6 +190,7 @@ export function StoreProvider({ children }) {
   const [hiddenIds, setHiddenIds] = useState(new Set())
   const [unread, setUnread] = useState({})
   const [readAt, setReadAt] = useState({})
+  const [drafts, setDrafts] = useState({})
   const [peerReadAt, setPeerReadAt] = useState({})
   const [requests, setRequests] = useState({ incoming: [], outgoing: [] })
   const [blockedIds, setBlockedIds] = useState([])
@@ -226,6 +228,16 @@ export function StoreProvider({ children }) {
     if (!authUser?.id) return
     saveReadAt(authUser.id, readAt)
   }, [authUser?.id, readAt])
+
+  useEffect(() => {
+    if (!authUser?.id) return
+    saveDrafts(authUser.id, drafts)
+  }, [authUser?.id, drafts])
+
+  const setDraft = useCallback((peerId, text) => {
+    if (!peerId) return
+    setDrafts((prev) => applyDraft(prev, peerId, text))
+  }, [])
 
   useEffect(() => {
     readAtRef.current = readAt
@@ -450,6 +462,7 @@ export function StoreProvider({ children }) {
       hiddenIdsRef.current = new Set()
       setHiddenIds(hiddenIdsRef.current)
       setUnread({})
+      setDrafts({})
       readAtRef.current = {}
       setReadAt({})
       peerReadAtRef.current = {}
@@ -569,6 +582,7 @@ export function StoreProvider({ children }) {
         hiddenIdsRef.current = new Set()
         setHiddenIds(hiddenIdsRef.current)
         setUnread({})
+        setDrafts({})
         readAtRef.current = {}
         setReadAt({})
         peerReadAtRef.current = {}
@@ -578,6 +592,7 @@ export function StoreProvider({ children }) {
       } else {
         setAuthUser(data.session.user)
         setUnread(loadUnread(data.session.user.id))
+        setDrafts(loadDrafts(data.session.user.id))
         readAtRef.current = loadReadAt(data.session.user.id)
         setReadAt(readAtRef.current)
         setState((prev) => applyAuthUser(prev, data.session.user))
@@ -603,6 +618,7 @@ export function StoreProvider({ children }) {
         hiddenIdsRef.current = new Set()
         setHiddenIds(hiddenIdsRef.current)
         setUnread({})
+        setDrafts({})
         readAtRef.current = {}
         setReadAt({})
         peerReadAtRef.current = {}
@@ -616,6 +632,7 @@ export function StoreProvider({ children }) {
       if (event === 'INITIAL_SESSION') return
       setAuthUser(session.user)
       setUnread(loadUnread(session.user.id))
+      setDrafts(loadDrafts(session.user.id))
       readAtRef.current = loadReadAt(session.user.id)
       setReadAt(readAtRef.current)
       setState((prev) => applyAuthUser(prev, session.user))
@@ -778,6 +795,8 @@ export function StoreProvider({ children }) {
       profileSynced,
       inbox,
       unread,
+      drafts,
+      setDraft,
       activePeerId,
       offline,
       syncTick,
@@ -1150,7 +1169,7 @@ export function StoreProvider({ children }) {
         return { ok: true }
       },
     }
-  }, [state, currentUser, authReady, authUser, profile, profileReady, profileSynced, inbox, unread, activePeerId, offline, syncTick, peerReadAt, requests, blockedIds, ingestCloudMessage, mergeInbox, replaceInbox, removeThread, hiddenIds, openPeer, setCloudProfile, syncFriendToCloud, refreshFriendRequests, requestFriendFromProfile, respondToRequest, cancelRequest, setBlockedFor])
+  }, [state, currentUser, authReady, authUser, profile, profileReady, profileSynced, inbox, unread, drafts, setDraft, activePeerId, offline, syncTick, peerReadAt, requests, blockedIds, ingestCloudMessage, mergeInbox, replaceInbox, removeThread, hiddenIds, openPeer, setCloudProfile, syncFriendToCloud, refreshFriendRequests, requestFriendFromProfile, respondToRequest, cancelRequest, setBlockedFor])
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>
 }

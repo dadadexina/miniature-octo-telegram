@@ -39,10 +39,11 @@ export default function ChatDetail() {
   const navigate = useNavigate()
   const {
     currentUser, getUser, messagesWith, sendMessage, receiveMessage, avatarColor, logout, profile,
-    inbox, mergeInbox, openPeer, readReceiptOf, isBlocked, setBlockedFor, syncTick,
+    inbox, mergeInbox, openPeer, readReceiptOf, isBlocked, setBlockedFor, syncTick, drafts, setDraft,
   } = useStore()
   const meName = profile?.nickname || currentUser?.nickname
-  const [text, setText] = useState('')
+  const text = drafts?.[peerId] || ''
+  const setText = (v) => setDraft(peerId, v)
   const [loading, setLoading] = useState(true)
   const [hint, setHint] = useState('')
   const [needSql, setNeedSql] = useState(false)
