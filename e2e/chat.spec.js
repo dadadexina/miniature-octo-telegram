@@ -57,6 +57,8 @@ async function openChatByUsername(page, username) {
   const link = page.getByTestId('friend-entry').filter({ hasText: `ID: ${username}` }).first()
   await expect(link).toBeVisible({ timeout: 20000 })
   await link.click()
+  await expect(page.getByTestId('send-message-btn')).toBeVisible({ timeout: 20000 })
+  await page.getByTestId('send-message-btn').click()
   await expect(page.getByPlaceholder('发送消息')).toBeVisible({ timeout: 20000 })
 }
 

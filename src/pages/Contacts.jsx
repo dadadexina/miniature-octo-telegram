@@ -355,7 +355,7 @@ export default function Contacts() {
               ) : (
                 <Link
                   key={friend.id}
-                  to={`/chat/${friend.id}`}
+                  to={`/friend/${friend.id}`}
                   data-testid="friend-entry"
                   className="flex items-center gap-3 border-t border-eink-divider px-4 py-3 active:bg-[#E7E5DD]"
                 >

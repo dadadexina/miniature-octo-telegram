@@ -10,6 +10,8 @@ const Contacts = lazy(() => import('./pages/Contacts'))
 const Discover = lazy(() => import('./pages/Discover'))
 const ChatDetail = lazy(() => import('./pages/ChatDetail'))
 const EditProfile = lazy(() => import('./pages/EditProfile'))
+const FriendProfile = lazy(() => import('./pages/FriendProfile'))
+const FriendMoments = lazy(() => import('./pages/FriendMoments'))
 const Profile = lazy(() => import('./pages/Profile'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const Legal = lazy(() => import('./pages/Legal'))
@@ -59,6 +61,22 @@ export default function App() {
             element={
               <Guard>
                 <ChatDetail />
+              </Guard>
+            }
+          />
+          <Route
+            path="/friend/:userId"
+            element={
+              <Guard>
+                <FriendProfile />
+              </Guard>
+            }
+          />
+          <Route
+            path="/friend/:userId/moments"
+            element={
+              <Guard>
+                <FriendMoments />
               </Guard>
             }
           />
