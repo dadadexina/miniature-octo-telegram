@@ -420,7 +420,7 @@ export default function ChatDetail() {
                   <div className="flex max-w-[78%] flex-col items-end">
                     <div className="relative mr-1 max-w-full opacity-70">
                       <span className="bubble-tail bubble-tail-mine" />
-                      <div className="break-words rounded-none bg-eink-ink px-2.5 py-[7px] text-[16px] leading-[22px] text-eink-paper">
+                      <div className="break-words whitespace-pre-wrap rounded-none bg-eink-ink px-2.5 py-[7px] text-[16px] leading-[22px] text-eink-paper">
                         {item.text}
                       </div>
                     </div>
@@ -487,10 +487,10 @@ export default function ChatDetail() {
 
 function Bubble({ mine, children }) {
   return (
-    <div className={`relative max-w-[72%] ${mine ? 'mr-1' : 'ml-1'}`}>
+    <div className={`relative max-w-full ${mine ? 'mr-1' : 'ml-1'}`}>
       <span className={`bubble-tail ${mine ? 'bubble-tail-mine' : 'bubble-tail-peer'}`} />
       <div
-        className={`break-words rounded-none px-2.5 py-[7px] text-[16px] leading-[22px] ${
+        className={`break-words whitespace-pre-wrap rounded-none px-2.5 py-[7px] text-[16px] leading-[22px] ${
           mine ? 'bg-eink-ink text-eink-paper' : 'border border-eink-line/25 bg-eink-bar text-eink-text'
         }`}
       >
