@@ -23,7 +23,7 @@
 
 ## P2 — 可选
 
-- [ ] **12. 头像上传**：启用 Supabase Storage bucket（policy 限制每人自己的目录），EditProfile 增加上传
+- [x] **12. 头像上传**：`avatars` Storage bucket（公开只读、每人仅写自己 `<uid>/` 目录，策略并入 CLOUD_SQL）+ `profiles.avatar_url` 列；EditProfile 选图 → canvas 降采样 256px JPEG → 上传 → 写入云端；本地演示模式降级存 dataURL；全站 Avatar 组件支持图片（灰度滤镜、加载失败回退首字块）；云端缺列时提示重跑 SQL ｜ **待用户**：重新执行 CLOUD_SQL 生效
 - [x] **13. PWA 离线**：`vite-plugin-pwa`（generateSW，registerType autoUpdate）预缓存 16 项静态资源，离线可打开应用壳并读取 localStorage 缓存会话；保留现有 `public/manifest.webmanifest`（`manifest: false` 不重复生成），`navigateFallback: '/index.html'` 兜底 SPA 路由；构建产物 `sw.js` + `registerSW.js` 自动注入
 - [ ] **14. CD 自动部署**：CI 通过后自动发布到托管平台（GitHub Actions deploy job）
 - [ ] **15. 消息撤回/删除**：产品决策后再做；需 messages update/delete 策略 + 前端状态机

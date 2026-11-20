@@ -30,6 +30,7 @@ export default function Chats() {
           id: p.id,
           nickname: p.nickname,
           publicId: p.username,
+          avatarUrl: p.avatarUrl || '',
         }))
       )
     })
@@ -67,6 +68,7 @@ export default function Chats() {
               id: p.id,
               nickname: p.nickname,
               publicId: p.username,
+              avatarUrl: p.avatarUrl || '',
             }))
           )
         }
@@ -120,7 +122,7 @@ export default function Chats() {
               to={`/chat/${friend.id}`}
               className="flex items-center gap-3 border-b border-eink-divider px-4 py-3 active:bg-[#E7E5DD]"
             >
-              <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={48} badge={unreadOf(friend.id)} />
+              <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={48} badge={unreadOf(friend.id)} src={friend.avatarUrl || ''} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between">
                   <span className="truncate text-[16px] text-[#191919]">{friend.nickname}</span>

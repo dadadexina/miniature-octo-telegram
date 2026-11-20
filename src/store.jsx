@@ -265,6 +265,7 @@ export function StoreProvider({ children }) {
               ...users[idx],
               nickname: prof.nickname || users[idx].nickname,
               publicId: prof.username || users[idx].publicId,
+              avatarUrl: prof.avatarUrl || users[idx].avatarUrl || '',
             }
           }
         })
@@ -421,6 +422,7 @@ export function StoreProvider({ children }) {
                   ...u,
                   nickname: next.nickname || u.nickname,
                   publicId: next.username || u.publicId,
+                  avatarUrl: next.avatarUrl || u.avatarUrl || '',
                 }
               : u
           ),
@@ -436,6 +438,7 @@ export function StoreProvider({ children }) {
                   ...u,
                   nickname: next.nickname || u.nickname,
                   publicId: next.username || u.publicId,
+                  avatarUrl: next.avatarUrl || u.avatarUrl || '',
                 }
               : u
           ),
@@ -456,6 +459,7 @@ export function StoreProvider({ children }) {
               id: incoming.id,
               nickname: incoming.nickname || '用户',
               publicId: incoming.publicId || incoming.username || '',
+              avatarUrl: incoming.avatarUrl || incoming.avatar_url || '',
               email: incoming.email || '',
               phone: incoming.phone || '',
               createdAt: incoming.createdAt || now(),
@@ -465,6 +469,7 @@ export function StoreProvider({ children }) {
                 ...users[idx],
                 nickname: next.nickname || users[idx].nickname,
                 publicId: next.publicId || users[idx].publicId,
+                avatarUrl: next.avatarUrl || users[idx].avatarUrl || '',
                 email: next.email || users[idx].email,
               }
             } else {
@@ -580,6 +585,7 @@ export function StoreProvider({ children }) {
           id: profile.id,
           publicId: profile.username || '',
           nickname: profile.nickname || '用户',
+          avatarUrl: profile.avatarUrl || '',
           email: '',
           phone: '',
           createdAt: now(),
@@ -589,7 +595,7 @@ export function StoreProvider({ children }) {
           const users = exist
             ? prev.users.map((u) =>
                 u.id === profile.id
-                  ? { ...u, nickname: user.nickname, publicId: user.publicId || u.publicId }
+                  ? { ...u, nickname: user.nickname, publicId: user.publicId || u.publicId, avatarUrl: user.avatarUrl || u.avatarUrl || '' }
                   : u
               )
             : [...prev.users, user]

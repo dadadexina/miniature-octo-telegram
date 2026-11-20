@@ -256,7 +256,7 @@ export default function ChatDetail() {
                     </div>
                   ) : null}
                   <div className={`mb-3 flex items-start gap-2 ${mine ? 'flex-row-reverse' : ''}`}>
-                    <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} />
+                    <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />
                     <Bubble mine={mine}>{msg.text}</Bubble>
                   </div>
                 </div>

@@ -26,7 +26,53 @@ export function mapProfile(row) {
     id: row.id,
     nickname: pick(row, NICKNAME_KEYS),
     username: pick(row, USERNAME_KEYS),
+    avatarUrl: row.avatar_url || row.avatarUrl || '',
     raw: row,
+  }
+}
+
+export function avatarStoragePath(publicUrl) {
+  const marker = '/object/public/avatars/'
+  const idx = String(publicUrl || '').indexOf(marker)
+  if (idx < 0) return null
+  return decodeURIComponent(String(publicUrl).slice(idx + marker.length)) || null
+}
+
+export async function updateProfileAvatar(userId, avatarUrl) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ avatar_url: avatarUrl })
+    .eq('id', userId)
+    .select('*')
+    .maybeSingle()
+  if (!error) return { ok: true, profile: mapProfile(data) }
+  if (isMissingColumn(error, 'avatar_url')) {
+    return { ok: false, error: '云端缺少 avatar_url 列，请重新执行云初始化 SQL', permission: false }
+  }
+  return { ok: false, error: error.message || '保存头像失败', permission: isPermissionError(error) }
+}
+
+export async function uploadAvatarFile(userId, blob, contentType = 'image/jpeg') {
+  const path = `${userId}/avatar-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`
+  try {
+    const { error } = await supabase.storage
+      .from('avatars')
+      .upload(path, blob, { contentType, upsert: true })
+    if (error) return { ok: false, error: error.message, path: null, url: '' }
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+    return { ok: true, path, url: data?.publicUrl || '' }
+  } catch (err) {
+    return { ok: false, error: err?.message || '上传头像失败', path: null, url: '' }
+  }
+}
+
+export async function removeAvatarFile(path) {
+  if (!path) return { ok: false }
+  try {
+    await supabase.storage.from('avatars').remove([path])
+    return { ok: true }
+  } catch {
+    return { ok: false }
   }
 }
 

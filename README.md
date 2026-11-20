@@ -21,7 +21,7 @@
 - 单聊消息：发送、历史加载（每页 50 条、支持向前分页）、Realtime 实时推送
 - 会话列表：按最新消息时间排序、未读红点（登录态持久化到 localStorage）
 - 好友系统：云端存储（friends 表）、登录后自动同步与合并本地好友、公开 ID 搜索添加
-- 个人资料：头像（灰阶色板）、昵称编辑（云端 + 本地降级）
+- 个人资料：头像（本地图片上传，自动降采样 256px、灰度显示；未上传时回退灰阶色板首字块）、昵称编辑（云端 + 本地降级）
 - 朋友圈、通讯录等静态展示页
 - 通话为纯 UI 模拟：点击语音/视频通话后展示全屏通话界面与计时，不涉及任何真实音视频采集或 WebRTC 连接
 - 未执行云端 SQL 时自动降级为本地演示模式（演示账号仍可完整体验）
@@ -59,6 +59,8 @@ npm run test
    - `profiles` 表（含 RLS：登录用户可读，本人可写）
    - `messages` 表（含 RLS：仅收发双方可读写）、realtime publication、复合索引、外键与 4000 字符长度约束
    - `friends` 表（含 RLS：仅本人可读写自己的好友边、外键与索引）
+   - `client_errors` 表（前端错误监控上报，仅登录用户可写入、不可读改删）
+   - `profiles.avatar_url` 列与 `avatars` Storage bucket（公开只读，每人仅能写自己 `<uid>/` 目录）
 3. 邮箱验证（二选一）：
    - **正式交付推荐**：在 Authentication → Providers → Email 中开启 Confirm email（应用已支持「等待验证」提示与验证邮件回跳）；同时在 Authentication → URL Configuration 的 Redirect URLs 中加入 `<站点域名>/login` 与 `<站点域名>/reset-password`
    - 仅演示调试：开启 auto confirm（免验证直接登录）

@@ -58,7 +58,7 @@ export default function Profile() {
       <div className="mt-3 border-y border-eink-divider bg-eink-bar">
         <div className="flex items-center justify-between px-4 py-4">
           <span className="text-[16px]">头像</span>
-          <Avatar name={nickname} color={avatarColor(currentUser.id)} size={64} />
+          <Avatar name={nickname} color={avatarColor(currentUser.id)} size={64} src={profile?.avatarUrl || currentUser.avatarUrl || ''} />
         </div>
         <div className="flex items-center justify-between border-t border-eink-divider px-4 py-4">
           <span className="text-[16px]">昵称</span>

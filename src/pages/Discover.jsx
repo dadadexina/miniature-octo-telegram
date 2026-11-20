@@ -107,7 +107,7 @@ export default function Discover() {
           <div className="absolute -bottom-5 right-3 flex items-end gap-2.5">
             <span className="mb-2 text-[16px] font-medium text-white drop-shadow">{meName}</span>
             <Link to="/me" className="rounded-none ring-2 ring-white/80">
-              <Avatar name={meName} color={avatarColor(currentUser.id)} size={70} />
+              <Avatar name={meName} color={avatarColor(currentUser.id)} size={70} src={currentUser.avatarUrl || ''} />
             </Link>
           </div>
         </div>
@@ -123,7 +123,7 @@ export default function Discover() {
             const authorName = author.id === currentUser.id ? meName : author.nickname
             return (
               <article key={moment.id} className="flex gap-3 border-b border-eink-divider px-3 py-3.5">
-                <Avatar name={authorName} color={avatarColor(author.id)} size={42} />
+                <Avatar name={authorName} color={avatarColor(author.id)} size={42} src={author.avatarUrl || ''} />
                 <div className="min-w-0 flex-1 pr-2">
                   <div className="text-[15px] font-medium text-eink-ink">{authorName}</div>
                   {moment.text ? (

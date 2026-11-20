@@ -17,7 +17,7 @@ export default function CallOverlay({ kind = 'audio', state = 'calling', peer, c
     <div className="fixed inset-0 z-[60] flex flex-col bg-eink-ink/95 text-eink-paper">
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8">
         <div className="ring-1 ring-eink-paper/40">
-          <Avatar name={peer?.nickname || '用户'} color={color || '#4A4A4A'} size={88} />
+          <Avatar name={peer?.nickname || '用户'} color={color || '#4A4A4A'} size={88} src={peer?.avatarUrl || ''} />
         </div>
         <div className="text-[20px] font-medium">{peer?.nickname || '用户'}</div>
         <div className="text-[14px] text-eink-paper/70">{texts[state] || texts.calling}</div>

@@ -128,7 +128,7 @@ export default function Contacts() {
               results.map((user) => (
                 <div key={user.id} className="border-t border-eink-divider px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <Avatar name={user.nickname} color={avatarColor(user.id)} size={48} />
+                    <Avatar name={user.nickname} color={avatarColor(user.id)} size={48} src={user.avatarUrl || ''} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[16px]">{user.nickname}</div>
                       <div className="mt-0.5 truncate text-[12px] text-eink-sub">ID: {user.username}</div>
@@ -153,7 +153,7 @@ export default function Contacts() {
 
         <section className="mt-2 border-y border-eink-divider bg-eink-bar">
           <Link to="/me" className="flex items-center gap-3 px-4 py-3.5 active:bg-[#E7E5DD]">
-            <Avatar name={meName} color={avatarColor(currentUser.id)} size={52} />
+            <Avatar name={meName} color={avatarColor(currentUser.id)} size={52} src={currentUser.avatarUrl || ''} />
             <div className="min-w-0">
               <div className="truncate text-[17px]">{meName}</div>
               <div className="mt-0.5 text-[13px] text-eink-sub">我的 ID：{meId}</div>
@@ -166,7 +166,7 @@ export default function Contacts() {
             <div className="px-4 py-2 text-[13px] text-eink-sub">推荐好友</div>
             {suggested.map((user) => (
               <div key={user.id} className="flex items-center gap-3 border-t border-eink-divider px-4 py-3">
-                <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} />
+                <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[16px]">{user.nickname}</div>
                   <div className="truncate text-[12px] text-eink-sub">ID: {user.publicId}</div>
@@ -206,7 +206,7 @@ export default function Contacts() {
               editing ? (
                 <div key={friend.id} className="border-t border-eink-divider">
                   <div className="flex items-center gap-3 px-4 py-3">
-                    <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={40} />
+                    <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={40} src={friend.avatarUrl || ''} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[16px]">{friend.nickname}</div>
                       <div className="truncate text-[12px] text-eink-sub">
@@ -249,7 +249,7 @@ export default function Contacts() {
                   to={`/chat/${friend.id}`}
                   className="flex items-center gap-3 border-t border-eink-divider px-4 py-3 active:bg-[#E7E5DD]"
                 >
-                  <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={40} />
+                  <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={40} src={friend.avatarUrl || ''} />
                   <div className="min-w-0">
                     <div className="truncate text-[16px]">{friend.nickname}</div>
                     <div className="truncate text-[12px] text-eink-sub">ID: {friend.publicId || friend.username || ''}</div>
