@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import NavBar from '../components/NavBar'
 import { fetchProfileById } from '../lib/profiles'
@@ -8,6 +8,7 @@ import { useStore } from '../store'
 export default function FriendProfile() {
   const { userId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { getUser, avatarColor } = useStore()
   const cached = getUser(userId)
   const [profile, setProfile] = useState(null)
@@ -38,8 +39,10 @@ export default function FriendProfile() {
       : null
 
   const goBack = () => {
-    if (window.history.length > 1) navigate(-1)
-    else navigate('/contacts')
+    const idx = window.history.state?.idx
+    const canGoBack = typeof idx === 'number' ? idx > 0 : location.key !== 'default'
+    if (canGoBack) navigate(-1)
+    else navigate('/contacts', { replace: true })
   }
 
   return (
@@ -88,7 +91,7 @@ export default function FriendProfile() {
           type="button"
           data-testid="send-message-btn"
           disabled={!userId}
-          className="h-12 w-full rounded-none bg-[#07C160] text-[16px] font-medium text-white active:brightness-95 disabled:bg-eink-disabled"
+          className="h-12 w-full rounded-none bg-eink-ink text-[16px] font-medium text-eink-paper active:bg-eink-pressed disabled:bg-eink-disabled"
           onClick={() => navigate(`/chat/${userId}`)}
         >
           发送信息

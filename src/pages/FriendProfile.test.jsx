@@ -29,14 +29,14 @@ beforeEach(() => {
 
 afterEach(cleanup)
 
-function setup() {
+function setup(initialEntries = ['/friend/u1']) {
   render(
-    <MemoryRouter initialEntries={['/friend/u1']}>
+    <MemoryRouter initialEntries={initialEntries}>
       <Routes>
         <Route path="/friend/:userId" element={<FriendProfile />} />
         <Route path="/friend/:userId/moments" element={<div data-testid="moments-page">MOMENTS_PLACEHOLDER</div>} />
         <Route path="/chat/:peerId" element={<div data-testid="chat-page">CHAT_PAGE</div>} />
-        <Route path="/contacts" element={<div>CONTACTS</div>} />
+        <Route path="/contacts" element={<div data-testid="contacts-page">CONTACTS</div>} />
       </Routes>
     </MemoryRouter>
   )
@@ -83,5 +83,21 @@ describe('FriendProfile 好友资料页', () => {
     await waitFor(() => expect(screen.getByTestId('friend-moments-entry')).toBeTruthy())
     fireEvent.click(screen.getByTestId('friend-moments-entry'))
     expect(screen.getByTestId('moments-page')).toBeTruthy()
+  })
+
+  it('有应用内历史时返回按钮回到上一页(通讯录)', async () => {
+    fetchProfileById.mockResolvedValue({ ok: true, profile: { id: 'u1', nickname: '李四', username: 'lisi', avatarUrl: '' } })
+    setup(['/contacts', '/friend/u1'])
+    await waitFor(() => expect(screen.getByTestId('friend-nickname')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '返回' }))
+    expect(screen.getByTestId('contacts-page')).toBeTruthy()
+  })
+
+  it('直接打开资料页(无应用内历史)时返回按钮兜底回通讯录', async () => {
+    fetchProfileById.mockResolvedValue({ ok: true, profile: { id: 'u1', nickname: '李四', username: 'lisi', avatarUrl: '' } })
+    setup(['/friend/u1'])
+    await waitFor(() => expect(screen.getByTestId('friend-nickname')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '返回' }))
+    expect(screen.getByTestId('contacts-page')).toBeTruthy()
   })
 })
