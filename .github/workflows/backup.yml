@@ -1,0 +1,71 @@
+name: Backup
+
+on:
+  schedule:
+    # 每日 03:15 UTC 自动备份
+    - cron: '15 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets
+        id: guard
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          ENC_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          if [ -z "$DB_URL" ] || [ -z "$ENC_KEY" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "未配置 SUPABASE_DB_URL 或 BACKUP_ENCRYPTION_KEY，跳过备份。"
+            echo "配置方式见 README「数据备份」章节。"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install postgres client
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+
+      - name: pg_dump (custom format, compressed)
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          ts="$(date -u +%Y%m%dT%H%M%SZ)"
+          pg_dump "$DB_URL" --format=custom --compress=9 --file="backup-${ts}.dump"
+          echo "ts=${ts}" >> "$GITHUB_ENV"
+          ls -lh "backup-${ts}.dump"
+
+      # 公开仓库的 Actions artifact 可被任何人下载，必须先加密再上传
+      - name: Encrypt dump (AES-256-CBC, pbkdf2)
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          ENC_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in "backup-${ts}.dump" -out "backup-${ts}.dump.enc" \
+            -pass "env:ENC_KEY"
+          rm -f "backup-${ts}.dump"
+          sha256sum "backup-${ts}.dump.enc" > "backup-${ts}.sha256"
+
+      - name: Upload encrypted artifact
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ env.ts }}
+          path: |
+            backup-${{ env.ts }}.dump.enc
+            backup-${{ env.ts }}.sha256
+          retention-days: 30
+
+  # 恢复步骤（记录在此，勿写入 CI 明文）：
+  #   openssl enc -d -aes-256-cbc -pbkdf2 -in backup-<ts>.dump.enc -out backup-<ts>.dump -pass pass:<KEY>
+  #   pg_restore --clean --if-exists -d "<目标库连接串>" backup-<ts>.dump

@@ -9,7 +9,10 @@ export default function Avatar({ name = '', color = '#191919', size = 40, badge 
         {text}
       </div>
       {badge ? (
-        <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#191919] px-1 text-[11px] leading-none text-white">
+        <span
+          data-testid="unread-badge"
+          className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#191919] px-1 text-[11px] leading-none text-white"
+        >
           {badge > 99 ? '99+' : badge}
         </span>
       ) : null}

@@ -125,6 +125,41 @@ supabase/functions/
 
 `npm run build` 产物为纯静态站点，可部署到任意静态托管（Vercel、Netlify、Nginx 等），无需服务端运行时。构建时需注入 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 环境变量；未注入时站点仍能以本地演示模式运行。已配置 PWA manifest 与矢量图标，支持添加到主屏幕。
 
+## 数据备份
+
+`.github/workflows/backup.yml` 提供每日自动备份（03:15 UTC，也可手动触发）：`pg_dump` 导出 → AES-256 加密 → 以密文 artifact 保留 30 天。因本仓库公开，artifact 任何人可下载，**必须加密后才会上传**；未配置密钥时工作流自动跳过。
+
+需在 GitHub 仓库 Settings → Secrets and variables → Actions 配置两个 secret：
+
+| Secret | 说明 |
+| --- | --- |
+| `SUPABASE_DB_URL` | 数据库连接串，取自 Supabase Dashboard → Project Settings → Database → Connection string（URI 格式，含密码） |
+| `BACKUP_ENCRYPTION_KEY` | 自行生成的强随机口令，仅自己保存，丢失则备份不可恢复 |
+
+恢复备份（在本地执行）：
+
+```bash
+# 解密
+openssl enc -d -aes-256-cbc -pbkdf2 -in backup-<时间戳>.dump.enc -out backup.dump -pass pass:<BACKUP_ENCRYPTION_KEY>
+
+# 恢复到目标库
+pg_restore --clean --if-exists -d "<目标库连接串>" backup.dump
+```
+
+## E2E 测试
+
+基于 Playwright（`npm run test:e2e`，自动拉起 `vite preview` 于 4173 端口）：
+
+- `e2e/public.spec.js`：公开页冒烟（登录页渲染/表单校验、重定向、协议页、重置密码失效提示），无需后端凭据，CI 常驻。
+- `e2e/chat.spec.js`：云端双人聊天流（登录、加好友、发消息、未读角标），由环境变量门控，未配置时自动跳过：
+
+| 变量 | 说明 |
+| --- | --- |
+| `E2E_USER_A_EMAIL` / `E2E_USER_A_PASSWORD` / `E2E_USER_A_USERNAME` | 已完成邮箱验证的测试账号 A |
+| `E2E_USER_B_EMAIL` / `E2E_USER_B_PASSWORD` / `E2E_USER_B_USERNAME` | 测试账号 B |
+
+CI 的 e2e job 从 GitHub Secrets 读取以上变量及 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`（构建期注入）。首次本地运行需 `npx playwright install chromium`。
+
 ## 已知边界
 
 - 单聊仅支持一对一文本消息（无图片 / 语音 / 表情回应）

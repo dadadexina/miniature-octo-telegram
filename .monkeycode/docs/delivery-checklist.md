@@ -16,10 +16,10 @@
 ## P1 — 交付后一周内
 
 - [x] **7. 删除好友**：已实现 —— `friends_delete_own` 策略 + `grant delete` 并入 CLOUD_SQL（需在 SQL 编辑器重新执行一次）；`deleteFriend()`；store `removeFriend` 同步清理本地好友镜像对、本机会话消息、收件箱与未读；通讯录「编辑」模式行内确认删除 ｜ 边界：单向删除（对方云端记录保留）；云端历史消息未删除，重新登录后该会话可能随收件箱重新出现，彻底删除列为 P2
-- [ ] **8. e2e 测试**：Playwright 覆盖「注册→完善资料→搜索加好友→互发消息→未读角标」；CI 增加 e2e job（需两个自动注册测试账号）
+- [x] **8. e2e 测试**：Playwright 已接入（`npm run test:e2e`，webServer 自动拉起 preview:4173）。`e2e/public.spec.js` 6 例全过（登录页/表单校验/重定向/协议页/重置失效提示）；`e2e/chat.spec.js` 双人聊天流由 `E2E_USER_A/B_*` 环境变量门控（邮箱验证开启后 CI 无法自动注册，需两个已验证账号）。CI 增加 e2e job ｜ **待用户**：GitHub Secrets 添加 E2E_USER_A/B 六项与 VITE_SUPABASE_URL/ANON_KEY 后云端流在 CI 生效
 - [ ] **9. 错误监控**：接入 Sentry（或 Supabase Logs + 前端 window.onerror 上报），捕获 ErrorBoundary 兜住的异常
 - [x] **10. 分包优化**：`manualChunks` 拆出 react / supabase vendor；构建产物主 chunk gzip 14.53KB、react 59.28KB、supabase 59.72KB，均低于 80KB 目标
-- [ ] **11. 数据备份**：`pg_dump` 定时导出（Supabase 后台可下载，或 GitHub Actions 定时任务 + service_role 密钥，注意密钥只存 CI Secrets）
+- [x] **11. 数据备份**：`.github/workflows/backup.yml` 每日 03:15 UTC pg_dump → AES-256 加密 → 密文 artifact 保留 30 天（公开仓库 artifact 可被任意下载，故强制加密；缺 secret 自动跳过）。README 含恢复步骤 ｜ **待用户**：GitHub Secrets 添加 `SUPABASE_DB_URL`（Dashboard → Project Settings → Database → Connection string）与自定强口令 `BACKUP_ENCRYPTION_KEY`
 
 ## P2 — 可选
 
