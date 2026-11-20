@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import SetupProfile from './SetupProfile'
-import { fetchProfileById } from '../lib/profiles'
+import { fetchProfileById, updateProfileNickname } from '../lib/profiles'
 import { useStore } from '../store'
 
 export default function ProfileGate({ children }) {
@@ -21,6 +21,15 @@ export default function ProfileGate({ children }) {
         setFetchError('')
         applyProfileToUser(userId, result.profile)
         setCloudProfile(result.profile, true)
+        if (!result.profile.nickname && cached?.nickname) {
+          updateProfileNickname(userId, cached.nickname).then((updated) => {
+            if (!alive) return
+            if (updated.ok && updated.profile?.nickname) {
+              applyProfileToUser(userId, updated.profile)
+              setCloudProfile(updated.profile, true)
+            }
+          })
+        }
         return
       }
       if (cached) {

@@ -10,9 +10,14 @@ function pick(row, keys) {
   return ''
 }
 
-function isMissingColumn(error, column) {
+export function isMissingColumn(error, column) {
   const msg = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
-  return msg.includes(`column "${column}"`) || msg.includes(`${column} does not exist`)
+  const col = column.toLowerCase()
+  return (
+    msg.includes(`column "${col}"`) ||
+    msg.includes(`'${col}' column`) ||
+    msg.includes(`${col} does not exist`)
+  )
 }
 
 export function mapProfile(row) {
@@ -67,6 +72,7 @@ export async function insertProfile({ id, nickname, username }) {
     { id, nickname, custom_id: username },
     { id, display_name: nickname, username },
     { id, name: nickname, username },
+    { id, username },
   ]
   let lastError = null
   for (const payload of attempts) {

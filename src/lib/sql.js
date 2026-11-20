@@ -26,6 +26,11 @@ create table if not exists public.messages (
   created_at timestamptz default now()
 );
 
+-- 旧版表结构规范化：补齐缺失列
+alter table public.profiles add column if not exists nickname text not null default '';
+alter table public.profiles add column if not exists username text;
+alter table public.messages add column if not exists content text;
+
 grant usage on schema public to anon, authenticated;
 grant select, insert, update on table public.profiles to authenticated;
 grant select, insert on table public.messages to authenticated;
