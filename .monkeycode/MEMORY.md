@@ -10,8 +10,8 @@ This file records user instructions, preferences, and teachings for reference in
 - Category: Build & Compilation
 - Instructions:
   - 构建：`npm run build`（vite 7，产物 dist/，纯静态，vite-plugin-pwa 同时生成 sw.js）
-  - 测试：`npm run test`（vitest run，60 个用例：lib 纯函数 + 组件测试；`test:e2e` 跑 Playwright 共 8 例：公开页 6 例无需凭据 + 云端聊天流 2 例由 E2E_USER_A/B_* 环境变量门控）
-  - 代码检查：`npm run lint`（eslint 10 flat config，标准：0 errors，警告基线 10 条存量）
+  - 测试：`npm run test`（vitest run，86 个用例：lib 纯函数 + 组件测试 + `src/lib/__tests__/cloud-v2.spec.jsx` v2 波次 26 条；`test:e2e` 跑 Playwright：公开页 6 例无需凭据 + `chat.spec.js` 云端 serial 5 例由 E2E_USER_A/B_* 环境变量门控，凭据在仓库外 `/tmp/opencode/e2e-env.sh`）
+  - 代码检查：`npm run lint`（eslint 10 flat config，标准：0 errors，警告基线 13 条存量，多为 react-compiler 对 setState-in-effect 的风格提示）
   - 提交前必须三项全部通过
 
 [npm 安装依赖必须 legacy-peer-deps（已固化为 .npmrc）]
@@ -66,18 +66,17 @@ This file records user instructions, preferences, and teachings for reference in
   - 排查此类问题用 `auth/v1/signup`（autoconfirm）拿到 access_token 后带 `Authorization: Bearer` 直接 REST 实测，比猜测表结构可靠
   - 调试遗留测试账号前缀 `qa.`（qa.smoke/qa.probe/qa.fix/qa.norm，密码 qaTest123456），邮箱含历史 Date.now() 时间戳无法复原，只能由用户在 Supabase 后台 Authentication → Users 删除
 
-[Supabase Management API 自助运维(经用户一次性 token)]
+[Supabase 自助运维(Management API 已随 token 吊销失效,现仅 psql 直连)]
 - Date: 2026-11-20
-- Context: Discovered by Agent while closing #6 Auth URL 切换与 #11 备份闭环(用户提供 sbp_ token,事后应提醒吊销)
+- Context: Discovered by Agent while closing #6 Auth URL 切换与 #11 备份闭环(用户提供 sbp_ token,交付后已吊销并验证 401;schema v2 改用 psql 直连应用)
 - Category: Operations & Deployment
 - Instructions:
-  - 认证配置:`GET/PATCH https://api.supabase.com/v1/projects/<ref>/config/auth`(site_url、uri_allow_list、smtp 均可 API 改,无需用户进后台)
-  - DB 密码轮换:`PATCH /v1/projects/<ref>/database/password` body `{"password":"..."}`;轮换后连接串即 `postgresql://postgres.<ref>:<新密码>@<pooler_host>:5432/postgres`
-  - **连接串勿猜主机**:`GET /v1/projects/<ref>/config/database/pooler` 返回精确 host/user/port(本项目是 aws-1-ap-northeast-1.pooler.supabase.com,Session 模式 5432 可 IPv4 直连;aws-0 上报 ENOTFOUND tenant;`db.<ref>.supabase.co` 仅 AAAA/IPv6,沙箱与 GH runner 均不可达)
-  - 免 SQL Editor 执行 SQL:`POST /v1/projects/<ref>/database/query`(以后 CLOUD_SQL 变更可自助执行,不再依赖用户重跑)
-  - OpenAPI 全量端点藏在 `https://api.supabase.com/api/v1/json` 返回的 Scalar HTML 里,`'"openapi"'` 处 `json.JSONDecoder().raw_decode` 可抽出
-  - pg_dump 客户端必须 ≥ 服务端(现为 PG 17.12):apt 默认源太旧,用 PGDG(`apt.postgresql.org`,键 ACCC4CF8);本地全库 dump 实测 438KB/28s 成功
-  - `gh secret set` 用 `--body "$VAR"`;曾疑似 `--body -`(stdin)写入污染导致 pg_dump 把值当本地库名连 unix socket 失败,workflow 里已加 `url_len+scheme` 自检防再犯
+  - **现状(2026-11-20 起)**:`sbp_` 令牌已吊销,Management API 不可用;数据库唯一自助通道是 psql 直连,连接串在 `.monkeycode/secrets/db-url.txt`(pooler 5432,IPv4 可达);执行 SQL 用 `psql "$DB_URL" -f xx.sql -v ON_ERROR_STOP=1`
+  - 备份 workflow 用 DB 密码(GH Secret SUPABASE_DB_URL),与已吊销令牌无关,不受影响
+  - 历史经验(如用户再提供 token 可复用):认证配置 `GET/PATCH https://api.supabase.com/v1/projects/<ref>/config/auth`;免 SQL Editor 执行 SQL `POST .../database/query`;`pg_dump` 客户端必须 ≥ 服务端(PG 17.12,用 PGDG 源)
+  - **连接串勿猜主机**:pooler host 是 aws-1-ap-northeast-1.pooler.supabase.com(Session 模式 5432);`db.<ref>.supabase.co` 仅 IPv6,沙箱与 GH runner 不可达
+  - `gh secret set` 用 `--body "$VAR"`;勿用 stdin `--body -`(曾污染 secret)
+  - SMTP 教训:API 存储的 `smtp_pass` 是 64 位密文,直连 AUTH 535;邮件能力只能走 Supabase 内置或用户自配明文授权码
 
 [生产托管:Vercel 部署与域名探测经验]
 - Date: 2026-11-20
@@ -100,3 +99,16 @@ This file records user instructions, preferences, and teachings for reference in
   - 账号在 Supabase 永久有效（邮箱过期不影响登录，登录只需 email+password）；当前 A=e2e_a_dfb10dccc971、B=e2e_b_64a1c9ed8fb4
   - 凭据轮换流程：重跑脚本开新号 → 写 `/tmp/opencode/e2e-env.sh`（chmod 600，仓库外）→ `gh secret set E2E_USER_A/B_*`（共 9 项 secrets 已全部配好，含 VITE_SUPABASE_*、BACKUP_ENCRYPTION_KEY）
   - BACKUP_ENCRYPTION_KEY 副本在 `.monkeycode/secrets/backup-key.txt`（已 gitignore）；GitHub secret 只写不可读，用户转存后应删除该文件
+
+[schema v2 投产波次经验(消息可靠性/安全/撤回删除/朋友圈)]
+- Date: 2026-11-20
+- Context: Discovered by Agent while applying schema v2 to production DB via psql and integrating Wave 2 frontend
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - **生产表结构以 information_schema 为准**:生产 `messages.id` 实为 bigint(identity),与内嵌 CLOUD_SQL 假设(uuid)不符;写 DDL/外键前先 `select column_name,data_type from information_schema.columns where table_name='...'` 核对(bootstrap 已修正)
+  - 单一真源:v2 升级 SQL 全部在 `src/lib/schema_v2.js` 的 `UPGRADE_SQL`,`sql.js` 的 `CLOUD_SQL` 由其拼接;幂等可重复执行;已直接经 psql 应用到生产,用户无需重跑 SQL
+  - 跨表引用的 RLS 策略必须用 security definer 函数且 `set search_path = public`(are_contacts/can_view_profile/can_message/can_view_moment),否则被引表 RLS 会拦截策略自身查询
+  - 历史遗留危险策略已清除("Messages are viewable by everyone." 等 public select),后续加策略前先 drop 同名旧策略防止叠加放行
+  - realtime:单频道 `chat-sync:<uid>` 订阅 messages INSERT/UPDATE + read_cursors(filter peer_id=eq.me) + friend_requests;新表要加入 publication `supabase_realtime` 且 replica identity full
+  - 已读模型是「每对一行的水位表」(read_cursors),未读数由 `recomputeUnreadCounts` 确定性重算;本地 readAt 仅作离线降级
+  - 撤回窗口双端校验:前端 `canRecall`(RECALL_WINDOW_MS=2min)+ RLS `messages_update_recall`(created_at > now()-2min),RLS 拒绝映射文案「超过 2 分钟的消息不能撤回」

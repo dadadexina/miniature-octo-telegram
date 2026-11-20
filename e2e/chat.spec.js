@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test.describe.configure({ timeout: 120_000 })
+test.describe.configure({ timeout: 120_000, mode: 'serial' })
 
 const A = {
   email: process.env.E2E_USER_A_EMAIL,
@@ -24,24 +24,38 @@ async function login(page, user) {
   await expect(page).toHaveURL(/\/chats$/, { timeout: 30000 })
 }
 
-async function ensureFriend(page, username) {
-  await page.goto('/contacts')
-  const search = page.getByPlaceholder('输入用户名 ID 搜索')
-  await search.fill(username)
+// v2 好友关系为「请求 → 验证」双向流程;幂等处理已是好友/请求已存在的情况
+async function ensureFriendship(pageA, pageB) {
+  await pageA.goto('/contacts')
+  const search = pageA.getByPlaceholder('输入用户名 ID 搜索')
+  await search.fill(B.username)
   await search.press('Enter')
-  const results = page.getByTestId('search-results')
+  const results = pageA.getByTestId('search-results')
   await expect(results).toBeVisible({ timeout: 20000 })
   const addBtn = results.getByTestId('search-result-add').first()
   if (await addBtn.isVisible().catch(() => false)) {
     await addBtn.click()
-    await expect(results.getByText('已添加')).toBeVisible({ timeout: 10000 })
   }
+
+  // B 端接受请求(若存在)
+  await pageB.goto('/contacts')
+  const acceptBtn = pageB.getByTestId('accept-request').first()
+  if (await acceptBtn.isVisible().catch(() => false)) {
+    await acceptBtn.click()
+    await expect(pageB.getByText('已添加好友').first()).toBeVisible({ timeout: 15000 })
+  }
+
+  // A 端确认好友入口出现(接受后 realtime/刷新可见)
+  await pageA.goto('/contacts')
+  await expect(
+    pageA.getByTestId('friend-entry').filter({ hasText: `ID: ${B.username}` }).first()
+  ).toBeVisible({ timeout: 30000 })
 }
 
 async function openChatByUsername(page, username) {
   await page.goto('/contacts')
   const link = page.getByTestId('friend-entry').filter({ hasText: `ID: ${username}` }).first()
-  await expect(link).toBeVisible({ timeout: 15000 })
+  await expect(link).toBeVisible({ timeout: 20000 })
   await link.click()
   await expect(page.getByPlaceholder('发送消息')).toBeVisible({ timeout: 20000 })
 }
@@ -52,8 +66,17 @@ async function sendMessage(page, text) {
   await expect(page.getByText(text).last()).toBeVisible({ timeout: 20000 })
 }
 
+// 等乐观队列落地云端后再点消息行(临时气泡没有操作面板,data-msg-id 仅存在于已合并消息)
+async function clickCloudMessage(page, stamp) {
+  await expect(page.getByTestId('pending-sending')).toHaveCount(0, { timeout: 20000 })
+  const row = page.locator('[data-msg-id]').filter({ hasText: stamp }).last()
+  await expect(row).toBeVisible({ timeout: 20000 })
+  await row.click()
+}
+
 test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
   test.skip(!hasLogin, '未配置 E2E_USER_A/B 邮箱密码，跳过云端 e2e')
+  test.skip(!hasUsernames, '未配置 E2E_USER_A/B_USERNAME，跳过云端 e2e')
 
   test('A、B 均可登录并到达会话列表', async ({ browser }) => {
     const ctxA = await browser.newContext()
@@ -64,24 +87,119 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
     await ctxB.close()
   })
 
-  test('A 发消息，B 会话列表出现未读角标与消息预览', async ({ browser }) => {
-    test.skip(!hasUsernames, '未配置 E2E_USER_A/B_USERNAME，跳过消息往返')
+  test('好友请求 → 接受 → A 发消息 → B 未读角标与预览', async ({ browser }) => {
     const stamp = `e2e${Date.now()}`
-
     const ctxA = await browser.newContext()
+    const ctxB = await browser.newContext()
     const pageA = await ctxA.newPage()
+    const pageB = await ctxB.newPage()
     await login(pageA, A)
-    await ensureFriend(pageA, B.username)
+    await login(pageB, B)
+
+    await ensureFriendship(pageA, pageB)
     await openChatByUsername(pageA, B.username)
     await sendMessage(pageA, `来自A ${stamp}`)
-    await ctxA.close()
 
-    const ctxB = await browser.newContext()
-    const pageB = await ctxB.newPage()
-    await login(pageB, B)
+    // B 打开会话前应保持未读
     await pageB.goto('/chats')
     await expect(pageB.getByTestId('unread-badge').first()).toBeVisible({ timeout: 30000 })
     await expect(pageB.getByText(`来自A ${stamp}`).first()).toBeVisible({ timeout: 30000 })
+
+    await ctxA.close()
+    await ctxB.close()
+  })
+
+  test('B 打开会话回写读水位 → A 端出现已读回执 → 2 分钟内撤回双端可见占位', async ({ browser }) => {
+    const stamp = `回执${Date.now()}`
+    const ctxA = await browser.newContext()
+    const ctxB = await browser.newContext()
+    const pageA = await ctxA.newPage()
+    const pageB = await ctxB.newPage()
+    await login(pageA, A)
+    await login(pageB, B)
+    await ensureFriendship(pageA, pageB)
+
+    await openChatByUsername(pageA, B.username)
+    await sendMessage(pageA, stamp)
+
+    // B 打开与 A 的会话,触发 read_cursors 回写
+    await openChatByUsername(pageB, A.username)
+    await expect(pageB.getByText(stamp).last()).toBeVisible({ timeout: 30000 })
+
+    // A 端通过 realtime 收到对端读水位,显示已读
+    await expect(pageA.getByTestId('read-receipt').first()).toHaveText('已读', { timeout: 30000 })
+
+    // A 撤回:点击消息展开操作面板
+    await clickCloudMessage(pageA, stamp)
+    await expect(pageA.getByTestId('msg-actions')).toBeVisible({ timeout: 10000 })
+    await pageA.getByTestId('recall-action').click()
+    await expect(pageA.getByTestId('recalled-placeholder').first()).toHaveText('你撤回了一条消息', { timeout: 20000 })
+
+    // B 端实时收到撤回更新
+    await expect(pageB.getByTestId('recalled-placeholder').first()).toHaveText('对方撤回了一条消息', { timeout: 30000 })
+
+    await ctxA.close()
+    await ctxB.close()
+  })
+
+  test('A 单方删除消息后自己不可见,B 端仍存在', async ({ browser }) => {
+    const stamp = `删除${Date.now()}`
+    const ctxA = await browser.newContext()
+    const ctxB = await browser.newContext()
+    const pageA = await ctxA.newPage()
+    const pageB = await ctxB.newPage()
+    await login(pageA, A)
+    await login(pageB, B)
+    await ensureFriendship(pageA, pageB)
+
+    await openChatByUsername(pageA, B.username)
+    await sendMessage(pageA, stamp)
+
+    await clickCloudMessage(pageA, stamp)
+    await expect(pageA.getByTestId('msg-actions')).toBeVisible({ timeout: 10000 })
+    await pageA.getByTestId('delete-action').click()
+    await expect(pageA.getByText(stamp)).toHaveCount(0, { timeout: 15000 })
+
+    // 重新进入会话,隐藏过滤仍生效
+    await openChatByUsername(pageA, B.username)
+    await expect(pageA.getByText(stamp)).toHaveCount(0, { timeout: 15000 })
+
+    // B 端不受影响
+    await openChatByUsername(pageB, A.username)
+    await expect(pageB.getByText(stamp).last()).toBeVisible({ timeout: 30000 })
+
+    await ctxA.close()
+    await ctxB.close()
+  })
+
+  test('A 拉黑 B 后再解除,状态可逆', async ({ browser }) => {
+    const ctxA = await browser.newContext()
+    const ctxB = await browser.newContext()
+    const pageA = await ctxA.newPage()
+    const pageB = await ctxB.newPage()
+    await login(pageA, A)
+    await login(pageB, B)
+    await ensureFriendship(pageA, pageB)
+
+    await openChatByUsername(pageA, B.username)
+    await pageA.getByTestId('chat-menu').click()
+    await pageA.getByTestId('block-toggle').click()
+    await expect(pageA.getByText('已拉黑，对方无法再给你发消息').first()).toBeVisible({ timeout: 15000 })
+
+    // 菜单文案切换为「取消拉黑」,点击恢复
+    await pageA.getByTestId('chat-menu').click()
+    await expect(pageA.getByTestId('block-toggle')).toHaveText('取消拉黑')
+    await pageA.getByTestId('block-toggle').click()
+    await expect(pageA.getByText('已取消拉黑').first()).toBeVisible({ timeout: 15000 })
+
+    // B 端仍可正常发消息
+    await openChatByUsername(pageB, A.username)
+    const stamp = `解禁${Date.now()}`
+    await sendMessage(pageB, stamp)
+    await openChatByUsername(pageA, B.username)
+    await expect(pageA.getByText(stamp).last()).toBeVisible({ timeout: 30000 })
+
+    await ctxA.close()
     await ctxB.close()
   })
 })

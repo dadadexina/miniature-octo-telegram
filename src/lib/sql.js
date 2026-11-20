@@ -1,4 +1,5 @@
 import { FRIENDS_SQL } from './friends'
+import { UPGRADE_SQL } from './schema_v2'
 import { supabaseUrl } from './supabase'
 import { CLIENT_ERRORS_SQL } from './telemetry'
 
@@ -20,7 +21,7 @@ create table if not exists public.profiles (
 );
 
 create table if not exists public.messages (
-  id uuid primary key default gen_random_uuid(),
+  id bigint primary key generated always as identity,
   sender_id uuid not null,
   receiver_id uuid not null,
   content text not null,
@@ -142,4 +143,6 @@ using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::tex
 
 ${FRIENDS_SQL}
 
-${CLIENT_ERRORS_SQL}`
+${CLIENT_ERRORS_SQL}
+
+${UPGRADE_SQL}`

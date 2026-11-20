@@ -9,7 +9,7 @@ import { useStore } from '../store'
 import { formatTime } from '../utils'
 
 export default function Chats() {
-  const { conversations, avatarColor, currentUser, getUser, upsertUsers, inbox, mergeInbox, unreadOf } = useStore()
+  const { conversations, avatarColor, currentUser, getUser, upsertUsers, inbox, mergeInbox, unreadOf, syncTick } = useStore()
   const [hint, setHint] = useState('')
   const [needSql, setNeedSql] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -82,7 +82,7 @@ export default function Chats() {
     return () => {
       alive = false
     }
-  }, [currentUser?.id, mergeInbox])
+  }, [currentUser?.id, mergeInbox, syncTick])
 
   const list = useMemo(() => {
     if (!cloudOk) return localList

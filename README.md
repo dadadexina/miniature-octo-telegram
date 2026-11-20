@@ -19,11 +19,15 @@
 - 账号注销：云端级联删除资料 / 好友 / 消息（依赖 delete-account Edge Function）
 - 用户协议与隐私政策页（/legal/terms、/legal/privacy）
 - 单聊消息：发送、历史加载（每页 50 条、支持向前分页）、Realtime 实时推送
+- 消息可靠性：乐观发送（sending → sent/failed 状态队列、失败一键重试）、断网横幅与跨端未读水位同步（`read_cursors`）、realtime 断线自动重同步
+- 已读回执：对端打开会话回写读水位，发送方可实时看到「已读」
+- 消息撤回与删除：发送后 2 分钟内可撤回（双端显示占位提示）；删除仅对自己不可见（`message_hides`），不影响对方
 - 会话列表：按最新消息时间排序、未读红点（登录态持久化到 localStorage）
-- 好友系统：云端存储（friends 表）、登录后自动同步与合并本地好友、公开 ID 搜索添加
+- 好友系统：好友请求 → 对方验证的双向流程（`friend_requests`，realtime 实时通知）、云端好友边存储（friends 表）、公开 ID 精确搜索添加（RPC 防用户名枚举）
+- 拉黑防护：单向拒收（被拉黑方消息被 RLS 拒绝并收到明确提示）、「我的」页黑名单管理；陌生人（非好友）无法发起私聊
 - 个人资料：头像（本地图片上传，自动降采样 256px、灰度显示；未上传时回退灰阶色板首字块）、昵称编辑（云端 + 本地降级）
-- 朋友圈、通讯录等静态展示页
-- 通话为纯 UI 模拟：点击语音/视频通话后展示全屏通话界面与计时，不涉及任何真实音视频采集或 WebRTC 连接
+- 朋友圈（云端）：发布文字/图片（自动降采样、灰度呈现）、点赞、评论、分页加载、删除自己的动态；动态仅好友可见（RLS）。通讯录含好友请求列表
+- 通话为纯 UI 模拟（界面带「演示」标注）：点击语音/视频通话后展示全屏通话界面与计时，不涉及任何真实音视频采集或 WebRTC 连接
 - 未执行云端 SQL 时自动降级为本地演示模式（演示账号仍可完整体验）
 - PWA 离线支持：`vite-plugin-pwa` 生成 service worker 预缓存静态资源，断网时可打开应用并读取本地缓存会话（`registerType: autoUpdate` 自动更新）
 
@@ -56,11 +60,14 @@ npm run test
 
 1. 在 [Supabase](https://supabase.com) 创建项目。
 2. 打开项目内「资料」页的 SQL 初始化入口（CopySql 组件），或直接从数据库复制脚本，将 `CLOUD_SQL` 完整粘贴到 Supabase SQL Editor 并执行。脚本可重复执行，会创建并加固：
-   - `profiles` 表（含 RLS：登录用户可读，本人可写）
-   - `messages` 表（含 RLS：仅收发双方可读写）、realtime publication、复合索引、外键与 4000 字符长度约束
-   - `friends` 表（含 RLS：仅本人可读写自己的好友边、外键与索引）
-   - `client_errors` 表（前端错误监控上报，仅登录用户可写入、不可读改删）
+   - `profiles` 表（含 RLS：仅好友/请求关系可见，本人可写；`search_profile` RPC 精确匹配防枚举）
+   - `messages` 表（含 RLS：仅收发双方可读写、陌生人拒收、2 分钟撤回窗口校验）、realtime publication、复合索引、外键与 4000 字符长度约束、`recalled_at` 撤回列
+   - `friends` / `friend_requests` 表（好友边与请求验证流，pending 幂等唯一约束，双向策略）
+   - `blocks`（单向拒收）、`read_cursors`（已读水位）、`message_hides`（单方删除）表
+   - `moments` / `moment_likes` / `moment_comments` 表与 `moments` Storage bucket（公开读、本人目录写）
+   - `client_errors` 表（前端错误监控上报，登录用户仅可写入，触发器限流 5 分钟 30 条）
    - `profiles.avatar_url` 列与 `avatars` Storage bucket（公开只读，每人仅能写自己 `<uid>/` 目录）
+   - security definer 辅助函数 `are_contacts` / `can_view_profile` / `can_message` / `can_view_moment`
 3. 邮箱验证（二选一）：
    - **正式交付推荐**：在 Authentication → Providers → Email 中开启 Confirm email（应用已支持「等待验证」提示与验证邮件回跳）；同时在 Authentication → URL Configuration 的 Redirect URLs 中加入 `<站点域名>/login` 与 `<站点域名>/reset-password`
    - 仅演示调试：开启 auto confirm（免验证直接登录）
@@ -112,10 +119,10 @@ supabase/functions/
 ## 架构要点
 
 - **状态管理**：`store.jsx` 单一 Provider，`useStore()` 暴露状态与操作；无额外状态库。
-- **消息流**：本地 `localStorage` 为第一数据源保证秒开；云端登录后拉取收件箱（最新 500 条）并与本地合并；Realtime 通过 `messages-insert:<uid>` channel 增量推送。
+- **消息流**：本地 `localStorage` 为第一数据源保证秒开；云端登录后拉取收件箱（最新 500 条）并与本地合并；Realtime 通过 `chat-sync:<uid>` 单一频道订阅 messages INSERT/UPDATE（含撤回传播）、`read_cursors`（已读回执）与 `friend_requests`（好友请求实时通知），断线重连后自动全量重同步（resyncCloud）。
 - **消息分页**：`fetchThread(meId, peerId, { before, limit=50 })` 以 `created_at` 为游标，单条 `or()` 查询取双向消息；`ChatDetail` 顶部「加载更早的消息」按钮保持滚动位置。
-- **好友同步**：单向边（`owner_id` = 我）；登录时云端 → 本地合并，添加好友时本地 → 云端回写（`ignoreDuplicates` 防冲突）。
-- **未读计数**：内存 + `localStorage`（键 `wechat-chat-app-v3:unread:<userId>`），进入会话即清零。
+- **好友同步**：好友请求（`friend_requests`，pending 幂等）→ 对方接受后写入双向好友边（`friends` 单向边 `owner_id` = 我）；登录时云端 → 本地合并。
+- **未读计数**：进入会话即回写云端读水位（`read_cursors`）；未读数由「最新消息 + 读水位（云端与本地取较新）」确定性重算（`recomputeUnreadCounts`），多端共享同一水位。
 - **降级策略**：所有 Supabase 调用失败均静默捕获并回退本地行为，保证界面不出现报错。
 
 ## E-Ink 设计规范
@@ -156,7 +163,7 @@ pg_restore --clean --if-exists -d "<目标库连接串>" backup.dump
 基于 Playwright（`npm run test:e2e`，自动拉起 `vite preview` 于 4173 端口）：
 
 - `e2e/public.spec.js`：公开页冒烟（登录页渲染/表单校验、重定向、协议页、重置密码失效提示），无需后端凭据，CI 常驻。
-- `e2e/chat.spec.js`：云端双人聊天流（登录、加好友、发消息、未读角标），由环境变量门控，未配置时自动跳过：
+- `e2e/chat.spec.js`：云端双人聊天流（登录、好友请求 → 接受、发消息与未读角标、已读回执、2 分钟内撤回双端占位、单方删除、拉黑/解除），由环境变量门控，未配置时自动跳过：
 
 | 变量 | 说明 |
 | --- | --- |

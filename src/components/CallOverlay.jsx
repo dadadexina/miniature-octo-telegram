@@ -21,6 +21,9 @@ export default function CallOverlay({ kind = 'audio', state = 'calling', peer, c
         </div>
         <div className="text-[20px] font-medium">{peer?.nickname || '用户'}</div>
         <div className="text-[14px] text-eink-paper/70">{texts[state] || texts.calling}</div>
+        <div data-testid="call-demo-badge" className="border border-eink-paper/40 px-2 py-0.5 text-[12px] text-eink-paper/70">
+          演示功能 · 不会真实接通
+        </div>
       </div>
       <div className="pb-10">
         <div className="flex flex-col items-center gap-2">

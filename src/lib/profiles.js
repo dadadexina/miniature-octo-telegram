@@ -97,6 +97,11 @@ export async function fetchProfileById(userId) {
 }
 
 export async function usernameTaken(username, exceptId) {
+  const q = String(username || '').trim()
+  const rpc = await supabase.rpc('search_profile', { q })
+  if (!rpc.error) {
+    return { ok: true, taken: (rpc.data || []).some((row) => row.id !== exceptId) }
+  }
   let query = supabase.from('profiles').select('id, username').eq('username', username)
   let { data, error } = await query.maybeSingle()
   if (error && isMissingColumn(error, 'username')) {
@@ -166,9 +171,13 @@ export async function fetchProfilesByIds(ids) {
 }
 
 export async function searchProfileByUsername(username) {
-  let { data, error } = await supabase.from('profiles').select('*').eq('username', username)
+  const q = String(username || '').trim()
+  if (!q) return { ok: true, profiles: [] }
+  const rpc = await supabase.rpc('search_profile', { q })
+  if (!rpc.error) return { ok: true, profiles: (rpc.data || []).map(mapProfile) }
+  let { data, error } = await supabase.from('profiles').select('*').eq('username', q)
   if (error && isMissingColumn(error, 'username')) {
-    const retry = await supabase.from('profiles').select('*').eq('custom_id', username)
+    const retry = await supabase.from('profiles').select('*').eq('custom_id', q)
     data = retry.data
     error = retry.error
   }

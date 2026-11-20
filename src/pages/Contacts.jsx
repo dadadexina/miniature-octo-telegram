@@ -1,12 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import NavBar from '../components/NavBar'
-import { searchProfileByUsername } from '../lib/profiles'
+import { isUuid } from '../lib/messages'
+import { fetchProfilesByIds, searchProfileByUsername } from '../lib/profiles'
 import { useStore } from '../store'
 
 export default function Contacts() {
-  const { currentUser, avatarColor, profile, friendsOf, isFriend, addFriendFromProfile, removeFriend, searchUser, suggestedUsers } = useStore()
+  const {
+    currentUser, avatarColor, profile, friendsOf, isFriend, addFriendFromProfile, removeFriend,
+    searchUser, suggestedUsers, requests, respondToRequest, cancelRequest, requestFriendFromProfile,
+    upsertUsers, getUser, refreshFriendRequests, syncTick,
+  } = useStore()
   const [keyword, setKeyword] = useState('')
   const [queried, setQueried] = useState('')
   const [results, setResults] = useState(null)
@@ -16,6 +21,33 @@ export default function Contacts() {
   const [confirmId, setConfirmId] = useState('')
   const friends = friendsOf(currentUser.id)
   const suggested = suggestedUsers()
+  const isCloud = isUuid(currentUser?.id || '')
+  const hydratedRef = useRef(new Set())
+  const pendingOutIds = new Set(requests.outgoing.map((r) => r.toId))
+
+  useEffect(() => {
+    if (!isCloud) return
+    refreshFriendRequests()
+  }, [isCloud, syncTick, refreshFriendRequests])
+
+  useEffect(() => {
+    if (!isCloud) return
+    const ids = requests.incoming.map((r) => r.fromId).filter((id) => id && !hydratedRef.current.has(id))
+    if (!ids.length) return
+    ids.forEach((id) => hydratedRef.current.add(id))
+    fetchProfilesByIds(ids).then((res) => {
+      if (res.ok) {
+        upsertUsers(
+          res.profiles.map((p) => ({
+            id: p.id,
+            nickname: p.nickname,
+            publicId: p.username,
+            avatarUrl: p.avatarUrl || '',
+          }))
+        )
+      }
+    })
+  }, [requests, isCloud, upsertUsers])
 
   const showToast = (text) => {
     setToast(text)
@@ -51,13 +83,32 @@ export default function Contacts() {
     setResults(merged)
   }
 
-  const onAdd = (user) => {
+  const onAdd = async (user) => {
+    if (isCloud && isUuid(user.id)) {
+      const result = await requestFriendFromProfile(user)
+      showToast(result.ok ? '好友请求已发送' : result.error || '发送失败')
+      return
+    }
     const added = addFriendFromProfile(user)
     if (!added.ok) {
       showToast(added.error || '添加失败')
       return
     }
     showToast('已添加')
+  }
+
+  const onRespond = async (request, action) => {
+    const result = await respondToRequest(request, action)
+    if (!result.ok) {
+      showToast(result.error || '操作失败')
+      return
+    }
+    showToast(action === 'accept' ? '已添加好友' : '已拒绝')
+  }
+
+  const onCancelRequest = async (request) => {
+    const result = await cancelRequest(request)
+    showToast(result.ok ? '已取消请求' : result.error || '操作失败')
   }
 
   const clearSearch = () => {
@@ -135,6 +186,8 @@ export default function Contacts() {
                     </div>
                     {isFriend(currentUser.id, user.id) ? (
                       <span className="text-[13px] text-eink-sub">已添加</span>
+                    ) : pendingOutIds.has(user.id) ? (
+                      <span className="text-[13px] text-eink-sub">等待验证</span>
                     ) : (
                       <button
                         type="button"
@@ -149,6 +202,61 @@ export default function Contacts() {
                 </div>
               ))
             )}
+          </section>
+        ) : null}
+
+        {isCloud && (requests.incoming.length || requests.outgoing.length) ? (
+          <section data-testid="friend-requests" className="mt-2 border-y border-eink-divider bg-eink-bar">
+            <div className="px-4 py-2 text-[13px] text-eink-sub">新的朋友</div>
+            {requests.incoming.map((request) => {
+              const user = getUser(request.fromId) || { id: request.fromId, nickname: '用户', avatarUrl: '' }
+              return (
+                <div key={request.id} data-testid="incoming-request" className="flex items-center gap-3 border-t border-eink-divider px-4 py-3">
+                  <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[16px]">{user.nickname}</div>
+                    <div className="truncate text-[12px] text-eink-sub">请求添加你为好友</div>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      data-testid="accept-request"
+                      className="rounded-none bg-eink-ink px-3 py-1.5 text-[13px] text-eink-paper active:bg-eink-pressed"
+                      onClick={() => onRespond(request, 'accept')}
+                    >
+                      接受
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="decline-request"
+                      className="rounded-none border border-eink-line/40 bg-eink-paper px-3 py-1.5 text-[13px] text-eink-ink active:bg-eink-pressed"
+                      onClick={() => onRespond(request, 'decline')}
+                    >
+                      拒绝
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+            {requests.outgoing.map((request) => {
+              const user = getUser(request.toId) || { id: request.toId, nickname: '用户', avatarUrl: '' }
+              return (
+                <div key={request.id} className="flex items-center gap-3 border-t border-eink-divider px-4 py-3">
+                  <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[16px]">{user.nickname}</div>
+                    <div className="truncate text-[12px] text-eink-sub">等待对方验证</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-none border border-eink-line/40 bg-eink-paper px-3 py-1.5 text-[13px] text-eink-sub active:bg-eink-pressed"
+                    onClick={() => onCancelRequest(request)}
+                  >
+                    取消
+                  </button>
+                </div>
+              )
+            })}
           </section>
         ) : null}
 

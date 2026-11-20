@@ -1,0 +1,357 @@
+export const UPGRADE_SQL = `-- 纸墨信笺 · v2 升级脚本（幂等，可重复执行）
+-- 范围：A 消息可靠性 / B 安全防护 / D 撤回删除 / F 朋友圈云端化
+
+-- ============ 新表 ============
+
+create table if not exists public.friend_requests (
+  id uuid primary key default gen_random_uuid(),
+  from_id uuid not null references auth.users (id) on delete cascade,
+  to_id uuid not null references auth.users (id) on delete cascade,
+  status text not null default 'pending'
+    check (status in ('pending', 'accepted', 'declined', 'canceled')),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  check (from_id <> to_id)
+);
+
+create table if not exists public.blocks (
+  blocker_id uuid not null references auth.users (id) on delete cascade,
+  blocked_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz default now(),
+  primary key (blocker_id, blocked_id),
+  check (blocker_id <> blocked_id)
+);
+
+create table if not exists public.read_cursors (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  peer_id uuid not null references auth.users (id) on delete cascade,
+  read_at timestamptz not null default now(),
+  primary key (user_id, peer_id)
+);
+
+create table if not exists public.message_hides (
+  message_id bigint not null references public.messages (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz default now(),
+  primary key (message_id, user_id)
+);
+
+alter table public.messages add column if not exists recalled_at timestamptz;
+
+create table if not exists public.moments (
+  id uuid primary key default gen_random_uuid(),
+  author_id uuid not null references auth.users (id) on delete cascade,
+  content text not null default '' check (char_length(content) <= 2000),
+  image_url text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.moment_likes (
+  moment_id uuid not null references public.moments (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz default now(),
+  primary key (moment_id, user_id)
+);
+
+create table if not exists public.moment_comments (
+  id uuid primary key default gen_random_uuid(),
+  moment_id uuid not null references public.moments (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  content text not null check (char_length(content) <= 500),
+  created_at timestamptz default now()
+);
+
+-- ============ 索引 ============
+
+create unique index if not exists friend_requests_pending_uq
+  on public.friend_requests (from_id, to_id) where status = 'pending';
+create index if not exists friend_requests_to_pending_idx
+  on public.friend_requests (to_id, created_at desc) where status = 'pending';
+create index if not exists friend_requests_from_idx on public.friend_requests (from_id);
+create index if not exists message_hides_user_idx on public.message_hides (user_id);
+create index if not exists moments_created_idx on public.moments (created_at desc);
+create index if not exists moments_author_idx on public.moments (author_id, created_at desc);
+create index if not exists moment_comments_moment_idx on public.moment_comments (moment_id, created_at);
+create index if not exists client_errors_session_idx on public.client_errors (session_id, occurred_at desc);
+
+-- ============ 关系判定函数（security definer，绕过被引用表的 RLS） ============
+
+create or replace function public.are_contacts(a uuid, b uuid)
+returns boolean language sql stable security definer set search_path = public as $fn$
+  select exists (
+    select 1 from public.friends f
+    where (f.owner_id = a and f.friend_id = b) or (f.owner_id = b and f.friend_id = a)
+  ) or exists (
+    select 1 from public.friend_requests r
+    where r.status = 'accepted'
+      and ((r.from_id = a and r.to_id = b) or (r.from_id = b and r.to_id = a))
+  )
+$fn$;
+
+create or replace function public.can_view_profile(viewer uuid, target uuid)
+returns boolean language sql stable security definer set search_path = public as $fn$
+  select viewer = target
+    or public.are_contacts(viewer, target)
+    or exists (
+      select 1 from public.friend_requests r
+      where (r.from_id = viewer and r.to_id = target)
+         or (r.from_id = target and r.to_id = viewer)
+    )
+$fn$;
+
+create or replace function public.can_message(a uuid, b uuid)
+returns boolean language sql stable security definer set search_path = public as $fn$
+  select a = b
+    or (public.are_contacts(a, b)
+        and not exists (select 1 from public.blocks bl where bl.blocker_id = b and bl.blocked_id = a))
+$fn$;
+
+create or replace function public.can_view_moment(mid uuid)
+returns boolean language sql stable security definer set search_path = public as $fn$
+  select exists (
+    select 1 from public.moments m
+    where m.id = mid
+      and (m.author_id = auth.uid() or public.are_contacts(auth.uid(), m.author_id))
+  )
+$fn$;
+
+create or replace function public.search_profile(q text)
+returns table (id uuid, username text, nickname text, avatar_url text)
+language sql stable security definer set search_path = public as $fn$
+  select p.id, p.username, p.nickname, p.avatar_url
+  from public.profiles p
+  where p.username = q and p.id <> auth.uid()
+  limit 5
+$fn$;
+
+-- ============ client_errors 防刷（BEFORE 触发器超限静默丢弃） ============
+
+create or replace function public.client_errors_throttle()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if (select count(*) from public.client_errors
+       where session_id = new.session_id
+         and occurred_at > now() - interval '5 minutes') >= 30 then
+    return null;
+  end if;
+  return new;
+end
+$fn$;
+
+drop trigger if exists client_errors_throttle on public.client_errors;
+create trigger client_errors_throttle
+  before insert on public.client_errors
+  for each row execute function public.client_errors_throttle();
+
+-- ============ 授权 ============
+
+grant select, insert, update, delete on table public.friend_requests to authenticated;
+grant select, insert, delete on table public.blocks to authenticated;
+grant select, insert, update on table public.read_cursors to authenticated;
+grant select, insert on table public.message_hides to authenticated;
+grant select, insert, update on table public.messages to authenticated;
+grant select, insert, delete on table public.moments to authenticated;
+grant select, insert, delete on table public.moment_likes to authenticated;
+grant select, insert, delete on table public.moment_comments to authenticated;
+grant execute on function public.search_profile(text) to authenticated;
+
+-- ============ 清理遗留宽策略（历史手工创建，存在越权读取风险） ============
+
+drop policy if exists "Messages are viewable by everyone." on public.messages;
+drop policy if exists "Users can insert their own messages." on public.messages;
+drop policy if exists "Public profiles are viewable by everyone." on public.profiles;
+drop policy if exists "Users can insert their own profile." on public.profiles;
+drop policy if exists "Users can update own profile." on public.profiles;
+
+-- ============ RLS ============
+
+alter table public.friend_requests enable row level security;
+alter table public.blocks enable row level security;
+alter table public.read_cursors enable row level security;
+alter table public.message_hides enable row level security;
+alter table public.moments enable row level security;
+alter table public.moment_likes enable row level security;
+alter table public.moment_comments enable row level security;
+
+drop policy if exists "fr_select" on public.friend_requests;
+create policy "fr_select" on public.friend_requests for select
+to authenticated using (auth.uid() in (from_id, to_id));
+
+drop policy if exists "fr_insert" on public.friend_requests;
+create policy "fr_insert" on public.friend_requests for insert
+to authenticated with check (auth.uid() = from_id and status = 'pending');
+
+drop policy if exists "fr_update_recipient" on public.friend_requests;
+create policy "fr_update_recipient" on public.friend_requests for update
+to authenticated
+using (auth.uid() = to_id and status = 'pending')
+with check (auth.uid() = to_id and status in ('accepted', 'declined'));
+
+drop policy if exists "fr_update_sender" on public.friend_requests;
+create policy "fr_update_sender" on public.friend_requests for update
+to authenticated
+using (auth.uid() = from_id and status = 'pending')
+with check (auth.uid() = from_id and status = 'canceled');
+
+drop policy if exists "fr_delete_sender" on public.friend_requests;
+create policy "fr_delete_sender" on public.friend_requests for delete
+to authenticated using (auth.uid() = from_id);
+
+drop policy if exists "blocks_select_own" on public.blocks;
+create policy "blocks_select_own" on public.blocks for select
+to authenticated using (auth.uid() = blocker_id);
+
+drop policy if exists "blocks_insert_own" on public.blocks;
+create policy "blocks_insert_own" on public.blocks for insert
+to authenticated with check (auth.uid() = blocker_id);
+
+drop policy if exists "blocks_delete_own" on public.blocks;
+create policy "blocks_delete_own" on public.blocks for delete
+to authenticated using (auth.uid() = blocker_id);
+
+drop policy if exists "rc_select" on public.read_cursors;
+create policy "rc_select" on public.read_cursors for select
+to authenticated using (auth.uid() in (user_id, peer_id));
+
+drop policy if exists "rc_insert_own" on public.read_cursors;
+create policy "rc_insert_own" on public.read_cursors for insert
+to authenticated with check (auth.uid() = user_id);
+
+drop policy if exists "rc_update_own" on public.read_cursors;
+create policy "rc_update_own" on public.read_cursors for update
+to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "mh_select_own" on public.message_hides;
+create policy "mh_select_own" on public.message_hides for select
+to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "mh_insert_own" on public.message_hides;
+create policy "mh_insert_own" on public.message_hides for insert
+to authenticated with check (auth.uid() = user_id);
+
+drop policy if exists "messages_insert_own" on public.messages;
+create policy "messages_insert_own" on public.messages for insert
+to authenticated
+with check (auth.uid() = sender_id and public.can_message(sender_id, receiver_id));
+
+drop policy if exists "messages_update_recall" on public.messages;
+create policy "messages_update_recall" on public.messages for update
+to authenticated
+using (auth.uid() = sender_id and recalled_at is null
+       and created_at > now() - interval '2 minutes')
+with check (auth.uid() = sender_id and recalled_at is not null);
+
+drop policy if exists "profiles_select_authenticated" on public.profiles;
+create policy "profiles_select_authenticated" on public.profiles for select
+to authenticated using (public.can_view_profile(auth.uid(), id));
+
+drop policy if exists "moments_select_visible" on public.moments;
+create policy "moments_select_visible" on public.moments for select
+to authenticated
+using (auth.uid() = author_id or public.are_contacts(auth.uid(), author_id));
+
+drop policy if exists "moments_insert_own" on public.moments;
+create policy "moments_insert_own" on public.moments for insert
+to authenticated with check (auth.uid() = author_id);
+
+drop policy if exists "moments_delete_own" on public.moments;
+create policy "moments_delete_own" on public.moments for delete
+to authenticated using (auth.uid() = author_id);
+
+drop policy if exists "ml_select_visible" on public.moment_likes;
+create policy "ml_select_visible" on public.moment_likes for select
+to authenticated using (public.can_view_moment(moment_id));
+
+drop policy if exists "ml_insert_own" on public.moment_likes;
+create policy "ml_insert_own" on public.moment_likes for insert
+to authenticated with check (auth.uid() = user_id and public.can_view_moment(moment_id));
+
+drop policy if exists "ml_delete_own" on public.moment_likes;
+create policy "ml_delete_own" on public.moment_likes for delete
+to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "mc_select_visible" on public.moment_comments;
+create policy "mc_select_visible" on public.moment_comments for select
+to authenticated using (public.can_view_moment(moment_id));
+
+drop policy if exists "mc_insert_own" on public.moment_comments;
+create policy "mc_insert_own" on public.moment_comments for insert
+to authenticated with check (auth.uid() = user_id and public.can_view_moment(moment_id));
+
+drop policy if exists "mc_delete_own_or_author" on public.moment_comments;
+create policy "mc_delete_own_or_author" on public.moment_comments for delete
+to authenticated
+using (auth.uid() = user_id or exists (
+  select 1 from public.moments m
+  where m.id = moment_id and m.author_id = auth.uid()
+));
+
+-- ============ 朋友圈图片存储桶 ============
+
+insert into storage.buckets (id, name, public)
+values ('moments', 'moments', true)
+on conflict (id) do update set public = excluded.public;
+
+drop policy if exists "moments_obj_public_read" on storage.objects;
+create policy "moments_obj_public_read" on storage.objects for select
+to anon, authenticated
+using (bucket_id = 'moments');
+
+drop policy if exists "moments_obj_owner_write" on storage.objects;
+create policy "moments_obj_owner_write" on storage.objects for insert
+to authenticated
+with check (bucket_id = 'moments' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "moments_obj_owner_update" on storage.objects;
+create policy "moments_obj_owner_update" on storage.objects for update
+to authenticated
+using (bucket_id = 'moments' and (storage.foldername(name))[1] = auth.uid()::text)
+with check (bucket_id = 'moments' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "moments_obj_owner_delete" on storage.objects;
+create policy "moments_obj_owner_delete" on storage.objects for delete
+to authenticated
+using (bucket_id = 'moments' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ============ friends 对等边回写(接受方替请求方建边 / 双方互备) ============
+-- permissive 策略与 friends_insert_own 叠加(OR):本人边始终可插;
+-- 对等边(owner=对方, friend=我)在「反向边已存在」或「存在已接受的好友请求」时允许插入,
+-- 使 acceptFriendRequest 的双向 upsertFriend 与登录水合的对等回补在 RLS 下可成功。
+
+drop policy if exists "friends_insert_reciprocal" on public.friends;
+create policy "friends_insert_reciprocal" on public.friends for insert
+to authenticated
+with check (
+  auth.uid() = friend_id
+  and (
+    exists (
+      select 1 from public.friends f2
+      where f2.owner_id = auth.uid() and f2.friend_id = public.friends.owner_id
+    )
+    or exists (
+      select 1 from public.friend_requests r
+      where r.status = 'accepted'
+        and ((r.from_id = auth.uid() and r.to_id = public.friends.owner_id)
+          or (r.from_id = public.friends.owner_id and r.to_id = auth.uid()))
+    )
+  )
+);
+
+-- ============ Realtime ============
+
+alter table public.read_cursors replica identity full;
+alter table public.friend_requests replica identity full;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.read_cursors;
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.friend_requests;
+exception
+  when duplicate_object then null;
+end $$;`

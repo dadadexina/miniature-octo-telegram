@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../store'
 
 export default function Layout() {
-  const { currentUser, logout } = useStore()
+  const { currentUser, logout, offline } = useStore()
   const navigate = useNavigate()
   if (!currentUser) return <Navigate to="/login" replace />
 
@@ -18,6 +18,11 @@ export default function Layout() {
   return (
     <div className="flex h-full flex-col bg-eink-paper">
       <AuthBar email={currentUser.email} onSignOut={onSignOut} />
+      {offline ? (
+        <div data-testid="offline-banner" className="shrink-0 bg-eink-ink py-1 text-center text-[12px] text-eink-paper">
+          网络已断开，恢复后将自动同步
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-hidden">
         <Outlet />
       </div>

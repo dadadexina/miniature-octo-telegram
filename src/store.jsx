@@ -1,8 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { blockUser, fetchMyBlocks, unblockUser } from './lib/blocks'
 import { deleteFriend, fetchFriends, upsertFriend } from './lib/friends'
-import { involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
+import {
+  acceptFriendRequest,
+  cancelFriendRequest,
+  declineFriendRequest,
+  fetchAcceptedPeerIds,
+  fetchFriendRequests,
+  sendFriendRequest,
+} from './lib/friendRequests'
+import { fetchInbox, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
 import { fetchProfilesByIds } from './lib/profiles'
+import { buildCursorMaps, fetchCursorsFor, upsertReadCursor } from './lib/readCursors'
 import { supabase } from './lib/supabase'
+import { mergeReadAtMaps, recomputeUnreadCounts } from './lib/syncHelpers'
 
 const STORAGE_KEY = 'wechat-chat-app-v3'
 const VERIFY_CODE = '1234'
@@ -177,12 +188,24 @@ export function StoreProvider({ children }) {
   const [inbox, setInbox] = useState([])
   const [unread, setUnread] = useState({})
   const [readAt, setReadAt] = useState({})
+  const [peerReadAt, setPeerReadAt] = useState({})
+  const [requests, setRequests] = useState({ incoming: [], outgoing: [] })
+  const [blockedIds, setBlockedIds] = useState([])
+  const [offline, setOffline] = useState(
+    () => typeof navigator !== 'undefined' && navigator.onLine === false
+  )
+  const [syncTick, setSyncTick] = useState(0)
   const [activePeerId, setActivePeerId] = useState(null)
   const authUserRef = useRef(null)
   const activePeerRef = useRef(null)
   const readAtRef = useRef({})
+  const peerReadAtRef = useRef({})
   const inboxIdsRef = useRef(new Set())
   const stateRef = useRef(state)
+  const resyncRef = useRef(null)
+  const refreshRequestsRef = useRef(null)
+  const markLocalFriendRef = useRef(null)
+  const hadDisconnectedRef = useRef(false)
 
   useEffect(() => {
     stateRef.current = state
@@ -222,8 +245,10 @@ export function StoreProvider({ children }) {
     inboxIdsRef.current.add(msg.id)
     setInbox((prev) => mergeMessages(prev, [msg]))
     const peer = peerIdOf(msg, me)
-    if (msg.fromId !== me && peer && peer !== activePeerRef.current) {
-      setUnread((prev) => ({ ...prev, [peer]: (prev[peer] || 0) + 1 }))
+    if (msg.fromId !== me && peer && peer === activePeerRef.current && isUuid(me)) {
+      upsertReadCursor(me, peer)
+      readAtRef.current = { ...readAtRef.current, [peer]: Date.now() }
+      setReadAt((prev) => ({ ...prev, [peer]: readAtRef.current[peer] }))
     }
   }, [])
 
@@ -233,23 +258,6 @@ export function StoreProvider({ children }) {
       if (msg?.id) inboxIdsRef.current.add(msg.id)
     })
     setInbox((prev) => mergeMessages(prev, incoming))
-    const me = authUserRef.current?.id
-    if (!me || !isUuid(me)) return
-    const counts = {}
-    incoming.forEach((msg) => {
-      if (!msg || msg.toId !== me) return
-      const peer = msg.fromId
-      if (!peer || peer === me || peer === activePeerRef.current) return
-      if ((msg.time || 0) > (readAtRef.current[peer] || 0)) counts[peer] = (counts[peer] || 0) + 1
-    })
-    if (!Object.keys(counts).length) return
-    setUnread((prev) => {
-      const next = { ...prev }
-      Object.keys(counts).forEach((peer) => {
-        next[peer] = Math.max(prev[peer] || 0, counts[peer])
-      })
-      return next
-    })
   }, [])
 
   const replaceInbox = useCallback((list) => {
@@ -270,8 +278,33 @@ export function StoreProvider({ children }) {
         delete next[peerId]
         return next
       })
+      const me = authUserRef.current?.id
+      if (me && isUuid(me) && isUuid(peerId)) upsertReadCursor(me, peerId)
     }
   }, [])
+
+  const applyCursors = useCallback((result) => {
+    if (!result?.ok) return
+    const maps = buildCursorMaps(result)
+    peerReadAtRef.current = mergeReadAtMaps(peerReadAtRef.current, maps.peers)
+    setPeerReadAt({ ...peerReadAtRef.current })
+    const merged = mergeReadAtMaps(readAtRef.current, maps.mine)
+    if (JSON.stringify(merged) !== JSON.stringify(readAtRef.current)) {
+      readAtRef.current = merged
+      setReadAt(merged)
+    }
+  }, [])
+
+  const refreshFriendRequests = useCallback(async () => {
+    const me = authUserRef.current?.id
+    if (!me || !isUuid(me)) return
+    const result = await fetchFriendRequests(me)
+    if (result.ok) setRequests({ incoming: result.incoming, outgoing: result.outgoing })
+  }, [])
+
+  useEffect(() => {
+    refreshRequestsRef.current = refreshFriendRequests
+  }, [refreshFriendRequests])
 
   const syncFriendToCloud = useCallback((meId, friendId) => {
     if (!isUuid(meId) || !isUuid(friendId)) return
@@ -283,14 +316,20 @@ export function StoreProvider({ children }) {
     if (!me || !isUuid(me)) return undefined
     let alive = true
     const sync = async () => {
-      const result = await fetchFriends(me)
-      if (!alive || !result.ok) return
+      // 好友边 + 已接受请求双来源:请求方离线期间被接受的关系也能落地;
+      // 对等边回写(friend=我, owner=对方)由 friends_insert_reciprocal 策略放行,幂等
+      const [result, accepted] = await Promise.all([fetchFriends(me), fetchAcceptedPeerIds(me)])
+      if (!alive) return
+      if (!result.ok && !accepted.ok) return
       const prev = stateRef.current
       const localIds = new Set(
         prev.friendships.filter((f) => f.userId === me && isUuid(f.friendId)).map((f) => f.friendId)
       )
       const cloudIds = [
-        ...new Set(result.friends.map((f) => f.friendId).filter((id) => id && id !== me)),
+        ...new Set([
+          ...(result.ok ? result.friends.map((f) => f.friendId) : []),
+          ...(accepted.ok ? accepted.ids : []),
+        ].filter((id) => id && id !== me)),
       ]
       const newIds = cloudIds.filter((id) => !localIds.has(id))
       const profilesResult = newIds.length
@@ -299,6 +338,7 @@ export function StoreProvider({ children }) {
       if (!alive) return
       const backfill = [...localIds].filter((id) => !cloudIds.includes(id))
       backfill.forEach((id) => upsertFriend(me, id))
+      cloudIds.forEach((id) => upsertFriend(id, me))
       if (!newIds.length) return
       setState((p) => {
         const users = [...p.users]
@@ -335,17 +375,53 @@ export function StoreProvider({ children }) {
   }, [authUser?.id])
 
   useEffect(() => {
+    const me = authUser?.id
+    if (!me || !isUuid(me)) return undefined
+    let alive = true
+    ;(async () => {
+      const [cursorsRes, blocksRes] = await Promise.all([fetchCursorsFor(me), fetchMyBlocks(me)])
+      if (!alive) return
+      applyCursors(cursorsRes)
+      if (blocksRes.ok) setBlockedIds(blocksRes.ids)
+      await refreshFriendRequests()
+    })()
+    return () => {
+      alive = false
+    }
+  }, [authUser?.id, applyCursors, refreshFriendRequests])
+
+  const resyncCloud = useCallback(async () => {
+    const me = authUserRef.current?.id
+    if (!me || !isUuid(me)) return
+    const [inboxRes, cursorsRes] = await Promise.all([fetchInbox(me), fetchCursorsFor(me)])
+    if (inboxRes.ok) mergeInbox(inboxRes.messages)
+    applyCursors(cursorsRes)
+    await refreshFriendRequests()
+    setSyncTick((tick) => tick + 1)
+  }, [mergeInbox, applyCursors, refreshFriendRequests])
+
+  useEffect(() => {
+    resyncRef.current = resyncCloud
+  }, [resyncCloud])
+
+  useEffect(() => {
     if (!authUser?.id || !isUuid(authUser.id)) {
       inboxIdsRef.current = new Set()
       setInbox([])
       setUnread({})
       readAtRef.current = {}
       setReadAt({})
+      peerReadAtRef.current = {}
+      setPeerReadAt({})
+      setRequests({ incoming: [], outgoing: [] })
+      setBlockedIds([])
       setActivePeerId(null)
       return undefined
     }
+    let disposed = false
+    const me = authUser.id
     const channel = supabase
-      .channel(`messages-insert:${authUser.id}`)
+      .channel(`chat-sync:${me}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
@@ -353,11 +429,90 @@ export function StoreProvider({ children }) {
           ingestCloudMessage(payload.new)
         }
       )
-      .subscribe()
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'messages' },
+        (payload) => {
+          if (payload.new?.recalled_at) mergeInbox([mapMessage(payload.new)])
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'read_cursors', filter: `peer_id=eq.${me}` },
+        (payload) => {
+          const row = payload.new
+          if (!row?.user_id || row.user_id === me || !row.read_at) return
+          const ts = new Date(row.read_at).getTime()
+          peerReadAtRef.current = {
+            ...peerReadAtRef.current,
+            [row.user_id]: Math.max(peerReadAtRef.current[row.user_id] || 0, ts),
+          }
+          setPeerReadAt({ ...peerReadAtRef.current })
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'friend_requests' },
+        (payload) => {
+          const row = payload.new
+          if (!row || (row.to_id !== me && row.from_id !== me)) return
+          if (row.status === 'accepted') {
+            // 我发出的请求被接受:即时落本地好友边并回写云端(owner=我,策略始终放行)
+            const other = row.from_id === me ? row.to_id : row.from_id
+            if (other) {
+              markLocalFriendRef.current?.(me, other)
+              upsertFriend(me, other)
+            }
+          }
+          refreshRequestsRef.current?.()
+        }
+      )
+      .subscribe((status) => {
+        if (disposed) return
+        if (status === 'SUBSCRIBED') {
+          if (hadDisconnectedRef.current) {
+            hadDisconnectedRef.current = false
+            setOffline(false)
+            resyncRef.current?.()
+          }
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          hadDisconnectedRef.current = true
+        }
+      })
     return () => {
+      disposed = true
       supabase.removeChannel(channel)
     }
-  }, [authUser?.id, ingestCloudMessage])
+  }, [authUser?.id, ingestCloudMessage, mergeInbox])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const goOnline = () => {
+      setOffline(false)
+      hadDisconnectedRef.current = false
+      resyncRef.current?.()
+    }
+    const goOffline = () => setOffline(true)
+    window.addEventListener('online', goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online', goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
+
+  useEffect(() => {
+    const me = authUser?.id
+    if (!me || !isUuid(me)) return
+    setUnread(
+      recomputeUnreadCounts({
+        messages: inbox,
+        meId: me,
+        readAtMap: readAtRef.current,
+        activePeerId: activePeerRef.current,
+      })
+    )
+  }, [inbox, readAt, activePeerId, authUser?.id])
 
   useEffect(() => {
     let alive = true
@@ -373,6 +528,10 @@ export function StoreProvider({ children }) {
         setUnread({})
         readAtRef.current = {}
         setReadAt({})
+        peerReadAtRef.current = {}
+        setPeerReadAt({})
+        setRequests({ incoming: [], outgoing: [] })
+        setBlockedIds([])
       } else {
         setAuthUser(data.session.user)
         setUnread(loadUnread(data.session.user.id))
@@ -401,6 +560,10 @@ export function StoreProvider({ children }) {
         setUnread({})
         readAtRef.current = {}
         setReadAt({})
+        peerReadAtRef.current = {}
+        setPeerReadAt({})
+        setRequests({ incoming: [], outgoing: [] })
+        setBlockedIds([])
         setActivePeerId(null)
         setState((prev) => ({ ...prev, currentUserId: null }))
         return
@@ -416,6 +579,116 @@ export function StoreProvider({ children }) {
       alive = false
       sub.subscription.unsubscribe()
     }
+  }, [])
+
+  const registerUserFromProfile = useCallback((prof) => {
+    if (!prof?.id) return
+    setState((prev) => {
+      const exist = prev.users.find((u) => u.id === prof.id)
+      const nickname = prof.nickname || '用户'
+      const publicId = prof.username || ''
+      const avatarUrl = prof.avatarUrl || ''
+      if (exist) {
+        return {
+          ...prev,
+          users: prev.users.map((u) =>
+            u.id === prof.id
+              ? {
+                  ...u,
+                  nickname: nickname || u.nickname,
+                  publicId: publicId || u.publicId,
+                  avatarUrl: avatarUrl || u.avatarUrl || '',
+                }
+              : u
+          ),
+        }
+      }
+      return {
+        ...prev,
+        users: [
+          ...prev.users,
+          { id: prof.id, publicId, nickname, avatarUrl, email: '', phone: '', createdAt: now() },
+        ],
+      }
+    })
+  }, [])
+
+  const markLocalFriend = useCallback((meId, friendId) => {
+    setState((prev) => {
+      const exists = new Set(prev.friendships.filter((f) => f.userId === meId).map((f) => f.friendId))
+      if (exists.has(friendId)) return prev
+      return {
+        ...prev,
+        friendships: [
+          ...prev.friendships,
+          { userId: meId, friendId },
+          { userId: friendId, friendId: meId },
+        ],
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    markLocalFriendRef.current = markLocalFriend
+  }, [markLocalFriend])
+
+  const requestFriendFromProfile = useCallback(
+    async (prof) => {
+      const me = authUserRef.current?.id
+      if (!me || !prof?.id || prof.id === me) return { ok: false, error: '无法添加' }
+      if (!isUuid(me) || !isUuid(prof.id)) return { ok: false, error: '仅云端账号支持好友请求' }
+      registerUserFromProfile(prof)
+      const result = await sendFriendRequest(me, prof.id)
+      if (result.ok) {
+        await refreshFriendRequests()
+        return { ok: true, pending: true }
+      }
+      if (result.reversePending) {
+        await refreshFriendRequests()
+        return { ok: false, error: '对方已向你发送好友请求，去「新的朋友」接受吧' }
+      }
+      return result
+    },
+    [registerUserFromProfile, refreshFriendRequests]
+  )
+
+  const respondToRequest = useCallback(
+    async (request, action) => {
+      const me = authUserRef.current?.id
+      if (!me || !request?.id) return { ok: false, error: '参数错误' }
+      const result =
+        action === 'accept' ? await acceptFriendRequest(request) : await declineFriendRequest(request.id)
+      if (result.ok && action === 'accept') {
+        markLocalFriend(me, request.fromId)
+        const profilesRes = await fetchProfilesByIds([request.fromId])
+        if (profilesRes.ok) (profilesRes.profiles || []).forEach(registerUserFromProfile)
+      }
+      await refreshFriendRequests()
+      return result
+    },
+    [markLocalFriend, registerUserFromProfile, refreshFriendRequests]
+  )
+
+  const cancelRequest = useCallback(
+    async (request) => {
+      if (!request?.id) return { ok: false, error: '参数错误' }
+      const result = await cancelFriendRequest(request.id)
+      if (result.ok) await refreshFriendRequests()
+      return result
+    },
+    [refreshFriendRequests]
+  )
+
+  const setBlockedFor = useCallback(async (targetId, blocked) => {
+    const me = authUserRef.current?.id
+    if (!me || !targetId) return { ok: false, error: '参数错误' }
+    const result = blocked ? await blockUser(me, targetId) : await unblockUser(me, targetId)
+    if (result.ok) {
+      setBlockedIds((prev) =>
+        blocked ? [...new Set([...prev, targetId])] : prev.filter((id) => id !== targetId)
+      )
+    }
+    return result
   }, [])
 
   const currentUser = useMemo(
@@ -461,10 +734,26 @@ export function StoreProvider({ children }) {
       inbox,
       unread,
       activePeerId,
+      offline,
+      syncTick,
+      peerReadAt,
+      requests,
+      blockedIds,
       ingestCloudMessage,
       mergeInbox,
       replaceInbox,
       openPeer,
+      refreshFriendRequests,
+      requestFriendFromProfile,
+      respondToRequest,
+      cancelRequest,
+      setBlockedFor,
+      isBlocked(targetId) {
+        return blockedIds.includes(targetId)
+      },
+      readReceiptOf(peerId) {
+        return peerReadAt[peerId] || 0
+      },
       unreadOf(peerId) {
         return unread[peerId] || 0
       },
@@ -814,7 +1103,7 @@ export function StoreProvider({ children }) {
         return { ok: true }
       },
     }
-  }, [state, currentUser, authReady, authUser, profile, profileReady, profileSynced, inbox, unread, activePeerId, ingestCloudMessage, mergeInbox, replaceInbox, openPeer, setCloudProfile, syncFriendToCloud])
+  }, [state, currentUser, authReady, authUser, profile, profileReady, profileSynced, inbox, unread, activePeerId, offline, syncTick, peerReadAt, requests, blockedIds, ingestCloudMessage, mergeInbox, replaceInbox, openPeer, setCloudProfile, syncFriendToCloud, refreshFriendRequests, requestFriendFromProfile, respondToRequest, cancelRequest, setBlockedFor])
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>
 }

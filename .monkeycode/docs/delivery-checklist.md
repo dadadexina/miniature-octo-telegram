@@ -26,7 +26,7 @@
 - [x] **12. 头像上传**：`avatars` Storage bucket（公开只读、每人仅写自己 `<uid>/` 目录，策略并入 CLOUD_SQL）+ `profiles.avatar_url` 列；EditProfile 选图 → canvas 降采样 256px JPEG → 上传 → 写入云端；本地演示模式降级存 dataURL；全站 Avatar 组件支持图片（灰度滤镜、加载失败回退首字块）；云端缺列时提示重跑 SQL ｜ 云端已生效（2026-11-20 用户重跑 CLOUD_SQL，REST 探针确认 `avatars` bucket 存在且公开可读、`client_errors` 表存在）
 - [x] **13. PWA 离线**：`vite-plugin-pwa`（generateSW，registerType autoUpdate）预缓存 16 项静态资源，离线可打开应用壳并读取 localStorage 缓存会话；保留现有 `public/manifest.webmanifest`（`manifest: false` 不重复生成），`navigateFallback: '/index.html'` 兜底 SPA 路由；构建产物 `sw.js` + `registerSW.js` 自动注入
 - [x] **14. CD 自动部署**：随 #6 Vercel git 集成闭环——import 后 commit `9110e5b` 自动构建发布，GitHub commit status 上 Vercel 检查 = success；后续每次 push main 自动上线
-- [ ] **15. 消息撤回/删除**：用户决策暂缓（2026-11-20），产品需要时再启动（需 messages update/delete 策略 + 前端状态机）
+- [x] **15. 消息撤回/删除**：2026-11-20 投产波次用户决策启动并完成——撤回 ≤2 分钟（RLS `messages_update_recall` 窗口校验 + `recalled_at`，双端 realtime 显示占位）；删除为单方隐藏（`message_hides`，重进会话过滤）
 - [~] **17. qa.* 遗留测试账号清理**：用户决策不处理（2026-11-20）——惰性账号无危害，保留现状
 - [x] **16. 清理死资源**：`public/vite.svg` 已移除
 
@@ -34,3 +34,14 @@
 
 - P0 全勾 + CI/e2e 绿 + 正式域名可访问注册登录收发 → 达到对外交付标准
 - 每项完成后：lint 0 errors、vitest 全过、build 成功、涉及 SQL 的同步更新 `src/lib/sql.js` 并提醒重新执行 CLOUD_SQL
+
+## v2 投产波次（2026-11-20 用户决策扩围：A 可靠性 + B 安全 + D 撤回/删除 + F 朋友圈云端）
+
+- [x] **W1. schema v2 应用生产库**：psql 直连执行 `UPGRADE_SQL`（单一真源 `src/lib/schema_v2.js`，并入 `CLOUD_SQL`）——新表 `friend_requests/blocks/read_cursors/message_hides/moments/moment_likes/moment_comments`、`messages.recalled_at`、security definer 函数 4 枚 + `search_profile` RPC、`client_errors_throttle` 触发器、`moments` Storage 桶、realtime publication 追加；清除遗留危险策略（"Messages are viewable by everyone."、profiles public 三策略）；12 表 RLS 全开验证通过
+- [x] **W2a. lib 数据层**：`readCursors/blocks/friendRequests/moments/momentImage/syncHelpers` 新增；`messages.js` 撤回/隐藏；`profiles.js` 切 `search_profile` RPC（带表查询回退）
+- [x] **W2b. store 集成**：`read_cursors` 水位（已读回执 + 跨端未读确定性重算 `recomputeUnreadCounts`）、realtime 单频道 `chat-sync:<uid>`（messages INSERT/UPDATE + read_cursors + friend_requests，SUBSCRIBED 重连补拉 resyncCloud）、`online/offline` 横幅、请求/拉黑状态
+- [x] **W2c. UI**：ChatDetail 乐观发送/失败重试/撤回删除面板/已读回执/拉黑菜单；Contacts 好友请求流（新的朋友：接受/拒绝/取消）；Discover 真实朋友圈（发布含图/点赞/评论/分页/删除，仅好友可见）+ 本地演示降级；Profile 黑名单管理；CallOverlay「演示」徽标；Layout 离线横幅
+- [x] **W3a. 测试**：vitest 86/86（新增 `cloud-v2.spec.jsx` 26 条覆盖撤回窗口/合并纯函数/读水位/拉黑/请求流）；lint 0 errors；build 通过
+- [ ] **W3b. e2e 全链路**：`chat.spec.js` 重写为 serial 五用例（登录、请求→接受→收发→未读、已读回执→撤回双端占位、单方删除、拉黑/解除）——待跑绿
+- [ ] **W3c. 上线**：push main → Vercel CD → 生产冒烟（注册/精确搜索/请求/接受/收发/已读/撤回/朋友圈点赞评论）
+- [x] **W4. 文档**：README 功能表/数据流/SQL 清单如实更新（通话标注演示、频道名 chat-sync、朋友圈仅好友可见）

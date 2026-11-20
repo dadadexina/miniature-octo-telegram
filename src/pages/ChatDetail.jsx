@@ -6,8 +6,18 @@ import CopySql from '../components/CopySql'
 import NavBar from '../components/NavBar'
 import CallOverlay from '../components/CallOverlay'
 import useKeyboardInset from '../hooks/useKeyboardInset'
-import { fetchThread, insertMessage, isPairMessage, isUuid } from '../lib/messages'
+import {
+  canRecall,
+  fetchHiddenIds,
+  fetchThread,
+  hideMessage,
+  insertMessage,
+  isPairMessage,
+  isUuid,
+  recallMessage,
+} from '../lib/messages'
 import { supabase } from '../lib/supabase'
+import { friendlyInsertError } from '../lib/syncHelpers'
 import { useStore } from '../store'
 import { formatChatTime } from '../utils'
 
@@ -27,11 +37,13 @@ const CALL_CONNECTED = 'connected'
 export default function ChatDetail() {
   const { peerId } = useParams()
   const navigate = useNavigate()
-  const { currentUser, getUser, messagesWith, sendMessage, receiveMessage, avatarColor, logout, profile, inbox, mergeInbox, openPeer } = useStore()
+  const {
+    currentUser, getUser, messagesWith, sendMessage, receiveMessage, avatarColor, logout, profile,
+    inbox, mergeInbox, openPeer, readReceiptOf, isBlocked, setBlockedFor, syncTick,
+  } = useStore()
   const meName = profile?.nickname || currentUser?.nickname
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
-  const [sending, setSending] = useState(false)
   const [hint, setHint] = useState('')
   const [needSql, setNeedSql] = useState(false)
   const [useCloud, setUseCloud] = useState(false)
@@ -40,6 +52,10 @@ export default function ChatDetail() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [callState, setCallState] = useState(CALL_IDLE)
   const [callKind, setCallKind] = useState('audio')
+  const [pendingList, setPendingList] = useState([])
+  const [hiddenIds, setHiddenIds] = useState(() => new Set())
+  const [activeMsgId, setActiveMsgId] = useState(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const listRef = useRef(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -52,7 +68,10 @@ export default function ChatDetail() {
   const cloudMessages = currentUser
     ? inbox.filter((msg) => isPairMessage(msg, currentUser.id, peerId))
     : []
-  const messages = useCloud || (cloudReady && loading) ? cloudMessages : localMessages
+  const messages = (useCloud || (cloudReady && loading) ? cloudMessages : localMessages).filter(
+    (msg) => !hiddenIds.has(msg.id)
+  )
+  const peerReadTs = cloudReady ? readReceiptOf(peerId) : 0
 
   const scrollToBottom = (smooth = true) => {
     const node = listRef.current
@@ -90,6 +109,10 @@ export default function ChatDetail() {
       return undefined
     }
     setLoading(true)
+    fetchHiddenIds(currentUser.id).then((result) => {
+      if (!alive || !result.ok) return
+      setHiddenIds(new Set(result.ids))
+    })
     fetchThread(currentUser.id, peerId).then((result) => {
       if (!alive) return
       setLoading(false)
@@ -111,7 +134,14 @@ export default function ChatDetail() {
     return () => {
       alive = false
     }
-  }, [currentUser?.id, peerId, cloudReady, mergeInbox])
+  }, [currentUser?.id, peerId, cloudReady, mergeInbox, syncTick])
+
+  useEffect(() => {
+    setActiveMsgId(null)
+    setMenuOpen(false)
+    setPendingList([])
+    setHiddenIds(new Set())
+  }, [peerId])
 
   if (!currentUser) return <Navigate to="/login" replace />
 
@@ -124,26 +154,41 @@ export default function ChatDetail() {
     )
   }
 
+  const sendCloudMessage = async (content, tmpId) => {
+    setPendingList((prev) =>
+      prev.map((item) => (item.tmpId === tmpId ? { ...item, status: 'sending', error: '' } : item))
+    )
+    const result = await insertMessage({
+      senderId: currentUser.id,
+      receiverId: peerId,
+      content,
+    })
+    if (!result.ok) {
+      setPendingList((prev) =>
+        prev.map((item) =>
+          item.tmpId === tmpId
+            ? { ...item, status: 'failed', error: friendlyInsertError(result.error, result.permission) }
+            : item
+        )
+      )
+      setNeedSql(Boolean(result.permission) && String(result.error || '').toLowerCase().includes('permission denied'))
+      return
+    }
+    setPendingList((prev) => prev.filter((item) => item.tmpId !== tmpId))
+    mergeInbox([result.message])
+    requestAnimationFrame(() => scrollToBottom(true))
+  }
+
   const submit = async (e) => {
     e.preventDefault()
     const content = text.trim()
-    if (!content || sending) return
+    if (!content) return
     if (cloudReady) {
-      setSending(true)
-      const result = await insertMessage({
-        senderId: currentUser.id,
-        receiverId: peerId,
-        content,
-      })
-      setSending(false)
-      if (!result.ok) {
-        setNeedSql(Boolean(result.permission))
-        setHint(result.error || '发送失败')
-        return
-      }
-      mergeInbox([result.message])
+      const tmpId = `tmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+      setPendingList((prev) => [...prev, { tmpId, text: content, time: Date.now(), status: 'sending', error: '' }])
       setText('')
       requestAnimationFrame(() => scrollToBottom(true))
+      await sendCloudMessage(content, tmpId)
       return
     }
     const result = sendMessage(peerId, content)
@@ -155,6 +200,30 @@ export default function ChatDetail() {
     replyTimer.current = setTimeout(() => {
       receiveMessage(peerId, reply)
     }, 700)
+  }
+
+  const onRecall = async (msg) => {
+    setActiveMsgId(null)
+    const result = await recallMessage(msg.id)
+    if (!result.ok) {
+      setHint(result.error || '撤回失败')
+      return
+    }
+    setHint('')
+    mergeInbox([result.message])
+  }
+
+  const onDelete = async (msg) => {
+    setActiveMsgId(null)
+    setHiddenIds((prev) => new Set([...prev, msg.id]))
+    if (cloudReady && msg.id) await hideMessage(msg.id, currentUser.id)
+  }
+
+  const onToggleBlock = async () => {
+    setMenuOpen(false)
+    const blocked = isBlocked(peerId)
+    const result = await setBlockedFor(peerId, !blocked)
+    setHint(result.ok ? (blocked ? '已取消拉黑' : '已拉黑，对方无法再给你发消息') : result.error || '操作失败')
   }
 
   const onSignOut = async () => {
@@ -203,13 +272,36 @@ export default function ChatDetail() {
         title={peer.nickname}
         left={<Back onClick={() => navigate('/chats')} />}
         right={
-          <div className="flex items-center gap-1">
-            <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => onCall('audio')} aria-label="语音通话">
+          <div className="relative flex items-center gap-1">
+            <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => onCall('audio')} aria-label="语音通话（演示）" title="演示功能">
               <PhoneIcon />
             </button>
-            <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => onCall('video')} aria-label="视频通话">
+            <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => onCall('video')} aria-label="视频通话（演示）" title="演示功能">
               <VideoIcon />
             </button>
+            {cloudReady ? (
+              <button
+                type="button"
+                data-testid="chat-menu"
+                className="flex h-9 w-9 items-center justify-center"
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-label="更多操作"
+              >
+                <MoreIcon />
+              </button>
+            ) : null}
+            {menuOpen ? (
+              <div className="absolute right-0 top-9 z-40 w-36 border border-eink-divider bg-eink-bar">
+                <button
+                  type="button"
+                  data-testid="block-toggle"
+                  className="block w-full px-3 py-2.5 text-left text-[14px] text-eink-ink active:bg-eink-pressed"
+                  onClick={onToggleBlock}
+                >
+                  {isBlocked(peerId) ? '取消拉黑' : '拉黑对方'}
+                </button>
+              </div>
+            ) : null}
           </div>
         }
       />
@@ -217,7 +309,11 @@ export default function ChatDetail() {
       <div
         ref={listRef}
         className="min-h-0 flex-1 overflow-y-auto px-2.5 py-3 no-scrollbar"
-        onClick={() => inputRef.current?.blur()}
+        onClick={() => {
+          inputRef.current?.blur()
+          setActiveMsgId(null)
+          setMenuOpen(false)
+        }}
       >
         {loading ? (
           <p className="py-10 text-center text-[12px] text-eink-faint">正在读取消息...</p>
@@ -246,22 +342,107 @@ export default function ChatDetail() {
               const mine = msg.fromId === currentUser.id
               const showTime = index === 0 || msg.time - messages[index - 1].time > 5 * 60 * 1000
               const user = mine ? { ...currentUser, nickname: meName } : peer
+              if (msg.recalledAt) {
+                return (
+                  <div key={msg.id}>
+                    {showTime ? <TimeDivider time={msg.time} /> : null}
+                    <p
+                      data-testid="recalled-placeholder"
+                      className="my-2 text-center text-[12px] text-eink-faint"
+                    >
+                      {mine ? '你撤回了一条消息' : '对方撤回了一条消息'}
+                    </p>
+                  </div>
+                )
+              }
+              const read = mine && peerReadTs > 0 && peerReadTs >= msg.time
               return (
-                <div key={msg.id}>
-                  {showTime ? (
-                    <div className="my-3 flex justify-center">
-                      <span className="rounded-none border border-eink-divider bg-eink-bar px-1.5 py-0.5 text-[12px] text-eink-faint">
-                        {formatChatTime(msg.time)}
-                      </span>
-                    </div>
-                  ) : null}
-                  <div className={`mb-3 flex items-start gap-2 ${mine ? 'flex-row-reverse' : ''}`}>
+                <div key={msg.id} data-msg-id={msg.id}>
+                  {showTime ? <TimeDivider time={msg.time} /> : null}
+                  <div
+                    className={`mb-3 flex items-start gap-2 ${mine ? 'flex-row-reverse' : ''}`}
+                    onClick={(e) => {
+                      // 阻止冒泡到列表容器(容器 onClick 会将 activeMsgId 置空)
+                      e.stopPropagation()
+                      setActiveMsgId(activeMsgId === msg.id ? null : msg.id)
+                    }}
+                  >
                     <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />
-                    <Bubble mine={mine}>{msg.text}</Bubble>
+                    <div className={`flex max-w-[78%] flex-col ${mine ? 'items-end' : 'items-start'}`}>
+                      <Bubble mine={mine}>{msg.text}</Bubble>
+                      {read ? (
+                        <span data-testid="read-receipt" className="mt-0.5 px-1 text-[11px] text-eink-faint">
+                          已读
+                        </span>
+                      ) : null}
+                      {activeMsgId === msg.id ? (
+                        <div
+                          data-testid="msg-actions"
+                          className="mt-1 flex gap-1.5 border border-eink-divider bg-eink-bar px-1.5 py-1"
+                        >
+                          {mine && canRecall(msg, currentUser.id) && cloudReady ? (
+                            <button
+                              type="button"
+                              data-testid="recall-action"
+                              className="px-1.5 py-0.5 text-[12px] text-eink-ink active:bg-eink-pressed"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onRecall(msg)
+                              }}
+                            >
+                              撤回
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            data-testid="delete-action"
+                            className="px-1.5 py-0.5 text-[12px] text-eink-sub active:bg-eink-pressed"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onDelete(msg)
+                            }}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               )
             })
+          : null}
+        {cloudReady
+          ? pendingList.map((item) => (
+              <div key={item.tmpId} data-testid={item.status === 'failed' ? 'pending-failed' : 'pending-sending'}>
+                <div className="mb-3 flex flex-row-reverse items-start gap-2">
+                  <Avatar name={meName} color={avatarColor(currentUser.id)} size={40} src={currentUser.avatarUrl || ''} />
+                  <div className="flex max-w-[78%] flex-col items-end">
+                    <div className="relative mr-1 max-w-full opacity-70">
+                      <span className="bubble-tail bubble-tail-mine" />
+                      <div className="break-words rounded-none bg-eink-ink px-2.5 py-[7px] text-[16px] leading-[22px] text-eink-paper">
+                        {item.text}
+                      </div>
+                    </div>
+                    {item.status === 'failed' ? (
+                      <div className="mt-1 flex items-center gap-2 px-1">
+                        <span className="text-[11px] leading-4 text-eink-sub">{item.error}</span>
+                        <button
+                          type="button"
+                          data-testid="retry-send"
+                          className="shrink-0 border border-eink-line/40 bg-eink-bar px-2 py-0.5 text-[12px] text-eink-ink active:bg-eink-pressed"
+                          onClick={() => sendCloudMessage(item.text, item.tmpId)}
+                        >
+                          重试
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="mt-0.5 px-1 text-[11px] text-eink-faint">发送中...</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
           : null}
         <div ref={bottomRef} className="h-1" />
       </div>
@@ -285,9 +466,9 @@ export default function ChatDetail() {
         <button
           type="submit"
           className="h-9 shrink-0 rounded-none bg-eink-ink px-3.5 text-[15px] text-eink-paper active:bg-eink-pressed disabled:bg-eink-disabled"
-          disabled={!text.trim() || sending}
+          disabled={!text.trim()}
         >
-          {sending ? '...' : '发送'}
+          发送
         </button>
       </form>
 
@@ -316,6 +497,26 @@ function Bubble({ mine, children }) {
         {children}
       </div>
     </div>
+  )
+}
+
+function TimeDivider({ time }) {
+  return (
+    <div className="my-3 flex justify-center">
+      <span className="rounded-none border border-eink-divider bg-eink-bar px-1.5 py-0.5 text-[12px] text-eink-faint">
+        {formatChatTime(time)}
+      </span>
+    </div>
+  )
+}
+
+function MoreIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+      <circle cx="5.5" cy="12" r="1.6" fill="#191919" />
+      <circle cx="12" cy="12" r="1.6" fill="#191919" />
+      <circle cx="18.5" cy="12" r="1.6" fill="#191919" />
+    </svg>
   )
 }
 

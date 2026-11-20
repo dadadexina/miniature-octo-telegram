@@ -17,8 +17,52 @@ export function mapMessage(row) {
     toId,
     text,
     time,
+    recalledAt: row.recalled_at ? new Date(row.recalled_at).getTime() : null,
     raw: row,
   }
+}
+
+export const RECALL_WINDOW_MS = 2 * 60 * 1000
+
+export function canRecall(msg, meId, nowMs = Date.now()) {
+  return Boolean(
+    msg && !msg.pending && msg.fromId === meId && !msg.recalledAt &&
+    nowMs - (msg.time || 0) <= RECALL_WINDOW_MS
+  )
+}
+
+export async function recallMessage(messageId) {
+  const { data, error } = await supabase
+    .from('messages')
+    .update({ recalled_at: new Date().toISOString(), content: '' })
+    .eq('id', messageId)
+    .select('*')
+    .maybeSingle()
+  if (error) {
+    const msg = `${error.message || ''}`.toLowerCase()
+    const denied = isPermissionError(error) || msg.includes('row-level security')
+    return {
+      ok: false,
+      error: denied ? '超过 2 分钟的消息不能撤回' : error.message,
+      permission: false,
+    }
+  }
+  if (!data) return { ok: false, error: '超过 2 分钟的消息不能撤回' }
+  return { ok: true, message: mapMessage(data) }
+}
+
+export async function hideMessage(messageId, meId) {
+  const { error } = await supabase
+    .from('message_hides')
+    .insert({ message_id: messageId, user_id: meId }, { ignoreDuplicates: true })
+  if (error) return { ok: false, error: error.message, permission: isPermissionError(error) }
+  return { ok: true }
+}
+
+export async function fetchHiddenIds(meId) {
+  const { data, error } = await supabase.from('message_hides').select('message_id').eq('user_id', meId)
+  if (error) return { ok: false, error: error.message, ids: [], permission: isPermissionError(error) }
+  return { ok: true, ids: (data || []).map((row) => row.message_id) }
 }
 
 export async function insertMessage({ senderId, receiverId, content }) {
@@ -90,7 +134,9 @@ export function mergeMessages(prev, incoming) {
   const list = [...(prev || [])]
   ;(incoming || []).forEach((msg) => {
     if (!msg?.id) return
-    if (!list.some((item) => item.id === msg.id)) list.push(msg)
+    const idx = list.findIndex((item) => item.id === msg.id)
+    if (idx >= 0) list[idx] = { ...list[idx], ...msg }
+    else list.push(msg)
   })
   return list.sort((a, b) => a.time - b.time)
 }
