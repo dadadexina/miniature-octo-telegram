@@ -18,6 +18,8 @@
 
 ### M1 会话体验补全(小步快跑,单任务 0.5~1 天)
 
+> **M1 已完结(2026-11-20)**:1.1~1.6 全部实现并上线生产(cf7d924~09dc92c);schema(conversation_prefs / messages.reply_to_id)已应用生产库;质量门 lint 0 errors / vitest 137 / e2e 11 / build 通过;生产双端冒烟 21 项断言全过(typing  presence、搜索、引用、草稿、置顶、免打扰、好友朋友圈流)。
+
 - [x] 1.1 **好友朋友圈流**:实现 `/friend/:userId/moments` 真实时间线(现占位),复用 moments 数据层,加 `author_id` 过滤与分页(cf7d924)
 - [x] 1.2 **消息草稿**:每会话本地草稿(输入即存、切换恢复),会话列表显示 `[草稿]` 前缀(ec7e087,按用户隔离持久化;发送成功清草稿)
 - [x] 1.3 **会话置顶/免打扰**:云端 `conversation_prefs(user_id, peer_id, pinned, muted)` 表+RLS;置顶分组排序,免打扰不弹数字角标改灰点提示(f4d4f7f,长按/右键操作面板;schema 已应用生产)

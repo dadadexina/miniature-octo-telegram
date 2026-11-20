@@ -143,3 +143,14 @@ This file records user instructions, preferences, and teachings for reference in
   - 手动冒烟前先 `GET /repos/<owner>/<repo>/actions/runs?per_page=3` 确认无 in_progress,并等 CI 完成后再等 1~2 分钟(Supabase 连接池恢复)
   - 排查消息不通口诀:先 psql 查消息是否落库(区分「未插入」与「未推送」)→ 查 blocks/friends 边 → `select can_message(a,b)` 直接验 RLS 判定 → 页面上找本地模式提示文案(「本地演示用户」「暂无读写权限」「读取消息失败」= fetchThread 失败静默降级本地)
   - 消息表收发列为 sender_id/receiver_id(无 recipient_id);水合期 friends upsert 偶发 403 噪音与消息链路无关
+
+[Realtime-js 2.119 presence 频道必须显式 enabled 才收对端状态]
+- Date: 2026-11-20
+- Context: Discovered by Agent while M1.6 输入状态指示生产冒烟失败排查(T1a typing 指示不出现)
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - `supabase.channel(name)` 默认 `config.presence = { key: '', enabled: false }`;enabled:false 时本端 track() 仍会广播,但**不会收到**对端 presence sync(静默,无报错)
+  - 正确用法:`supabase.channel(name, { config: { presence: { key: <本端id>, enabled: true } } })`;track payload 无需再带 key
+  - 对端状态读取:`channel.presenceState()[key]` 是数组;key 即加入频道时 config.presence.key
+  - 冒烟脚本坑:`E2E_USER_*_USERNAME` 是 publicId(如 e2e_b_xxx)而非 uuid;`/chat/:id` 路由必须用真实 uuid(publicId 传入会因 isUuid 失败静默降级本地演示模式,页面提示「当前好友是本地演示用户」);uuid 可从水合后的 localStorage `wechat-chat-app-v3` users[].publicId 反查
+  - 消息气泡操作菜单:点 `[data-msg-id] .bubble, div` 的 first() 可能命中 TimeDivider 冒泡到容器关闭菜单;应直接点气泡文本 getByText(exact)
