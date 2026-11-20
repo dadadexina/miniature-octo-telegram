@@ -181,3 +181,6 @@
 /blob-report/
 /playwright/.cache/
 .monkeycode/secrets/
+
+# 密钥转存临时目录（勿提交）
+keys-transfer/
