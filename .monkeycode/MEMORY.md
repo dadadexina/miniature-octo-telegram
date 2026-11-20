@@ -88,6 +88,7 @@ This file records user instructions, preferences, and teachings for reference in
   - `*-<scope>.vercel.app` 形式域名返回 302 → vercel.com/sso-api 属 Deployment Protection 行为，与生产主域无关
   - Vercel 官方 agent 接入手册在 https://vercel.com/get-started.md（CLI + vercel/vercel-plugin + MCP https://mcp.vercel.com），已中止安装（域名问题解决后无必要），需要时可按手册继续
   - 待办：Supabase Auth → URL Configuration 需将 Site URL 改为生产域名并追加 `https://miniature-octo-telegram-puce.vercel.app/**`（当前仍指向预览域名 + /login、/reset-password）
+  - **仓库转 private 会拦截 Vercel 部署**（2026-11-20 实测：19:09:38 转私有后,后续 push 的 commit status `Vercel` = failure/"Deployment was blocked",转私有前最后一次部署正常）;GitHub PAT 无法修复(`/user/installations` 403,需 GitHub App 用户令牌),必须由账号主人在 Vercel Dashboard(Project → Settings → Git)或 GitHub(Settings → Applications → Vercel → Configure → Repository access)重新授权私有仓库访问;排查口诀:生产 HTML 的 `age`/`etag` 头 + `GET /repos/<owner>/<repo>/commits/<sha>/status` 看 Vercel context(该仓挂了两个 Vercel 项目:miniature-octo-telegram 与 -mkrx,同因同时被拦截)
 
 [云端 e2e 账号开通与凭据轮换]
 - Date: 2026-11-20
