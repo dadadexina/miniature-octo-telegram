@@ -48,6 +48,11 @@ jobs:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
+          echo "url_len=${#DB_URL} scheme=${DB_URL:0:10}"
+          case "$DB_URL" in
+            postgres://*|postgresql://*) ;;
+            *) echo "SUPABASE_DB_URL 不是合法连接串"; exit 1 ;;
+          esac
           ts="$(date -u +%Y%m%dT%H%M%SZ)"
           pg_dump "$DB_URL" --format=custom --compress=9 --file="backup-${ts}.dump"
           echo "ts=${ts}" >> "$GITHUB_ENV"
