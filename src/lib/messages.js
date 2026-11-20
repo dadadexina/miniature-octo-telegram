@@ -18,6 +18,7 @@ export function mapMessage(row) {
     text,
     time,
     recalledAt: row.recalled_at ? new Date(row.recalled_at).getTime() : null,
+    replyToId: row.reply_to_id ?? '',
     raw: row,
   }
 }
@@ -65,10 +66,12 @@ export async function fetchHiddenIds(meId) {
   return { ok: true, ids: (data || []).map((row) => row.message_id) }
 }
 
-export async function insertMessage({ senderId, receiverId, content }) {
+export async function insertMessage({ senderId, receiverId, content, replyToId = '' }) {
+  const payload = { sender_id: senderId, receiver_id: receiverId, content }
+  if (replyToId) payload.reply_to_id = replyToId
   const { data, error } = await supabase
     .from('messages')
-    .insert({ sender_id: senderId, receiver_id: receiverId, content })
+    .insert(payload)
     .select('*')
     .single()
   if (error) {

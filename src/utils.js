@@ -50,3 +50,10 @@ export function displayId(user) {
   if (!user) return ''
   return user.publicId || shortId(user.id)
 }
+
+export function quoteExcerpt(text, max = 40) {
+  const flat = String(text)
+    .replace(/\s+/g, ' ')
+    .trim()
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat
+}

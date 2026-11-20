@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { displayId, formatChatTime, formatRelativeTime, formatTime, shortId } from './utils'
+import { displayId, formatChatTime, formatRelativeTime, formatTime, quoteExcerpt, shortId } from './utils'
 
 describe('formatChatTime', () => {
   it('格式化为 时:分', () => {
@@ -46,5 +46,17 @@ describe('shortId / displayId', () => {
     expect(displayId({ publicId: 'abc123', id: 'u_1' })).toBe('abc123')
     expect(displayId({ publicId: '', id: 'u_demo_xiaohong' })).toBe('xiaohong')
     expect(displayId(null)).toBe('')
+  })
+})
+
+describe('quoteExcerpt', () => {
+  it('压缩空白并截断超长文本', () => {
+    expect(quoteExcerpt('a\n\nb   c')).toBe('a b c')
+    const long = 'x'.repeat(50)
+    const out = quoteExcerpt(long)
+    expect(out.length).toBe(41)
+    expect(out.endsWith('…')).toBe(true)
+    expect(quoteExcerpt('短文本')).toBe('短文本')
+    expect(quoteExcerpt('', 10)).toBe('')
   })
 })

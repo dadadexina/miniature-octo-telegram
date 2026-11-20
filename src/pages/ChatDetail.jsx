@@ -19,7 +19,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { friendlyInsertError } from '../lib/syncHelpers'
 import { useStore } from '../store'
-import { formatChatTime } from '../utils'
+import { formatChatTime, quoteExcerpt } from '../utils'
 
 const REPLIES = [
   '收到，我稍后回你。',
@@ -56,6 +56,7 @@ export default function ChatDetail() {
   const [pendingList, setPendingList] = useState([])
   const [hiddenIds, setHiddenIds] = useState(() => new Set())
   const [activeMsgId, setActiveMsgId] = useState(null)
+  const [quoteMsg, setQuoteMsg] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const listRef = useRef(null)
   const bottomRef = useRef(null)
@@ -73,6 +74,16 @@ export default function ChatDetail() {
     (msg) => !hiddenIds.has(msg.id)
   )
   const peerReadTs = cloudReady ? readReceiptOf(peerId) : 0
+  const msgById = new Map(messages.map((m) => [String(m.id), m]))
+  const peerDisplayName = peer?.nickname || '用户'
+  const nameOfSender = (fromId) => (fromId === currentUser?.id ? meName : peerDisplayName)
+  const resolveQuote = (replyToId) => {
+    if (!replyToId) return null
+    const q = msgById.get(String(replyToId))
+    if (!q) return { name: '', text: '[原消息已不可见]' }
+    if (q.recalledAt) return { name: nameOfSender(q.fromId), text: '[已撤回的消息]' }
+    return { name: nameOfSender(q.fromId), text: quoteExcerpt(q.text || '') }
+  }
 
   const scrollToBottom = (smooth = true) => {
     const node = listRef.current
@@ -142,6 +153,7 @@ export default function ChatDetail() {
     setMenuOpen(false)
     setPendingList([])
     setHiddenIds(new Set())
+    setQuoteMsg(null)
   }, [peerId])
 
   if (!currentUser) return <Navigate to="/login" replace />
@@ -155,7 +167,7 @@ export default function ChatDetail() {
     )
   }
 
-  const sendCloudMessage = async (content, tmpId) => {
+  const sendCloudMessage = async (content, tmpId, replyToId = '') => {
     setPendingList((prev) =>
       prev.map((item) => (item.tmpId === tmpId ? { ...item, status: 'sending', error: '' } : item))
     )
@@ -163,6 +175,7 @@ export default function ChatDetail() {
       senderId: currentUser.id,
       receiverId: peerId,
       content,
+      replyToId,
     })
     if (!result.ok) {
       setPendingList((prev) =>
@@ -185,11 +198,22 @@ export default function ChatDetail() {
     const content = text.trim()
     if (!content) return
     if (cloudReady) {
-      const tmpId = `tmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-      setPendingList((prev) => [...prev, { tmpId, text: content, time: Date.now(), status: 'sending', error: '' }])
+      const tmpId = makeTmpId()
+      const quote = quoteMsg
+        ? {
+            replyToId: quoteMsg.id,
+            name: nameOfSender(quoteMsg.fromId),
+            text: quoteMsg.recalledAt ? '[已撤回的消息]' : quoteExcerpt(quoteMsg.text || ''),
+          }
+        : null
+      setPendingList((prev) => [
+        ...prev,
+        { tmpId, text: content, time: Date.now(), status: 'sending', error: '', reply: quote },
+      ])
       setText('')
+      setQuoteMsg(null)
       requestAnimationFrame(() => scrollToBottom(true))
-      await sendCloudMessage(content, tmpId)
+      await sendCloudMessage(content, tmpId, quote?.replyToId || '')
       return
     }
     const result = sendMessage(peerId, content)
@@ -197,7 +221,7 @@ export default function ChatDetail() {
     setText('')
     requestAnimationFrame(() => scrollToBottom(true))
     if (replyTimer.current) clearTimeout(replyTimer.current)
-    const reply = REPLIES[Math.floor(Math.random() * REPLIES.length)]
+    const reply = pickReply()
     replyTimer.current = setTimeout(() => {
       receiveMessage(peerId, reply)
     }, 700)
@@ -370,7 +394,10 @@ export default function ChatDetail() {
                   >
                     <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />
                     <div className={`flex max-w-[78%] flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                      <Bubble mine={mine}>{msg.text}</Bubble>
+                      <Bubble mine={mine}>
+                        {msg.replyToId ? <QuoteStrip mine={mine} quote={resolveQuote(msg.replyToId)} /> : null}
+                        {msg.text}
+                      </Bubble>
                       {read ? (
                         <span data-testid="read-receipt" className="mt-0.5 px-1 text-[11px] text-eink-faint">
                           已读
@@ -381,6 +408,21 @@ export default function ChatDetail() {
                           data-testid="msg-actions"
                           className="mt-1 flex gap-1.5 border border-eink-divider bg-eink-bar px-1.5 py-1"
                         >
+                          {cloudReady ? (
+                            <button
+                              type="button"
+                              data-testid="quote-action"
+                              className="px-1.5 py-0.5 text-[12px] text-eink-ink active:bg-eink-pressed"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveMsgId(null)
+                                setQuoteMsg(msg)
+                                setTimeout(() => inputRef.current?.focus(), 0)
+                              }}
+                            >
+                              引用
+                            </button>
+                          ) : null}
                           {mine && canRecall(msg, currentUser.id) && cloudReady ? (
                             <button
                               type="button"
@@ -422,6 +464,7 @@ export default function ChatDetail() {
                     <div className="relative mr-1 max-w-full opacity-70">
                       <span className="bubble-tail bubble-tail-mine" />
                       <div className="break-words whitespace-pre-wrap rounded-none bg-eink-ink px-2.5 py-[7px] text-[16px] leading-[22px] text-eink-paper">
+                        {item.reply ? <QuoteStrip mine quote={item.reply} /> : null}
                         {item.text}
                       </div>
                     </div>
@@ -432,7 +475,7 @@ export default function ChatDetail() {
                           type="button"
                           data-testid="retry-send"
                           className="shrink-0 border border-eink-line/40 bg-eink-bar px-2 py-0.5 text-[12px] text-eink-ink active:bg-eink-pressed"
-                          onClick={() => sendCloudMessage(item.text, item.tmpId)}
+                          onClick={() => sendCloudMessage(item.text, item.tmpId, item.reply?.replyToId || '')}
                         >
                           重试
                         </button>
@@ -449,9 +492,29 @@ export default function ChatDetail() {
       </div>
 
       <form
-        className="composer safe-bottom flex items-center gap-2 border-t border-eink-divider bg-eink-bar px-2 py-1.5"
+        className="composer safe-bottom border-t border-eink-divider bg-eink-bar"
         onSubmit={submit}
       >
+        {quoteMsg ? (
+          <div className="flex items-center gap-2 px-2 pt-1.5">
+            <div
+              data-testid="quote-bar"
+              className="min-w-0 flex-1 truncate border-l-2 border-eink-line bg-eink-paper px-2 py-1 text-[12px] text-eink-sub"
+            >
+              {nameOfSender(quoteMsg.fromId)}: {quoteMsg.recalledAt ? '[已撤回的消息]' : quoteExcerpt(quoteMsg.text || '')}
+            </div>
+            <button
+              type="button"
+              data-testid="quote-clear"
+              aria-label="取消引用"
+              className="shrink-0 px-2 py-1 text-[15px] leading-none text-eink-sub active:text-eink-ink"
+              onClick={() => setQuoteMsg(null)}
+            >
+              ×
+            </button>
+          </div>
+        ) : null}
+        <div className="flex items-center gap-2 px-2 py-1.5">
         <input
           ref={inputRef}
           className="h-9 min-w-0 flex-1 rounded-none border border-eink-line/25 bg-eink-bar px-3 text-[16px] outline-none"
@@ -471,6 +534,7 @@ export default function ChatDetail() {
         >
           发送
         </button>
+        </div>
       </form>
 
       {callState !== CALL_IDLE ? (
@@ -484,6 +548,29 @@ export default function ChatDetail() {
       ) : null}
     </div>
   )
+}
+
+function QuoteStrip({ mine, quote }) {
+  if (!quote) return null
+  return (
+    <span
+      data-testid="quote-strip"
+      className={`mb-1 block border-l-2 pl-1.5 text-[13px] leading-[18px] ${
+        mine ? 'border-eink-paper/50 text-eink-paper/80' : 'border-eink-line text-eink-sub'
+      }`}
+    >
+      {quote.name ? `${quote.name}: ` : ''}
+      {quote.text}
+    </span>
+  )
+}
+
+function makeTmpId() {
+  return `tmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function pickReply() {
+  return REPLIES[Math.floor(Math.random() * REPLIES.length)]
 }
 
 function Bubble({ mine, children }) {

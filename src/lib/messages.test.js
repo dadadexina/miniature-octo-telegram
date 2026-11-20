@@ -43,6 +43,11 @@ describe('mapMessage', () => {
   it('空行返回 null', () => {
     expect(mapMessage(null)).toBeNull()
   })
+
+  it('透传 reply_to_id 为 replyToId', () => {
+    expect(mapMessage(row({ reply_to_id: 42 })).replyToId).toBe(42)
+    expect(mapMessage(row()).replyToId).toBe('')
+  })
 })
 
 describe('involvesUser / peerIdOf / isPairMessage', () => {

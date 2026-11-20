@@ -47,6 +47,8 @@ create table if not exists public.conversation_prefs (
 );
 
 alter table public.messages add column if not exists recalled_at timestamptz;
+alter table public.messages add column if not exists reply_to_id bigint references public.messages (id) on delete set null;
+create index if not exists messages_reply_to_idx on public.messages (reply_to_id) where reply_to_id is not null;
 
 create table if not exists public.moments (
   id uuid primary key default gen_random_uuid(),
