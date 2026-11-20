@@ -66,6 +66,17 @@ This file records user instructions, preferences, and teachings for reference in
   - 排查此类问题用 `auth/v1/signup`（autoconfirm）拿到 access_token 后带 `Authorization: Bearer` 直接 REST 实测，比猜测表结构可靠
   - 调试遗留测试账号前缀 `qa.`（qa.smoke/qa.probe/qa.fix/qa.norm，密码 qaTest123456），邮箱含历史 Date.now() 时间戳无法复原，只能由用户在 Supabase 后台 Authentication → Users 删除
 
+[生产托管:Vercel 部署与域名探测经验]
+- Date: 2026-11-20
+- Context: Discovered by Agent while delivering #6 正式托管（Vercel git 集成）
+- Category: Operations & Deployment
+- Instructions:
+  - 生产域名 `https://miniature-octo-telegram-puce.vercel.app`（已验证：标题/manifest/sw.js/SPA 兜底 200）；仓库零配置（`vercel.json` + `.env.production` + engines node 22.x），push main 自动构建发布
+  - Vercel 项目子域带随机颜色后缀（-puce）；探测「项目名.vercel.app」裸域名的 451 DEPLOYMENT_DISABLED 是他人占位域名，勿误判为自己被法律阻断；真实部署状态以 GitHub commit status 的 `Vercel` context 为准（`gh api repos/<repo>/commits/main/status`）
+  - `*-<scope>.vercel.app` 形式域名返回 302 → vercel.com/sso-api 属 Deployment Protection 行为，与生产主域无关
+  - Vercel 官方 agent 接入手册在 https://vercel.com/get-started.md（CLI + vercel/vercel-plugin + MCP https://mcp.vercel.com），已中止安装（域名问题解决后无必要），需要时可按手册继续
+  - 待办：Supabase Auth → URL Configuration 需将 Site URL 改为生产域名并追加 `https://miniature-octo-telegram-puce.vercel.app/**`（当前仍指向预览域名 + /login、/reset-password）
+
 [云端 e2e 账号开通与凭据轮换]
 - Date: 2026-11-20
 - Context: Discovered by Agent while provisioning E2E_USER_A/B 云端账号（用户授权 agent 全自主解决技术问题）

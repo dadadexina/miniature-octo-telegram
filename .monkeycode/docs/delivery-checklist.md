@@ -11,7 +11,7 @@
 - [x] **4. 隐私政策 / 用户协议**：`/legal/terms`、`/legal/privacy` 页面，登录页与「我的」页已挂链接
 - [x] **5. LICENSE**：MIT（仓库根目录，如需换协议告知）
 - [x] **2b. 邮件服务 SMTP 配置**：已启用自有 SMTP（QQ `smtp.qq.com:465`，Username=Sender=`471092554@qq.com`）。原授权码格式错误被 QQ 判 535，直连 AUTH 验证正确的 16 位授权码返回 235 后，经 Management API PATCH `smtp_pass`，注册探针端到端发信恢复（status 200 / PASS）
-- [ ] **6. 正式托管**：用户已选定 Vercel。仓库侧准备完毕（`9b23e03` 后追加）：`vercel.json`（Vite + SPA rewrites）、`.env.production`（VITE_SUPABASE_* 构建期公开配置，anon key 本就随客户端产物下发，RLS 保障安全）、`package.json engines: node 22.x`（匹配 CI 与 Vite 7 要求） ｜ **待用户**：vercel.com GitHub OAuth 导入仓库一键部署（零配置），部署后告知域名，agent 更新 Supabase Auth URL Configuration
+- [x] **6. 正式托管**：Vercel git 集成部署成功（2026-11-20），生产域名 `https://miniature-octo-telegram-puce.vercel.app`（200：标题/manifest/sw.js/SPA 兜底全正常，`.env.production` + `vercel.json` 零配置生效）。注：Vercel 项目子域带随机颜色后缀（-puce），无后缀裸域名属他人占位（探测返回 451 勿误判） ｜ **待用户**：Supabase Auth → URL Configuration 将 Site URL 改为生产域名并追加 `https://miniature-octo-telegram-puce.vercel.app/**` 到 Redirect URLs（保留预览域名双跑）
 
 ## P1 — 交付后一周内
 
@@ -25,7 +25,7 @@
 
 - [x] **12. 头像上传**：`avatars` Storage bucket（公开只读、每人仅写自己 `<uid>/` 目录，策略并入 CLOUD_SQL）+ `profiles.avatar_url` 列；EditProfile 选图 → canvas 降采样 256px JPEG → 上传 → 写入云端；本地演示模式降级存 dataURL；全站 Avatar 组件支持图片（灰度滤镜、加载失败回退首字块）；云端缺列时提示重跑 SQL ｜ 云端已生效（2026-11-20 用户重跑 CLOUD_SQL，REST 探针确认 `avatars` bucket 存在且公开可读、`client_errors` 表存在）
 - [x] **13. PWA 离线**：`vite-plugin-pwa`（generateSW，registerType autoUpdate）预缓存 16 项静态资源，离线可打开应用壳并读取 localStorage 缓存会话；保留现有 `public/manifest.webmanifest`（`manifest: false` 不重复生成），`navigateFallback: '/index.html'` 兜底 SPA 路由；构建产物 `sw.js` + `registerSW.js` 自动注入
-- [ ] **14. CD 自动部署**：用户已选定 Vercel——git 集成导入后每次 push 自动构建发布，无需额外 deploy job；随 #6 用户导入即闭环
+- [x] **14. CD 自动部署**：随 #6 Vercel git 集成闭环——import 后 commit `9110e5b` 自动构建发布，GitHub commit status 上 Vercel 检查 = success；后续每次 push main 自动上线
 - [ ] **15. 消息撤回/删除**：用户决策暂缓（2026-11-20），产品需要时再启动（需 messages update/delete 策略 + 前端状态机）
 - [~] **17. qa.* 遗留测试账号清理**：用户决策不处理（2026-11-20）——惰性账号无危害，保留现状
 - [x] **16. 清理死资源**：`public/vite.svg` 已移除
