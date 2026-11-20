@@ -5,12 +5,12 @@
 
 ## P0 — 不修不能交付
 
-- [x] **1. 忘记密码找回**：已实现 Login 入口 + `resetPasswordForEmail` + `/reset-password` 重置页 ｜ **待用户**：Supabase Auth → URL Configuration → Redirect URLs 添加 `<域名>/reset-password` 与 `<域名>/login`
-- [x] **2. 注册邮箱验证**：代码已支持（signUp 带 `emailRedirectTo`、无 session 时显示等待验证提示）｜ **待用户**：Supabase 后台开启 Confirm email（开启前注册的账号不受影响）
-- [x] **3. 账号注销**：Edge Function 源码（`supabase/functions/delete-account/index.ts`）+ 「我的」页注销入口级联清理已实现 ｜ **待用户**：Dashboard → Edge Functions 部署 `delete-account`
+- [x] **1. 忘记密码找回**：Login 入口 + `resetPasswordForEmail` + `/reset-password` 重置页已实现；经 Management API 确认 `uri_allow_list` 已含 `<域名>/reset-password` 与 `<域名>/login`、`site_url` 为预览域名 ｜ 剩余仅用户用真实邮箱走通一次重置闭环
+- [x] **2. 注册邮箱验证**：signUp 带 `emailRedirectTo`、无 session 显示等待验证提示；`mailer_autoconfirm=false`（Confirm email 已开），注册探针返回 pending（`identities:[]`、无 access_token）验证通过
+- [x] **3. 账号注销**：Edge Function `delete-account` 已用 CLI 部署上线（实测无令牌 401 / anon 401 invalid token），「我的」页两步确认 + 级联清理已实现
 - [x] **4. 隐私政策 / 用户协议**：`/legal/terms`、`/legal/privacy` 页面，登录页与「我的」页已挂链接
 - [x] **5. LICENSE**：MIT（仓库根目录，如需换协议告知）
-- [ ] **2b. 邮件服务 SMTP 配置**：内置发信限每小时约 2 封（实测触发 `email rate limit exceeded`，导致「忘记密码」提示繁忙）。需在 Auth → SMTP Settings 启用自有 SMTP（QQ 邮箱 `smtp.qq.com:465` + 16 位授权码即可），验证/重置邮件才具备生产可用性 ｜ **待用户**：后台填写
+- [x] **2b. 邮件服务 SMTP 配置**：已启用自有 SMTP（QQ `smtp.qq.com:465`，Username=Sender=`471092554@qq.com`）。原授权码格式错误被 QQ 判 535，直连 AUTH 验证正确的 16 位授权码返回 235 后，经 Management API PATCH `smtp_pass`，注册探针端到端发信恢复（status 200 / PASS）
 - [ ] **6. 正式托管**：选定静态托管（Vercel / Netlify / OSS+CDN），注入构建期变量 `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`，Supabase Auth URL Configuration 添加生产域名 ｜ **待用户**：确定托管平台
 
 ## P1 — 交付后一周内
