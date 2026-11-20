@@ -120,7 +120,7 @@ describe('hideMessage / fetchHiddenIds 单方删除', () => {
     supabase.from.mockImplementationOnce(() => okChain({ data: null, error: null }, capture))
     const res = await hideMessage('m1', 'me')
     expect(res.ok).toBe(true)
-    expect(capture.insert).toEqual({ message_id: 'm1', user_id: 'me' })
+    expect(capture.upsert).toEqual({ message_id: 'm1', user_id: 'me' })
   })
   it('fetchHiddenIds 返回自己隐藏的 id 列表', async () => {
     supabase.from.mockImplementationOnce(() => okChain({ data: [{ message_id: 'm1' }, { message_id: 'm2' }], error: null }))
@@ -223,7 +223,7 @@ describe('blocks 拉黑', () => {
     supabase.from.mockImplementationOnce(() => okChain({ data: null, error: null }, capture))
     const res = await blockUser('me', 'alice')
     expect(res.ok).toBe(true)
-    expect(capture.insert).toEqual({ blocker_id: 'me', blocked_id: 'alice' })
+    expect(capture.upsert).toEqual({ blocker_id: 'me', blocked_id: 'alice' })
   })
 
   it('fetchMyBlocks 返回我拉黑的 id;unblockUser 走删除链', async () => {
@@ -288,7 +288,7 @@ describe('friendRequests 好友请求', () => {
     supabase.from.mockImplementation((table) => {
       if (table === 'friends') {
         const chain = okChain({ data: null, error: null })
-        chain.insert = vi.fn((row) => {
+        chain.upsert = vi.fn((row) => {
           friendInserts.push(row)
           return chain
         })

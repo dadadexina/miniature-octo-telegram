@@ -72,7 +72,7 @@ export async function fetchFriends(meId) {
 export async function upsertFriend(meId, friendId) {
   const { error } = await supabase
     .from('friends')
-    .insert({ owner_id: meId, friend_id: friendId }, { ignoreDuplicates: true })
+    .upsert({ owner_id: meId, friend_id: friendId }, { ignoreDuplicates: true, onConflict: 'owner_id,friend_id' })
   if (error) {
     return { ok: false, error: error.message, permission: isPermissionError(error) }
   }

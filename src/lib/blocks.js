@@ -16,7 +16,7 @@ export async function blockUser(meId, targetId) {
   try {
     const { error } = await supabase
       .from('blocks')
-      .insert({ blocker_id: meId, blocked_id: targetId }, { ignoreDuplicates: true })
+      .upsert({ blocker_id: meId, blocked_id: targetId }, { ignoreDuplicates: true, onConflict: 'blocker_id,blocked_id' })
     if (error) return { ok: false, error: error.message, permission: isPermissionError(error) }
     return { ok: true }
   } catch {

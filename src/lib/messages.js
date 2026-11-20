@@ -54,7 +54,7 @@ export async function recallMessage(messageId) {
 export async function hideMessage(messageId, meId) {
   const { error } = await supabase
     .from('message_hides')
-    .insert({ message_id: messageId, user_id: meId }, { ignoreDuplicates: true })
+    .upsert({ message_id: messageId, user_id: meId }, { ignoreDuplicates: true, onConflict: 'message_id,user_id' })
   if (error) return { ok: false, error: error.message, permission: isPermissionError(error) }
   return { ok: true }
 }

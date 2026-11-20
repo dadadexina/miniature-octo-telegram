@@ -105,7 +105,7 @@ export async function likeMoment(momentId, userId) {
   try {
     const { error } = await supabase
       .from('moment_likes')
-      .insert({ moment_id: momentId, user_id: userId }, { ignoreDuplicates: true })
+      .upsert({ moment_id: momentId, user_id: userId }, { ignoreDuplicates: true, onConflict: 'moment_id,user_id' })
     if (error) return { ok: false, error: error.message, permission: isPermissionError(error) }
     return { ok: true }
   } catch {
