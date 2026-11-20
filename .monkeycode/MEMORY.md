@@ -42,4 +42,15 @@ This file records user instructions, preferences, and teachings for reference in
   - dev 服务器用 background terminal 跑 `npm run dev`（端口 5173，预览域名 5173-1b428f154a1564ff.monkeycode-ai.online）
   - 生产验证：`npm run build` 后 `npm run preview -- --port 5173 --host`，验证完杀进程并换回 dev
   - 无浏览器环境的应用冒烟方式：curl 各 `/src/*.jsx` 模块（vite 转换 200 即无编译错误）+ 检查 dev/preview 日志无 error
-  - 云端表探测：curl `https://ljlvqnhzewzxpyhgumnp.supabase.co/rest/v1/<table>` 带 anon key；返回 42501 permission denied 属预期（RLS 生效，仅 authenticated 可访问）
+   - 云端表探测：curl `https://ljlvqnhzewzxpyhgumnp.supabase.co/rest/v1/<table>` 带 anon key；返回 42501 permission denied 属预期（RLS 生效，仅 authenticated 可访问）
+
+[云端 profiles/messages 表结构约束]
+- Date: 2026-11-20
+- Context: Discovered by Agent while debugging「按 ID 搜索找不到对方」缺陷（实测 POST 探测列存在性）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 线上旧版 `profiles` 表原生只有 `id`/`username`/`avatar_url`/`created_at`；`nickname` 列由 CLOUD_SQL 的 `ADD COLUMN IF NOT EXISTS` 规范化补齐（已于 2026-11-20 执行生效）
+  - 线上 `messages` 存在旧外键 `messages_sender_id_fkey`/`messages_receiver_id_fkey` 引用 `profiles(id)`：**收发双方都必须先有 profiles 行**，否则发消息报 23503。应用侧由 ProfileGate 强制建立资料保证此前提
+  - PostgREST 缺列错误码为 PGRST204，文案是单引号（`Could not find the 'nickname' column`）；代码内 `isMissingColumn`（src/lib/profiles.js）已兼容单双引号两种文案
+  - 排查此类问题用 `auth/v1/signup`（autoconfirm）拿到 access_token 后带 `Authorization: Bearer` 直接 REST 实测，比猜测表结构可靠
+  - 调试遗留测试账号前缀 `qa.`（qa.smoke/qa.probe/qa.fix/qa.norm，密码 qaTest123456），可在 Supabase 后台 Authentication → Users 删除
