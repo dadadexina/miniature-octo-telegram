@@ -112,3 +112,13 @@ This file records user instructions, preferences, and teachings for reference in
   - realtime:单频道 `chat-sync:<uid>` 订阅 messages INSERT/UPDATE + read_cursors(filter peer_id=eq.me) + friend_requests;新表要加入 publication `supabase_realtime` 且 replica identity full
   - 已读模型是「每对一行的水位表」(read_cursors),未读数由 `recomputeUnreadCounts` 确定性重算;本地 readAt 仅作离线降级
   - 撤回窗口双端校验:前端 `canRecall`(RECALL_WINDOW_MS=2min)+ RLS `messages_update_recall`(created_at > now()-2min),RLS 拒绝映射文案「超过 2 分钟的消息不能撤回」
+
+[supabase-js 2.119 insert 不支持 ignoreDuplicates(静默忽略导致 409)]
+- Date: 2026-11-20
+- Context: Discovered by Agent while debugging production e2e block-test failure and login-hydration 409 console errors
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 本仓库安装的 postgrest-js(supabase-js 2.119.2 内置)中 `insert(values, opts)` 只接受 `{count, defaultToNull}`,传 `{ignoreDuplicates:true}` 会被静默忽略(不发 Prefer 头),重复键插入返回 409 23505
+  - 幂等写入必须用 `.upsert(payload, { ignoreDuplicates: true, onConflict: '<唯一约束列>' })`(friends/blockUser/hideMessage/likeMoment 四处已改,commit 05663b9)
+  - 生产 e2e 拉黑用例曾因此类残留行翻转动作而失败:serial 用例对共享后端状态敏感,跑生产套件前确认 `blocks` 等表无 e2e 账号残留行(调试脚本 /tmp/opencode/debug-block*.mjs 可经 UI 清理)
+  - 验证基线(2026-11-20):vitest 87/87、lint 0 errors/13 warnings、本地与生产 e2e 均 11/11、朋友圈生产冒烟(发布/点赞/评论/删除)全绿;生产 bundle 是否更新可 grep `dist/assets` 产物特征串对比线上同名 chunk

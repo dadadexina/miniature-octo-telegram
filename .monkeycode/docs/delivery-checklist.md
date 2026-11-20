@@ -41,7 +41,7 @@
 - [x] **W2a. lib 数据层**：`readCursors/blocks/friendRequests/moments/momentImage/syncHelpers` 新增；`messages.js` 撤回/隐藏；`profiles.js` 切 `search_profile` RPC（带表查询回退）
 - [x] **W2b. store 集成**：`read_cursors` 水位（已读回执 + 跨端未读确定性重算 `recomputeUnreadCounts`）、realtime 单频道 `chat-sync:<uid>`（messages INSERT/UPDATE + read_cursors + friend_requests，SUBSCRIBED 重连补拉 resyncCloud）、`online/offline` 横幅、请求/拉黑状态
 - [x] **W2c. UI**：ChatDetail 乐观发送/失败重试/撤回删除面板/已读回执/拉黑菜单；Contacts 好友请求流（新的朋友：接受/拒绝/取消）；Discover 真实朋友圈（发布含图/点赞/评论/分页/删除，仅好友可见）+ 本地演示降级；Profile 黑名单管理；CallOverlay「演示」徽标；Layout 离线横幅
-- [x] **W3a. 测试**：vitest 86/86（新增 `cloud-v2.spec.jsx` 26 条覆盖撤回窗口/合并纯函数/读水位/拉黑/请求流）；lint 0 errors；build 通过
-- [ ] **W3b. e2e 全链路**：`chat.spec.js` 重写为 serial 五用例（登录、请求→接受→收发→未读、已读回执→撤回双端占位、单方删除、拉黑/解除）——待跑绿
-- [ ] **W3c. 上线**：push main → Vercel CD → 生产冒烟（注册/精确搜索/请求/接受/收发/已读/撤回/朋友圈点赞评论）
+- [x] **W3a. 测试**：vitest 87/87（`cloud-v2.spec.jsx` 27 条覆盖撤回窗口/合并纯函数/读水位/拉黑/请求流）；lint 0 errors；build 通过
+- [x] **W3b. e2e 全链路**：`chat.spec.js` serial 五用例（登录、请求→接受→收发→未读、已读回执→撤回双端占位、单方删除、拉黑/解除）本地与生产均 11/11 绿
+- [x] **W3c. 上线**：push main → Vercel CD（05663b9）→ 生产冒烟通过（e2e 11/11 + 朋友圈发布/点赞/评论/删除）；修复 supabase-js 2.119 `insert()` 静默忽略 `ignoreDuplicates` 导致的 409（friends/blocks/message_hides/moment_likes 改用 `upsert()` + `onConflict`）
 - [x] **W4. 文档**：README 功能表/数据流/SQL 清单如实更新（通话标注演示、频道名 chat-sync、朋友圈仅好友可见）
