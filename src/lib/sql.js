@@ -1,5 +1,6 @@
 import { FRIENDS_SQL } from './friends'
 import { supabaseUrl } from './supabase'
+import { CLIENT_ERRORS_SQL } from './telemetry'
 
 function deriveSqlEditorUrl(url) {
   const match = /^https:\/\/([^.]+)\.supabase\.co$/.exec(url || '')
@@ -112,4 +113,6 @@ exception when duplicate_object then null; when others then
   raise notice '跳过 messages_content_len: %', sqlerrm;
 end $$;
 
-${FRIENDS_SQL}`
+${FRIENDS_SQL}
+
+${CLIENT_ERRORS_SQL}`

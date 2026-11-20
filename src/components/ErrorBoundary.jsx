@@ -1,4 +1,5 @@
 import { Component } from 'react'
+import { captureError } from '../lib/telemetry'
 
 export default class ErrorBoundary extends Component {
   constructor(props) {
@@ -12,6 +13,7 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error) {
     console.warn('[ErrorBoundary]', error?.message || error)
+    captureError(error, { kind: 'render' })
   }
 
   render() {
