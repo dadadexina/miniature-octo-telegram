@@ -64,6 +64,10 @@ export default function ChatDetail() {
   const [searching, setSearching] = useState(false)
   const [flashMsgId, setFlashMsgId] = useState(null)
   const flashTimer = useRef(null)
+  const [peerTyping, setPeerTyping] = useState(false)
+  const typingChannelRef = useRef(null)
+  const peerTypingTimer = useRef(null)
+  const lastTrackRef = useRef(0)
   const [menuOpen, setMenuOpen] = useState(false)
   const listRef = useRef(null)
   const bottomRef = useRef(null)
@@ -201,6 +205,30 @@ export default function ChatDetail() {
     }
   }, [searchOpen, searchQ, cloudReady, currentUser?.id, peerId, hiddenIds, messagesWith])
 
+  useEffect(() => {
+    if (!cloudReady) return undefined
+    const pairKey = [currentUser.id, peerId].sort().join('__')
+    const ch = supabase.channel(`typing:${pairKey}`)
+    ch.on('presence', { event: 'sync' }, () => {
+      const state = ch.presenceState()
+      if (state[peerId]?.length) {
+        setPeerTyping(true)
+        if (peerTypingTimer.current) clearTimeout(peerTypingTimer.current)
+        peerTypingTimer.current = setTimeout(() => setPeerTyping(false), 5000)
+      } else if (!state[peerId]) {
+        setPeerTyping(false)
+      }
+    })
+    ch.subscribe()
+    typingChannelRef.current = ch
+    return () => {
+      if (peerTypingTimer.current) clearTimeout(peerTypingTimer.current)
+      typingChannelRef.current = null
+      setPeerTyping(false)
+      supabase.removeChannel(ch)
+    }
+  }, [cloudReady, currentUser?.id, peerId])
+
   if (!currentUser) return <Navigate to="/login" replace />
 
   if (!peer) {
@@ -258,6 +286,19 @@ export default function ChatDetail() {
     })
   }
 
+  const announceTyping = () => {
+    const ch = typingChannelRef.current
+    if (!ch || !cloudReady) return
+    const nowTs = Date.now()
+    if (nowTs - lastTrackRef.current < 2000) return
+    lastTrackRef.current = nowTs
+    ch.track({ key: currentUser.id, typing: true }).catch(() => {})
+  }
+
+  const stopTypingSignal = () => {
+    typingChannelRef.current?.untrack().catch(() => {})
+  }
+
   const submit = async (e) => {
     e.preventDefault()
     const content = text.trim()
@@ -277,6 +318,7 @@ export default function ChatDetail() {
       ])
       setText('')
       setQuoteMsg(null)
+      stopTypingSignal()
       requestAnimationFrame(() => scrollToBottom(true))
       await sendCloudMessage(content, tmpId, quote?.replyToId || '')
       return
@@ -359,7 +401,7 @@ export default function ChatDetail() {
     >
       <AuthBar email={currentUser.email} onSignOut={onSignOut} />
       <NavBar
-        title={peer.nickname}
+        title={peerTyping ? <span data-testid="typing-indicator">正在输入…</span> : peer.nickname}
         left={<Back onClick={() => navigate('/chats')} />}
         right={
           <div className="relative flex items-center gap-1">
@@ -654,7 +696,11 @@ export default function ChatDetail() {
           placeholder="发送消息"
           maxLength={4000}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value)
+            announceTyping()
+          }}
+          onBlur={stopTypingSignal}
           onFocus={() => setTimeout(() => scrollToBottom(true), 80)}
         />
         <button
