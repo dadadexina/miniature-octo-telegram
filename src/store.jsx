@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { clearAccountStorage } from './lib/accountCleanup'
 import { blockUser, fetchMyBlocks, unblockUser } from './lib/blocks'
 import { deleteFriend, fetchFriends, upsertFriend } from './lib/friends'
 import {
@@ -11,6 +12,7 @@ import {
 import { applyDraft, loadDrafts, saveDrafts } from './lib/drafts'
 import { fetchConversationPrefs, upsertConversationPref } from './lib/conversationPrefs'
 import { deletePairMessages, fetchHiddenIds, fetchInbox, hideMessage, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
+import { findAuthIdentity } from './lib/identity'
 import { fetchProfilesByIds } from './lib/profiles'
 import { buildCursorMaps, fetchCursorsFor, upsertReadCursor } from './lib/readCursors'
 import { supabase } from './lib/supabase'
@@ -156,7 +158,7 @@ function pairKey(a, b) {
 
 function applyAuthUser(prev, authUser) {
   const email = authUser.email || ''
-  const exist = prev.users.find((u) => u.id === authUser.id || (email && u.email === email))
+  const exist = findAuthIdentity(prev.users, authUser)
   if (exist) {
     const user = { ...withPublicId(exist, exist.publicId || '88888'), email, id: authUser.id }
     return {
@@ -976,40 +978,37 @@ export function StoreProvider({ children }) {
 
         loginWithSupabaseUser(authUser) {
           if (!authUser?.id) return { ok: false }
-          const email = authUser.email || ''
-          const exist = state.users.find((u) => u.id === authUser.id || u.email === email)
-          if (exist) {
-            const user = {
-              ...withPublicId(exist, exist.publicId || '88888'),
-              email,
-              id: authUser.id,
-            }
-            patch((prev) => ({
-              ...prev,
-              currentUserId: authUser.id,
-              users: prev.users.map((u) => (u.id === exist.id ? { ...user, id: authUser.id } : u)),
-            }))
-            return { ok: true, user }
-          }
-          const taken = new Set(state.users.map((u) => u.publicId).filter(Boolean))
-          const user = {
-            id: authUser.id,
-            publicId: taken.has('88888') ? String(80000 + (state.users.length % 9999)) : '88888',
-            email,
-            phone: '',
-            nickname: email.split('@')[0] || '新用户',
-            createdAt: now(),
-          }
-          patch((prev) => ({
-            ...prev,
-            users: [...prev.users, user],
-            currentUserId: user.id,
-          }))
-          return { ok: true, user, isNew: true }
+          // 与 applyAuthUser 共用同一套身份解析,并按最新状态幂等写入,避免重复本地用户
+          setState((prev) => applyAuthUser(prev, authUser))
+          return { ok: true }
         },
 
       logout() {
         patch((prev) => ({ ...prev, currentUserId: null }))
+      },
+
+      // 注销账号后彻底清空本机残留:内存状态、按用户划分的缓存与通话临时标识
+      purgeAccount() {
+        clearAccountStorage()
+        setState(emptyState())
+        setAuthUser(null)
+        setProfile(null)
+        setProfileReady(true)
+        setProfileSynced(false)
+        setInbox([])
+        inboxIdsRef.current = new Set()
+        hiddenIdsRef.current = new Set()
+        setHiddenIds(hiddenIdsRef.current)
+        setUnread({})
+        setDrafts({})
+        readAtRef.current = {}
+        setReadAt({})
+        peerReadAtRef.current = {}
+        setPeerReadAt({})
+        setRequests({ incoming: [], outgoing: [] })
+        setBlockedIds([])
+        setConvPrefs({})
+        setActivePeerId(null)
       },
 
       updateNickname(nickname) {

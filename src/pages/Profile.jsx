@@ -10,7 +10,7 @@ import { useStore } from '../store'
 
 export default function Profile() {
   const navigate = useNavigate()
-  const { currentUser, avatarColor, logout, profile, profileSynced, authUser, blockedIds, setBlockedFor } = useStore()
+  const { currentUser, avatarColor, logout, purgeAccount, profile, profileSynced, authUser, blockedIds, setBlockedFor } = useStore()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteHint, setDeleteHint] = useState('')
@@ -49,15 +49,12 @@ export default function Profile() {
       return
     }
     try {
-      localStorage.removeItem('wechat-chat-app-v3')
-      Object.keys(localStorage)
-        .filter((key) => key.startsWith('wechat-chat-app-v3:'))
-        .forEach((key) => localStorage.removeItem(key))
+      await supabase.auth.signOut()
     } catch {
-      // 本地存储不可用时忽略，云端账号已删除
+      // 账号已在服务端删除,本地会话失效属预期
     }
-    await supabase.auth.signOut()
-    logout()
+    // 清空内存状态与全部本地缓存,保证同邮箱重新注册时是全新空白账号
+    purgeAccount()
     navigate('/login', { replace: true })
   }
 
