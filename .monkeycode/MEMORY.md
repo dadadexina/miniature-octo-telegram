@@ -175,3 +175,12 @@ This file records user instructions, preferences, and teachings for reference in
   - 验证脚本:`/tmp/opencode/call-failpath.mjs`(支持 `CALL_BASE`,5 项断言);真实接通需用户在普通网络双开浏览器验证
   - 代码已支持 `VITE_PEER_HOST/PORT/PATH/KEY/SECURE` 切自建 PeerServer,换服务器无需改业务代码
   - 通话可用的前提:双方均为云端登录账号且各自停留在与对方的聊天页(当前版本 Peer 仅在 ChatDetail 内创建)
+
+[功能完成后推送 GitHub]
+- Date: 2026-11-21
+- Context: 用户要求下次完成或新增功能后，由 Agent 推送到 GitHub 仓库
+- Category: Workflow & Collaboration
+- Instructions:
+  - 完成/新增功能后，先 `npm run lint`、`npm run test`、`npm run build` 全部通过，再 commit 并 push 到 `origin/main`
+  - 推送前先 `git status`/`git diff` 确认只包含本次改动，推送后在回复中说明 commit 与结果
+  - 若当次用户指定分支或 PR 流程，以当次指示为准
