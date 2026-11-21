@@ -439,6 +439,7 @@ with check (
 alter table public.read_cursors replica identity full;
 alter table public.friend_requests replica identity full;
 alter table public.friends replica identity full;
+alter table public.profiles replica identity full;
 
 do $$
 begin
@@ -457,6 +458,14 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.friends;
+exception
+  when duplicate_object then null;
+end $$;
+
+-- 好友更换头像/昵称后立即推送给在线好友
+do $$
+begin
+  alter publication supabase_realtime add table public.profiles;
 exception
   when duplicate_object then null;
 end $$;`

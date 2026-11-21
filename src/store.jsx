@@ -13,7 +13,8 @@ import { applyDraft, loadDrafts, saveDrafts } from './lib/drafts'
 import { fetchConversationPrefs, upsertConversationPref } from './lib/conversationPrefs'
 import { deletePairMessages, fetchHiddenIds, fetchInbox, hideMessage, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
 import { findAuthIdentity } from './lib/identity'
-import { fetchProfilesByIds } from './lib/profiles'
+import { mapProfile, fetchProfilesByIds } from './lib/profiles'
+import { applyProfileRow, withMappedAvatar } from './lib/profileMerge'
 import { buildCursorMaps, fetchCursorsFor, upsertReadCursor } from './lib/readCursors'
 import { supabase } from './lib/supabase'
 import { mergeReadAtMaps, recomputeUnreadCounts } from './lib/syncHelpers'
@@ -223,10 +224,15 @@ export function StoreProvider({ children }) {
   const markLocalFriendRef = useRef(null)
   const friendResyncRef = useRef(null)
   const hadDisconnectedRef = useRef(false)
+  const profileSyncedRef = useRef(false)
 
   useEffect(() => {
     stateRef.current = state
   }, [state])
+
+  useEffect(() => {
+    profileSyncedRef.current = profileSynced
+  }, [profileSynced])
 
   useEffect(() => {
     saveState(state)
@@ -343,6 +349,51 @@ export function StoreProvider({ children }) {
     }
   }, [])
 
+  const applyCloudProfiles = useCallback((profiles, { keepAvatarIfEmpty = false } = {}) => {
+    const list = (profiles || []).filter((prof) => prof?.id)
+    if (!list.length) return
+    setState((prev) => {
+      let users = prev.users
+      list.forEach((prof) => {
+        users = applyProfileRow(users, withMappedAvatar(prof), { keepAvatarIfEmpty })
+      })
+      return users === prev.users ? prev : { ...prev, users }
+    })
+  }, [])
+
+  const applyProfileRows = useCallback((profiles) => {
+    const me = authUserRef.current?.id
+    const known = new Set([me, ...stateRef.current.users.map((u) => u.id)].filter(Boolean))
+    const list = (profiles || []).filter((prof) => prof?.id && known.has(prof.id))
+    if (list.length) applyCloudProfiles(list)
+  }, [applyCloudProfiles])
+
+  // 拉取指定用户的最新云端资料:登录、重连、好友变化时调用,
+  // 保证离线期间对方更换的头像在上线后立即生效。
+  const refreshProfiles = useCallback(
+    async (ids) => {
+      const me = authUserRef.current?.id
+      const unique = [...new Set((ids || []).filter((id) => id && isUuid(id)))]
+      if (!unique.length) return
+      const result = await fetchProfilesByIds(unique)
+      if (!result.ok) return
+      const others = []
+      ;(result.profiles || []).forEach((prof) => {
+        if (!prof?.id) return
+        if (prof.id === me) {
+          // 本地头像尚未同步到云端时保留本地值,避免把刚选的头像冲掉
+          applyCloudProfiles([prof], { keepAvatarIfEmpty: true })
+          setProfile((prev) => (prev && !profileSyncedRef.current ? prev : prof))
+          setProfileReady(true)
+          return
+        }
+        others.push(prof)
+      })
+      if (others.length) applyCloudProfiles(others)
+    },
+    [applyCloudProfiles]
+  )
+
   const refreshFriendRequests = useCallback(async () => {
     const me = authUserRef.current?.id
     if (!me || !isUuid(me)) return
@@ -378,6 +429,8 @@ export function StoreProvider({ children }) {
         prev.friendships.filter((f) => f.userId === me && isUuid(f.friendId)).map((f) => f.friendId)
       )
       const cloudIds = [...new Set(result.friends.map((f) => f.friendId))].filter((id) => id && id !== me)
+      // 每次好友同步都刷新一次资料,覆盖离线期间对方更换的头像
+      refreshProfiles(cloudIds)
       const newIds = cloudIds.filter((id) => !localIds.has(id))
       const removedIds = [...localIds].filter((id) => !cloudIds.includes(id))
       if (!newIds.length && !removedIds.length) return
@@ -437,7 +490,7 @@ export function StoreProvider({ children }) {
       if (timer) clearTimeout(timer)
       if (friendResyncRef.current === schedule) friendResyncRef.current = null
     }
-  }, [authUser?.id])
+  }, [authUser?.id, refreshProfiles])
 
   useEffect(() => {
     const me = authUser?.id
@@ -482,8 +535,12 @@ export function StoreProvider({ children }) {
     }
     applyCursors(cursorsRes)
     await refreshFriendRequests()
+    const friendIds = stateRef.current.friendships
+      .filter((f) => f.userId === me && isUuid(f.friendId))
+      .map((f) => f.friendId)
+    await refreshProfiles([me, ...friendIds])
     setSyncTick((tick) => tick + 1)
-  }, [mergeInbox, applyCursors, refreshFriendRequests])
+  }, [mergeInbox, applyCursors, refreshFriendRequests, refreshProfiles])
 
   useEffect(() => {
     resyncRef.current = resyncCloud
@@ -546,6 +603,30 @@ export function StoreProvider({ children }) {
       )
       .on(
         'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'profiles' },
+        (payload) => {
+          const row = payload.new
+          if (!row?.id) return
+          applyProfileRows([mapProfile(row)])
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        (payload) => {
+          const row = payload.new
+          if (!row?.id) return
+          const prof = mapProfile(row)
+          if (row.id === me) {
+            setProfile((prev) => (prev && !profileSyncedRef.current ? prev : prof))
+            applyCloudProfiles([prof], { keepAvatarIfEmpty: true })
+            return
+          }
+          applyProfileRows([prof])
+        }
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'friend_requests' },
         (payload) => {
           const row = payload.new
@@ -577,7 +658,7 @@ export function StoreProvider({ children }) {
       disposed = true
       supabase.removeChannel(channel)
     }
-  }, [authUser?.id, ingestCloudMessage, mergeInbox])
+  }, [authUser?.id, ingestCloudMessage, mergeInbox, applyCloudProfiles, applyProfileRows])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
