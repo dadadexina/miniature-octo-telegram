@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { normalizeSignature } from './signature'
 
 const USERNAME_KEYS = ['username', 'custom_id', 'public_id', 'user_id']
 const NICKNAME_KEYS = ['nickname', 'display_name', 'name']
@@ -27,6 +28,7 @@ export function mapProfile(row) {
     nickname: pick(row, NICKNAME_KEYS),
     username: pick(row, USERNAME_KEYS),
     avatarUrl: row.avatar_url || row.avatarUrl || '',
+    signature: normalizeSignature(row.signature || ''),
     phone: row.phone || '',
     allowEmailSearch: row.allow_email_search !== false,
     allowPhoneSearch: row.allow_phone_search !== false,
@@ -63,6 +65,26 @@ export async function updateProfileAvatar(userId, avatarUrl) {
     return { ok: false, error: '云端缺少 avatar_url 列，请重新执行云初始化 SQL', permission: false }
   }
   return { ok: false, error: error.message || '保存头像失败', permission: isPermissionError(error) }
+}
+
+export async function updateProfileSignature(userId, signature) {
+  const value = normalizeSignature(signature)
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ signature: value })
+    .eq('id', userId)
+    .select('*')
+    .maybeSingle()
+  if (!error) return { ok: true, profile: mapProfile(data) }
+  if (isMissingColumn(error, 'signature')) {
+    return {
+      ok: false,
+      localOnly: true,
+      error: '云端资料表缺少 signature 列，签名已仅保存在本机，请执行云初始化 SQL 升级',
+      permission: false,
+    }
+  }
+  return { ok: false, error: error.message || '保存个性签名失败', permission: isPermissionError(error) }
 }
 
 export async function uploadAvatarFile(userId, blob, contentType = 'image/jpeg') {

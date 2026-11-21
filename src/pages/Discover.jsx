@@ -15,6 +15,7 @@ import {
   uploadMomentImage,
 } from '../lib/moments'
 import { fetchProfilesByIds } from '../lib/profiles'
+import { loadLocalSignature } from '../lib/signature'
 import { useStore } from '../store'
 import { formatRelativeTime } from '../utils'
 
@@ -28,6 +29,7 @@ function CloudDiscover() {
   const { currentUser, profile, avatarColor, getUser, upsertUsers, syncTick } = useStore()
   const meName = profile?.nickname || currentUser.nickname
   const meId = currentUser.id
+  const meSignature = profile?.signature || loadLocalSignature(meId)
   const [feed, setFeed] = useState([])
   const [likes, setLikes] = useState([])
   const [comments, setComments] = useState([])
@@ -208,7 +210,7 @@ function CloudDiscover() {
     <div className="flex h-full flex-col bg-white">
       <header className="sticky top-0 z-20 flex h-11 shrink-0 items-center border-b border-eink-divider bg-eink-bar px-3">
         <div className="w-16" />
-        <h1 className="flex-1 truncate text-center text-[17px] font-medium">朋友圈</h1>
+        <h1 className="flex-1 truncate text-center text-[17px] font-medium">纸墨信笺</h1>
         <div className="flex w-16 justify-end">
           <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => setOpen(true)} aria-label="发布">
             <CameraIcon />
@@ -228,6 +230,7 @@ function CloudDiscover() {
           name={meName}
           avatarSrc={profile?.avatarUrl || currentUser.avatarUrl || ''}
           avatarColor={avatarColor(meId)}
+          signature={meSignature}
           editable={false}
           raised
         />
@@ -481,6 +484,7 @@ function PhotoGrid({ count, seed = '' }) {
 function LocalDiscover() {
   const { currentUser, momentsFeed, publishMoment, getUser, avatarColor, profile } = useStore()
   const meName = profile?.nickname || currentUser.nickname
+  const meSignature = profile?.signature || loadLocalSignature(currentUser.id)
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [images, setImages] = useState(4)
@@ -517,7 +521,7 @@ function LocalDiscover() {
     <div className="flex h-full flex-col bg-white">
       <header className="sticky top-0 z-20 flex h-11 shrink-0 items-center border-b border-eink-divider bg-eink-bar px-3">
         <div className="w-16" />
-        <h1 className="flex-1 truncate text-center text-[17px] font-medium">朋友圈</h1>
+        <h1 className="flex-1 truncate text-center text-[17px] font-medium">纸墨信笺</h1>
         <div className="flex w-16 justify-end">
           <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => setOpen(true)} aria-label="发布">
             <CameraIcon />
@@ -531,6 +535,7 @@ function LocalDiscover() {
           name={meName}
           avatarSrc={profile?.avatarUrl || currentUser.avatarUrl || ''}
           avatarColor={avatarColor(currentUser.id)}
+          signature={meSignature}
           editable={false}
           raised
         />

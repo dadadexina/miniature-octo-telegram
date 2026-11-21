@@ -11,7 +11,7 @@ const ME = '11111111-1111-4111-8111-111111111111'
 vi.mock('../store', () => ({
   useStore: () => ({
     currentUser: { id: '11111111-1111-4111-8111-111111111111', nickname: '我', avatarUrl: '' },
-    profile: { nickname: '我', avatarUrl: '' },
+    profile: { nickname: '我', avatarUrl: '', signature: '见字如面' },
     avatarColor: () => '#191919',
     getUser: () => null,
     upsertUsers: vi.fn(),
@@ -62,6 +62,16 @@ describe('Discover 朋友圈页', () => {
     expect(screen.queryByTestId('change-cover')).toBeNull()
     expect(screen.getByTestId('moments-cover').dataset.raised).toBe('true')
     expect(screen.getByTestId('moments-pull-indicator')).toBeTruthy()
+  })
+
+  it('顶部标题为纸墨信笺，头像无圆形白底并展示个性签名', async () => {
+    setup()
+    await screen.findByTestId('moments-empty')
+    expect(screen.getByRole('heading', { name: '纸墨信笺' })).toBeTruthy()
+    const link = screen.getByTestId('moments-avatar-link')
+    expect(link.className).not.toContain('rounded-full')
+    expect(link.className).not.toContain('ring-')
+    expect(screen.getByTestId('moments-signature').textContent).toBe('见字如面')
   })
 
   it('在顶部下拉松手后重新拉取动态', async () => {

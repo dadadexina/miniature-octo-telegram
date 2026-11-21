@@ -11,6 +11,7 @@ import {
 import { isUuid } from '../lib/messages'
 import { saveMomentCover } from '../lib/momentCover'
 import { NOTIFICATION_SOUNDS, playNotificationSound } from '../lib/notificationSounds'
+import { updateProfileSignature } from '../lib/profiles'
 import {
   CUSTOM_RINGTONE_ID,
   DEFAULT_RINGTONE_ID,
@@ -25,12 +26,19 @@ import {
   saveCustomRingtone,
 } from '../lib/ringtoneStore'
 import { supabase } from '../lib/supabase'
+import {
+  SIGNATURE_MAX,
+  loadLocalSignature,
+  normalizeSignature,
+  saveLocalSignature,
+} from '../lib/signature'
 import { useStore } from '../store'
 
 const MAIN_ITEMS = [
   { key: 'notify', title: '通知', desc: '新消息提醒、声音与震动设置' },
   { key: 'display', title: '界面显示', desc: '深色模式、字体大小调整' },
   { key: 'security', title: '账号安全', desc: '修改密码、注销账号' },
+  { key: 'other', title: '其他设置', desc: '个性签名等更多偏好' },
 ]
 
 const VIEW_TITLES = {
@@ -38,6 +46,7 @@ const VIEW_TITLES = {
   notify: '通知',
   display: '界面显示',
   security: '账号安全',
+  other: '其他设置',
 }
 
 const NOTIFY_ITEMS = [
@@ -67,7 +76,7 @@ function readNotificationPermission() {
 
 export default function Settings() {
   const navigate = useNavigate()
-  const { currentUser, authUser, purgeAccount, logout } = useStore()
+  const { currentUser, authUser, profile, setCloudProfile, purgeAccount, logout } = useStore()
   const [view, setView] = useState('main')
   const [settings, setSettings] = useState(() => loadSettings())
   const [notice, setNotice] = useState('')
@@ -81,6 +90,10 @@ export default function Settings() {
   const [pwdBusy, setPwdBusy] = useState(false)
   const [customRingtone, setCustomRingtone] = useState(null)
   const [ringtoneBusy, setRingtoneBusy] = useState(false)
+  const [signature, setSignature] = useState(() =>
+    normalizeSignature(profile?.signature || loadLocalSignature(currentUser?.id) || '')
+  )
+  const [signatureBusy, setSignatureBusy] = useState(false)
   const [notificationPermission, setNotificationPermission] = useState(readNotificationPermission)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -247,6 +260,38 @@ export default function Settings() {
     const res = await saveMomentCover(userId, file)
     setCoverBusy(false)
     setNotice(res.ok ? '朋友圈背景已更新' : res.error || '更换背景失败')
+  }
+
+  const onSaveSignature = async (e) => {
+    e.preventDefault()
+    const userId = currentUser?.id
+    if (!userId) {
+      setNotice('请先登录后再设置个性签名')
+      return
+    }
+    const value = normalizeSignature(signature)
+    setSignatureBusy(true)
+    let remote = { ok: true }
+    if (cloudAccount) {
+      try {
+        remote = await updateProfileSignature(userId, value)
+      } catch (err) {
+        remote = { ok: false, error: err?.message || '保存个性签名失败' }
+      }
+    }
+    if (!remote.ok && !remote.localOnly) {
+      setSignatureBusy(false)
+      setNotice(remote.error || '保存个性签名失败')
+      return
+    }
+    saveLocalSignature(userId, value)
+    setSignature(value)
+    setCloudProfile(
+      remote.profile || { ...(profile || { id: userId }), signature: value },
+      cloudAccount && Boolean(remote.ok)
+    )
+    setSignatureBusy(false)
+    setNotice(remote.localOnly ? '云端资料表未升级，个性签名已保存到本机' : '个性签名已保存')
   }
 
   const validateNewPassword = () => {
@@ -720,6 +765,47 @@ export default function Settings() {
               </button>
               <p className="mt-2 text-center text-[12px] text-eink-sub">注销后云端数据不可恢复。</p>
             </div>
+          </div>
+        ) : null}
+
+        {view === 'other' ? (
+          <div data-testid="settings-other">
+            <form className="mt-3 border-y border-eink-divider bg-eink-bar" onSubmit={onSaveSignature}>
+              <div className="px-4 py-3.5">
+                <label className="block text-[16px] text-eink-text" htmlFor="profile-signature">
+                  个性签名
+                </label>
+                <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                  显示在发现页头像下方，最多 {SIGNATURE_MAX} 个字。
+                </p>
+                <textarea
+                  id="profile-signature"
+                  data-testid="settings-signature-input"
+                  rows={3}
+                  maxLength={SIGNATURE_MAX}
+                  className="mt-3 w-full resize-none border border-eink-line/30 bg-eink-paper px-3 py-2 text-[15px] leading-6 outline-none"
+                  placeholder="写一句签名，例如：见字如面。"
+                  value={signature}
+                  onChange={(e) => setSignature(normalizeSignature(e.target.value))}
+                />
+                <div className="mt-1 flex items-center justify-between">
+                  <span className="text-[12px] text-eink-sub">
+                    {signature.length}/{SIGNATURE_MAX}
+                  </span>
+                  <button
+                    type="submit"
+                    data-testid="settings-save-signature"
+                    className="h-9 border border-eink-ink px-4 text-[14px] text-eink-ink active:bg-[#E7E5DD] disabled:opacity-60"
+                    disabled={signatureBusy}
+                  >
+                    {signatureBusy ? '正在保存...' : '保存签名'}
+                  </button>
+                </div>
+              </div>
+            </form>
+            <p className="mt-3 px-4 text-[12px] leading-5 text-eink-sub">
+              签名会保存在云端并同步到其他设备；云端未升级时会先保存在本机。
+            </p>
           </div>
         ) : null}
       </div>

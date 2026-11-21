@@ -8,17 +8,28 @@ import { SETTINGS_KEY } from '../lib/appSettings'
 const storeState = vi.hoisted(() => ({
   currentUser: { id: 'u1', nickname: '我' },
   authUser: null,
+  profile: { nickname: '我' },
 }))
-const storeMocks = vi.hoisted(() => ({ purgeAccount: vi.fn(), logout: vi.fn() }))
+const storeMocks = vi.hoisted(() => ({
+  purgeAccount: vi.fn(),
+  logout: vi.fn(),
+  setCloudProfile: vi.fn(),
+}))
 
 vi.mock('../store', () => ({
   useStore: () => ({
     currentUser: storeState.currentUser,
     authUser: storeState.authUser,
+    profile: storeState.profile,
+    setCloudProfile: storeMocks.setCloudProfile,
     purgeAccount: storeMocks.purgeAccount,
     logout: storeMocks.logout,
   }),
 }))
+
+const profileMocks = vi.hoisted(() => ({ updateProfileSignature: vi.fn() }))
+
+vi.mock('../lib/profiles', () => ({ updateProfileSignature: profileMocks.updateProfileSignature }))
 
 const authMock = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
@@ -58,6 +69,7 @@ beforeEach(() => {
   delete document.documentElement.dataset.fontScale
   storeState.currentUser = { id: 'u1', nickname: '我' }
   storeState.authUser = null
+  storeState.profile = { nickname: '我' }
   vi.clearAllMocks()
   ringtoneStoreMock.loadCustomRingtone.mockResolvedValue(null)
   ringtoneStoreMock.saveCustomRingtone.mockImplementation(async (file) => ({ name: file.name, size: file.size }))
@@ -65,6 +77,7 @@ beforeEach(() => {
   authMock.signInWithPassword.mockResolvedValue({ error: null })
   authMock.reauthenticate.mockResolvedValue({ error: null })
   authMock.updateUser.mockResolvedValue({ error: null })
+  profileMocks.updateProfileSignature.mockResolvedValue({ ok: true, profile: { nickname: '我' } })
 })
 
 afterEach(() => {
@@ -94,7 +107,7 @@ function closeNotice() {
 }
 
 describe('Settings 设置页', () => {
-  it('展示三个设置项与副标题', () => {
+  it('展示设置项与副标题', () => {
     setup()
     expect(screen.getByText('通知')).toBeTruthy()
     expect(screen.getByText('新消息提醒、声音与震动设置')).toBeTruthy()
@@ -102,6 +115,8 @@ describe('Settings 设置页', () => {
     expect(screen.getByText('深色模式、字体大小调整')).toBeTruthy()
     expect(screen.getByText('账号安全')).toBeTruthy()
     expect(screen.getByText('修改密码、注销账号')).toBeTruthy()
+    expect(screen.getByText('其他设置')).toBeTruthy()
+    expect(screen.getByText('个性签名等更多偏好')).toBeTruthy()
   })
 
   it('朋友圈背景入口位于界面显示面板', () => {
@@ -338,5 +353,52 @@ describe('Settings 设置页', () => {
     await waitFor(() => expect(screen.getByText('当前密码不正确')).toBeTruthy())
     expect(authMock.reauthenticate).not.toHaveBeenCalled()
     expect(authMock.updateUser).not.toHaveBeenCalled()
+  })
+
+  it('其他设置可保存个性签名到本机并限制 30 字', async () => {
+    setup()
+    openView(3)
+    expect(screen.getByTestId('settings-other')).toBeTruthy()
+
+    const input = screen.getByTestId('settings-signature-input')
+    fireEvent.change(input, { target: { value: '  见字如面  ' } })
+    expect(input.value).toBe('见字如面')
+
+    fireEvent.change(input, { target: { value: '一'.repeat(40) } })
+    expect(input.value).toHaveLength(30)
+
+    fireEvent.change(input, { target: { value: '见字如面，纸短情长' } })
+    fireEvent.submit(screen.getByTestId('settings-save-signature').closest('form'))
+
+    await waitFor(() => expect(screen.getByText('个性签名已保存')).toBeTruthy())
+    expect(localStorage.getItem('eink:signature:v1:u1')).toBe('见字如面，纸短情长')
+    expect(profileMocks.updateProfileSignature).not.toHaveBeenCalled()
+    expect(storeMocks.setCloudProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ signature: '见字如面，纸短情长' }),
+      false
+    )
+  })
+
+  it('云端账号保存个性签名会同步到资料表', async () => {
+    useCloudAccount()
+    storeState.profile = { id: CLOUD_USER_ID, nickname: '云用户', signature: '' }
+    profileMocks.updateProfileSignature.mockResolvedValue({
+      ok: true,
+      profile: { id: CLOUD_USER_ID, nickname: '云用户', signature: '云上见' },
+    })
+
+    setup()
+    openView(3)
+    fireEvent.change(screen.getByTestId('settings-signature-input'), { target: { value: '云上见' } })
+    fireEvent.submit(screen.getByTestId('settings-save-signature').closest('form'))
+
+    await waitFor(() =>
+      expect(profileMocks.updateProfileSignature).toHaveBeenCalledWith(CLOUD_USER_ID, '云上见')
+    )
+    expect(screen.getByText('个性签名已保存')).toBeTruthy()
+    expect(storeMocks.setCloudProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ signature: '云上见' }),
+      true
+    )
   })
 })

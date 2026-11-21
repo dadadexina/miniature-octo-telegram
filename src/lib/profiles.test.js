@@ -35,6 +35,12 @@ describe('mapProfile', () => {
     expect(p.username).toBe('xyz')
   })
 
+  it('映射并裁剪个性签名', () => {
+    expect(mapProfile({ id: 'u3', signature: ' 见字如面 ' }).signature).toBe('见字如面')
+    expect(mapProfile({ id: 'u4' }).signature).toBe('')
+    expect(mapProfile({ id: 'u5', signature: '字'.repeat(40) }).signature).toHaveLength(30)
+  })
+
   it('空行返回 null', () => {
     expect(mapProfile(null)).toBeNull()
   })

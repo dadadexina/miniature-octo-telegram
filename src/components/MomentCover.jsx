@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Avatar from './Avatar'
 import { loadMomentCover, saveMomentCover } from '../lib/momentCover'
+import { normalizeSignature } from '../lib/signature'
 
 export default function MomentCover({
   userId,
@@ -9,11 +10,13 @@ export default function MomentCover({
   name,
   avatarSrc,
   avatarColor,
+  signature = '',
   profileHref = '/me',
   editable = true,
   raised = false,
 }) {
   const coverKey = coverUserId || userId
+  const signatureText = normalizeSignature(signature)
   const [cover, setCover] = useState(() => loadMomentCover(coverKey))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -107,8 +110,9 @@ export default function MomentCover({
       >
         <Link
           to={profileHref}
-          className={`rounded-full ring-4 ${raised ? 'ring-white/80' : 'ring-eink-paper'}`}
+          className="block"
           aria-label="查看资料"
+          data-testid="moments-avatar-link"
         >
           <Avatar name={name} color={avatarColor} size={76} src={avatarSrc || ''} />
         </Link>
@@ -119,6 +123,23 @@ export default function MomentCover({
         >
           {name}
         </span>
+        {signatureText ? (
+          <span
+            className={`mt-0.5 max-w-[76%] break-words text-center text-[12px] leading-4 ${
+              raised ? 'text-white/85 drop-shadow' : 'text-eink-ink/70'
+            }`}
+            style={{
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}
+            title={signatureText}
+            data-testid="moments-signature"
+          >
+            {signatureText}
+          </span>
+        ) : null}
       </div>
 
       {error ? (

@@ -478,6 +478,16 @@ alter table public.profiles add column if not exists allow_phone_search boolean 
 alter table public.profiles add column if not exists id_change_count integer not null default 0;
 alter table public.profiles add column if not exists id_changed_at timestamptz;
 
+-- 个性签名(最多 30 字),展示在发现页头像下方
+alter table public.profiles add column if not exists signature text;
+
+do $$ begin
+  alter table public.profiles add constraint profiles_signature_len
+    check (signature is null or char_length(signature) <= 30);
+exception when duplicate_object then null; when others then
+  raise notice '跳过 profiles_signature_len: %', sqlerrm;
+end $$;
+
 do $$ begin
   alter table public.profiles add constraint profiles_phone_format
     check (phone is null or phone = '' or phone ~ '^[0-9]{6,20}$');
