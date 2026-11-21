@@ -20,7 +20,10 @@ beforeEach(() => {
   delete document.documentElement.dataset.fontScale
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 function setup() {
   render(
@@ -68,6 +71,64 @@ describe('Settings 设置页', () => {
 
     fireEvent.click(screen.getByLabelText('返回'))
     expect(screen.getByTestId('settings-list')).toBeTruthy()
+  })
+
+  it('通知面板提供十个提示音并支持试听与切换', () => {
+    const created = []
+    class FakeAudio {
+      constructor(src) {
+        this.src = src
+        created.push(this)
+      }
+
+      play() {
+        return Promise.resolve()
+      }
+
+      pause() {}
+    }
+    vi.stubGlobal('Audio', FakeAudio)
+
+    setup()
+    openView(0)
+
+    expect(screen.getByTestId('settings-sound-list').querySelectorAll('button')).toHaveLength(10)
+    expect(screen.getByTestId('settings-sound-bell').getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(screen.getByTestId('settings-sound-guitar'))
+    expect(screen.getByTestId('settings-sound-guitar').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('settings-sound-bell').getAttribute('aria-pressed')).toBe('false')
+    expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)).notifySoundId).toBe('guitar')
+    expect(created.at(-1).src).toBe('/sounds/guitar.mp3')
+  })
+
+  it('通知面板可发送测试通知', () => {
+    vi.stubGlobal(
+      'Audio',
+      class {
+        play() {
+          return Promise.resolve()
+        }
+
+        pause() {}
+      }
+    )
+
+    setup()
+    openView(0)
+    fireEvent.click(screen.getByTestId('settings-test-notification'))
+
+    expect(screen.getByTestId('settings-notice')).toBeTruthy()
+    expect(screen.getByText('测试通知已发送')).toBeTruthy()
+  })
+
+  it('关闭新消息提醒后发送测试通知会提示先开启', () => {
+    setup()
+    openView(0)
+    fireEvent.click(screen.getByRole('switch', { name: '新消息提醒' }))
+    fireEvent.click(screen.getByTestId('settings-test-notification'))
+
+    expect(screen.getByText('请先开启新消息提醒')).toBeTruthy()
   })
 
   it('界面显示面板可切换深色模式与字体大小并立即生效', () => {

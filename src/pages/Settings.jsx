@@ -1,9 +1,15 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
-import { loadSettings, requestNotificationPermission, saveSettings } from '../lib/appSettings'
+import {
+  loadSettings,
+  notifyIncoming,
+  requestNotificationPermission,
+  saveSettings,
+} from '../lib/appSettings'
 import { isUuid } from '../lib/messages'
 import { saveMomentCover } from '../lib/momentCover'
+import { NOTIFICATION_SOUNDS, playNotificationSound } from '../lib/notificationSounds'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../store'
 
@@ -45,11 +51,40 @@ export default function Settings() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const fileRef = useRef(null)
+  const previewRef = useRef(null)
 
   const cloudAccount = isUuid(currentUser?.id)
   const email = authUser?.email || currentUser?.email || ''
 
   const update = (patch) => setSettings(saveSettings(patch))
+
+  useEffect(() => {
+    return () => {
+      try {
+        previewRef.current?.pause?.()
+      } catch {
+        // 页面卸载时停止试听
+      }
+    }
+  }, [])
+
+  const previewSound = (id) => {
+    try {
+      previewRef.current?.pause?.()
+    } catch {
+      // 忽略旧音频停止失败
+    }
+    previewRef.current = playNotificationSound(id)
+  }
+
+  const sendTestNotification = () => {
+    if (!settings.notifyMessages) {
+      setNotice('请先开启新消息提醒')
+      return
+    }
+    notifyIncoming({ title: '新通知', body: '这是一条测试通知' })
+    setNotice('测试通知已发送')
+  }
 
   const goBack = () => {
     if (view !== 'main') {
@@ -131,29 +166,84 @@ export default function Settings() {
         ) : null}
 
         {view === 'notify' ? (
-          <ul className="mt-3 border-y border-eink-divider bg-eink-bar" data-testid="settings-notify">
-            {NOTIFY_ITEMS.map((item) => (
-              <li key={item.key} className="border-t border-eink-divider first:border-t-0">
-                <div className="flex items-center justify-between px-4 py-3.5">
-                  <span className="min-w-0">
-                    <span className="block text-[16px] text-eink-text">{item.title}</span>
-                    <span className="mt-0.5 block text-[12px] text-eink-sub">{item.desc}</span>
-                  </span>
-                  <Switch
-                    checked={settings[item.key]}
-                    onChange={(value) => {
-                      update({ [item.key]: value })
-                      if (item.key === 'notifyMessages' && value) requestNotificationPermission()
-                    }}
-                    label={item.title}
-                  />
-                </div>
+          <div data-testid="settings-notify">
+            <ul className="mt-3 border-y border-eink-divider bg-eink-bar">
+              {NOTIFY_ITEMS.map((item) => (
+                <li key={item.key} className="border-t border-eink-divider first:border-t-0">
+                  <div className="flex items-center justify-between px-4 py-3.5">
+                    <span className="min-w-0">
+                      <span className="block text-[16px] text-eink-text">{item.title}</span>
+                      <span className="mt-0.5 block text-[12px] text-eink-sub">{item.desc}</span>
+                    </span>
+                    <Switch
+                      checked={settings[item.key]}
+                      onChange={(value) => {
+                        update({ [item.key]: value })
+                        if (item.key === 'notifyMessages' && value) requestNotificationPermission()
+                      }}
+                      label={item.title}
+                    />
+                  </div>
+                </li>
+              ))}
+              <li className="border-t border-eink-divider px-4 py-3 text-[12px] leading-5 text-eink-sub">
+                提醒偏好保存在本机，重新登录后仍会保留。
               </li>
-            ))}
-            <li className="border-t border-eink-divider px-4 py-3 text-[12px] leading-5 text-eink-sub">
-              提醒偏好保存在本机，重新登录后仍会保留。
-            </li>
-          </ul>
+            </ul>
+
+            <div className="mt-6 px-4">
+              <p className="text-[16px] text-eink-text">新通知</p>
+              <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                发送一条测试通知，确认提示音、震动与通知权限是否正常。
+              </p>
+              <button
+                type="button"
+                data-testid="settings-test-notification"
+                className="mt-3 h-10 w-full border border-eink-ink text-[14px] text-eink-ink active:bg-[#E7E5DD]"
+                onClick={sendTestNotification}
+              >
+                发送测试通知
+              </button>
+            </div>
+
+            <div className="mt-6 px-4 pb-8" data-testid="settings-sound-list">
+              <p className="text-[16px] text-eink-text">提示音</p>
+              <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                默认提供 10 个提示音，点击即可试听并设为新消息提示音。
+              </p>
+              <ul className="mt-3 border border-eink-divider bg-eink-bar">
+                {NOTIFICATION_SOUNDS.map((sound, index) => {
+                  const active = settings.notifySoundId === sound.id
+                  return (
+                    <li key={sound.id} className={index ? 'border-t border-eink-divider' : ''}>
+                      <button
+                        type="button"
+                        data-testid={`settings-sound-${sound.id}`}
+                        aria-pressed={active}
+                        className="flex w-full items-center justify-between px-3 py-2.5 text-left active:bg-[#E7E5DD]"
+                        onClick={() => {
+                          update({ notifySoundId: sound.id })
+                          previewSound(sound.id)
+                        }}
+                      >
+                        <span className="flex min-w-0 items-center gap-2 text-[15px] text-eink-text">
+                          <span
+                            className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                              active ? 'bg-eink-ink' : 'bg-eink-disabled'
+                            }`}
+                          />
+                          <span className="truncate">{sound.name}</span>
+                        </span>
+                        <span className="ml-3 shrink-0 text-[12px] text-eink-sub">
+                          {active ? '使用中 · 试听' : '试听'}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          </div>
         ) : null}
 
         {view === 'display' ? (

@@ -37,12 +37,13 @@ describe('appSettings', () => {
   it('sanitizes invalid theme and font values', () => {
     localStorage.setItem(
       SETTINGS_KEY,
-      JSON.stringify({ theme: 'neon', fontScale: 'huge', notifySound: false })
+      JSON.stringify({ theme: 'neon', fontScale: 'huge', notifySound: false, notifySoundId: 'missing' })
     )
     const settings = loadSettings()
     expect(settings.theme).toBe('light')
     expect(settings.fontScale).toBe('standard')
     expect(settings.notifySound).toBe(false)
+    expect(settings.notifySoundId).toBe('bell')
     expect(settings.notifyMessages).toBe(true)
   })
 
@@ -62,11 +63,11 @@ describe('appSettings', () => {
     const vibrate = vi.fn()
     vi.stubGlobal('navigator', { vibrate })
 
-    saveSettings({ notifyMessages: false, notifyVibrate: true })
+    saveSettings({ notifyMessages: false, notifyVibrate: true, notifySound: false })
     notifyIncoming({ body: '关闭提醒' })
     expect(vibrate).not.toHaveBeenCalled()
 
-    saveSettings({ notifyMessages: true })
+    saveSettings({ notifyMessages: true, notifySound: false })
     notifyIncoming({ body: '打开提醒' })
     expect(vibrate).toHaveBeenCalledWith(30)
   })

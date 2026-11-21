@@ -1,9 +1,12 @@
+import { DEFAULT_SOUND_ID, NOTIFICATION_SOUNDS, playNotificationSound } from './notificationSounds'
+
 const SETTINGS_KEY = 'eink:app-settings:v1'
 
 export const DEFAULT_SETTINGS = Object.freeze({
   notifyMessages: true,
   notifySound: true,
   notifyVibrate: true,
+  notifySoundId: DEFAULT_SOUND_ID,
   theme: 'light',
   fontScale: 'standard',
 })
@@ -18,6 +21,9 @@ function normalize(parsed) {
     notifyMessages: parsed.notifyMessages !== false,
     notifySound: parsed.notifySound !== false,
     notifyVibrate: parsed.notifyVibrate !== false,
+    notifySoundId: NOTIFICATION_SOUNDS.some((sound) => sound.id === parsed.notifySoundId)
+      ? parsed.notifySoundId
+      : DEFAULT_SOUND_ID,
     theme: parsed.theme === 'dark' ? 'dark' : 'light',
     fontScale: FONT_SCALES.includes(parsed.fontScale) ? parsed.fontScale : 'standard',
   }
@@ -101,7 +107,10 @@ export function notifyIncoming({ title = '新消息', body = '' } = {}) {
       // 设备不支持震动时忽略
     }
   }
-  if (settings.notifySound) playBeep()
+  if (settings.notifySound) {
+    const audio = playNotificationSound(settings.notifySoundId)
+    if (!audio) playBeep()
+  }
   const NotificationApi = globalThis.Notification
   if (NotificationApi && NotificationApi.permission === 'granted') {
     try {
