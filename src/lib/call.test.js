@@ -6,6 +6,7 @@ import {
   CALL_TIMEOUT_MS,
   ICE_SERVERS,
   callErrorMessage,
+  callEventText,
   formatCallDuration,
   peerOptions,
   isPeerFatalError,
@@ -142,6 +143,17 @@ describe('formatCallDuration', () => {
     expect(formatCallDuration(-3)).toBe('0:00')
     expect(formatCallDuration('abc')).toBe('0:00')
     expect(formatCallDuration(null)).toBe('0:00')
+  })
+})
+
+describe('callEventText', () => {
+  it('按事件生成系统提示文案', () => {
+    expect(callEventText({ event: 'cancelled' })).toBe('语音通话已取消')
+    expect(callEventText({ event: 'declined' })).toBe('语音通话被拒绝')
+    expect(callEventText({ event: 'missed' })).toBe('语音通话未接听')
+    expect(callEventText({ event: 'ended', duration: 65 })).toBe('通话时长 1:05')
+    expect(callEventText({ event: 'unknown' })).toBe('语音通话')
+    expect(callEventText(null)).toBe('语音通话')
   })
 })
 

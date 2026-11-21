@@ -119,6 +119,7 @@ export default function CallOverlay({
             <div className="flex flex-col items-center gap-2">
               <button
                 type="button"
+                data-testid="call-hangup"
                 onClick={onHangup}
                 aria-label="挂断"
                 className="flex h-[64px] w-[64px] items-center justify-center rounded-full bg-eink-paper text-eink-ink active:bg-white"

@@ -57,7 +57,7 @@ function waitPeerOpen(peer, timeoutMs = SIGNAL_OPEN_TIMEOUT_MS) {
   })
 }
 
-export default function useVoiceCall({ myId, remoteId, enabled }) {
+export default function useVoiceCall({ myId, remoteId, enabled, onCallEnded }) {
   const [status, setStatus] = useState(CALL_STATUS.IDLE)
   const [error, setError] = useState('')
   const [seconds, setSeconds] = useState(0)
@@ -72,6 +72,13 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
   const localStreamRef = useRef(null)
   const timerRef = useRef(null)
   const timeoutRef = useRef(null)
+
+  const dirRef = useRef('')
+  const remoteUserRef = useRef('')
+  const connectedAtRef = useRef(0)
+  const endedRef = useRef(false)
+  const onEndedRef = useRef(null)
+  onEndedRef.current = onCallEnded
 
   const suffixRef = useRef('')
   const idRetryRef = useRef(0)
@@ -109,6 +116,19 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
     }
   }, [])
 
+  const emitEnded = useCallback((reason) => {
+    if (endedRef.current) return
+    endedRef.current = true
+    const cb = onEndedRef.current
+    const userId = remoteUserRef.current
+    const direction = dirRef.current
+    if (!cb || !userId || !direction) return
+    const duration = connectedAtRef.current
+      ? Math.max(0, Math.round((Date.now() - connectedAtRef.current) / 1000))
+      : 0
+    cb({ userId, direction, reason, duration })
+  }, [])
+
   const teardown = useCallback(
     (next = CALL_STATUS.IDLE) => {
       clearTimers()
@@ -135,6 +155,9 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
       setRemoteUserId('')
       setSeconds(0)
       setMuted(false)
+      dirRef.current = ''
+      remoteUserRef.current = ''
+      connectedAtRef.current = 0
       applyStatus(next)
     },
     [applyStatus, clearTimers, stopTracks]
@@ -158,6 +181,7 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
       callRef.current = call
       call.on('stream', (stream) => {
         clearTimers()
+        connectedAtRef.current = Date.now()
         setRemoteStream(stream)
         setSeconds(0)
         setError('')
@@ -204,6 +228,9 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
           return
         }
         incomingRef.current = call
+        dirRef.current = 'in'
+        remoteUserRef.current = userIdFromPeerId(call.peer) || ''
+        endedRef.current = false
         setError('')
         setRemoteUserId(userIdFromPeerId(call.peer) || '')
         applyStatus(CALL_STATUS.RINGING)
@@ -230,6 +257,9 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
             return
           }
         }
+        if (type === 'peer-unavailable' && statusRef.current === CALL_STATUS.CALLING) {
+          emitEnded('missed')
+        }
         setError(callErrorMessage(type))
         if (statusRef.current !== CALL_STATUS.IDLE) teardown(CALL_STATUS.FAILED)
         if (isPeerFatalError(type) && peerRef.current === peer) {
@@ -252,7 +282,7 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
 
       return peer
     },
-    [applyStatus, enabled, myId, teardown, trackPresence]
+    [applyStatus, emitEnded, enabled, myId, teardown, trackPresence]
   )
 
   const resolveTarget = useCallback(
@@ -275,6 +305,9 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
       return
     }
     if (statusRef.current !== CALL_STATUS.IDLE) return
+    dirRef.current = 'out'
+    remoteUserRef.current = String(calleeOverride || remoteId || '').trim()
+    endedRef.current = false
     let peer = ensurePeer()
     if (!peer) {
       setError('通话功能初始化失败，请刷新后重试')
@@ -343,11 +376,12 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
     wireCall(call)
     timeoutRef.current = setTimeout(() => {
       if (statusRef.current === CALL_STATUS.CALLING) {
+        emitEnded('missed')
         setError('对方无应答')
         teardown(CALL_STATUS.FAILED)
       }
     }, CALL_TIMEOUT_MS)
-  }, [applyStatus, enabled, ensurePeer, resolveTarget, teardown, wireCall])
+  }, [applyStatus, emitEnded, enabled, ensurePeer, resolveTarget, remoteId, teardown, wireCall])
 
   const answer = useCallback(async () => {
     const call = incomingRef.current
@@ -373,12 +407,25 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
   }, [applyStatus, teardown, wireCall])
 
   const decline = useCallback(() => {
+    if (statusRef.current === CALL_STATUS.RINGING) emitEnded('declined')
     teardown()
-  }, [teardown])
+  }, [emitEnded, teardown])
 
   const hangup = useCallback(() => {
+    if (connectedAtRef.current) emitEnded('ended')
+    else if (statusRef.current === CALL_STATUS.RINGING) emitEnded('declined')
+    else if (statusRef.current === CALL_STATUS.CALLING) emitEnded('cancelled')
     teardown()
-  }, [teardown])
+  }, [emitEnded, teardown])
+
+  const abort = useCallback(
+    (message) => {
+      endedRef.current = true
+      setError(message || '通话已结束')
+      teardown(CALL_STATUS.FAILED)
+    },
+    [teardown]
+  )
 
   const toggleMute = useCallback(() => {
     const stream = localStreamRef.current
@@ -441,6 +488,7 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
     answer,
     decline,
     hangup,
+    abort,
     toggleMute,
   }
 }

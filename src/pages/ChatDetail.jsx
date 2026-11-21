@@ -19,6 +19,7 @@ import {
   searchThreadMessages,
 } from '../lib/messages'
 import { downscaleImageFile } from '../lib/imagePipeline'
+import { callEventText } from '../lib/call'
 import { useCallCenter } from '../lib/callContext'
 import { MESSAGE_MEDIA_LIMITS, uploadMessageBlob } from '../lib/messageMedia'
 import { supabase } from '../lib/supabase'
@@ -613,6 +614,20 @@ export default function ChatDetail() {
                       className="my-2 text-center text-[12px] text-eink-faint"
                     >
                       {mine ? '你撤回了一条消息' : '对方撤回了一条消息'}
+                    </p>
+                  </div>
+                )
+              }
+              if (msg.attachments?.type === 'call') {
+                return (
+                  <div key={msg.id} data-msg-id={msg.id}>
+                    {showTime ? <TimeDivider time={msg.time} /> : null}
+                    <p
+                      data-testid="call-event"
+                      data-call-event={msg.attachments.event || ''}
+                      className="my-2 text-center text-[12px] text-eink-faint"
+                    >
+                      {callEventText(msg.attachments)}
                     </p>
                   </div>
                 )

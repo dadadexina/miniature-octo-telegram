@@ -102,6 +102,15 @@ export function formatCallDuration(totalSeconds) {
   return hours ? `${hours}:${pad(minutes)}:${pad(secs)}` : `${minutes}:${pad(secs)}`
 }
 
+export function callEventText(attachment) {
+  const { event, duration } = attachment || {}
+  if (event === 'cancelled') return '语音通话已取消'
+  if (event === 'declined') return '语音通话被拒绝'
+  if (event === 'missed') return '语音通话未接听'
+  if (event === 'ended') return `通话时长 ${formatCallDuration(duration)}`
+  return '语音通话'
+}
+
 const PEER_ERROR_TEXT = {
   'unavailable-id': '通话通道初始化失败，请刷新页面后重试',
   'peer-unavailable': '对方当前不在线，或还没有打开应用',

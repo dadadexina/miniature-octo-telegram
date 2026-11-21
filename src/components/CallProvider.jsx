@@ -1,19 +1,33 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import CallOverlay from './CallOverlay'
 import useVoiceCall from '../hooks/useVoiceCall'
 import { CALL_STATUS } from '../lib/call'
 import { CallContext } from '../lib/callContext'
-import { isUuid } from '../lib/messages'
+import { insertMessage, isUuid } from '../lib/messages'
 import { useStore } from '../store'
 
 export default function CallProvider({ children }) {
-  const { currentUser, getUser, avatarColor } = useStore()
+  const { currentUser, getUser, avatarColor, inbox } = useStore()
   const [targetId, setTargetId] = useState('')
+  const startedAtRef = useRef(0)
   const myId = currentUser?.id
   const enabled = Boolean(myId) && isUuid(myId)
 
-  const call = useVoiceCall({ myId, remoteId: targetId, enabled })
+  const handleCallEnded = useCallback(
+    ({ userId, reason, duration }) => {
+      if (!isUuid(myId) || !isUuid(userId)) return
+      insertMessage({
+        senderId: myId,
+        receiverId: userId,
+        content: '',
+        attachments: { type: 'call', event: reason, duration },
+      }).catch(() => {})
+    },
+    [myId]
+  )
+
+  const call = useVoiceCall({ myId, remoteId: targetId, enabled, onCallEnded: handleCallEnded })
   const { start } = call
   const incoming = call.status === CALL_STATUS.RINGING
   const activeId = incoming ? call.remoteUserId : targetId
@@ -23,11 +37,26 @@ export default function CallProvider({ children }) {
     (peerUserId) => {
       const id = String(peerUserId || '').trim()
       if (!id) return
+      startedAtRef.current = Date.now()
       setTargetId(id)
       start(id)
     },
     [start]
   )
+
+  useEffect(() => {
+    const active = call.status === CALL_STATUS.CALLING || call.status === CALL_STATUS.CONNECTED
+    if (!active || !targetId) return
+    const hit = (inbox || []).find(
+      (msg) =>
+        msg?.fromId === targetId &&
+        msg?.attachments?.type === 'call' &&
+        (msg.attachments.event === 'declined' || msg.attachments.event === 'ended') &&
+        (msg.time || 0) >= startedAtRef.current - 2000
+    )
+    if (!hit) return
+    call.abort(hit.attachments.event === 'declined' ? '对方已拒绝通话' : '对方已挂断')
+  }, [call, inbox, targetId])
 
   const value = useMemo(() => ({ startCall, status: call.status }), [call.status, startCall])
 

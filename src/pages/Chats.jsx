@@ -6,6 +6,7 @@ import CopySql from '../components/CopySql'
 import NavBar from '../components/NavBar'
 import { fetchInbox, groupConversations, isUuid } from '../lib/messages'
 import { fetchProfilesByIds } from '../lib/profiles'
+import { callEventText } from '../lib/call'
 import { useStore } from '../store'
 import { formatTime } from '../utils'
 
@@ -188,7 +189,12 @@ export default function Chats() {
                     </>
                   ) : last ? (
                     `${last.fromId === currentUser.id ? '我: ' : ''}${
-                      last.text || (last.attachments?.type === 'image' ? '[图片]' : '')
+                      last.text ||
+                      (last.attachments?.type === 'image'
+                        ? '[图片]'
+                        : last.attachments?.type === 'call'
+                          ? callEventText(last.attachments)
+                          : '')
                     }`
                   ) : (
                     '点击开始聊天'
