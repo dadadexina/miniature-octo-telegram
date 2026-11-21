@@ -14,6 +14,7 @@ import {
   peerIdFor,
   readCallSuffix,
   resolveCalleePeerId,
+  userIdFromPeerId,
   writeCallSuffix,
   CALL_TAB_STORAGE_KEY,
 } from './call'
@@ -87,6 +88,24 @@ describe('标签页后缀', () => {
   })
 })
 
+describe('userIdFromPeerId', () => {
+  it('从带后缀的 Peer ID 还原用户 uuid', () => {
+    expect(userIdFromPeerId(`${CALL_PEER_PREFIX}75afb679-ca74-4604-bd2a-4c74f5bca58e-ab12cd`)).toBe(
+      '75afb679-ca74-4604-bd2a-4c74f5bca58e'
+    )
+    expect(userIdFromPeerId(`${CALL_PEER_PREFIX}75afb679-ca74-4604-bd2a-4c74f5bca58e`)).toBe(
+      '75afb679-ca74-4604-bd2a-4c74f5bca58e'
+    )
+  })
+
+  it('非本应用前缀或非法内容返回空', () => {
+    expect(userIdFromPeerId('abc-123')).toBe('')
+    expect(userIdFromPeerId(`${CALL_PEER_PREFIX}not-a-uuid`)).toBe('')
+    expect(userIdFromPeerId('')).toBe('')
+    expect(userIdFromPeerId(null)).toBe('')
+  })
+})
+
 describe('resolveCalleePeerId', () => {
   it('优先使用 presence 中最近上报的标签页 ID', () => {
     const state = {
@@ -128,7 +147,7 @@ describe('formatCallDuration', () => {
 
 describe('callErrorMessage / isPeerFatalError', () => {
   it('已知错误码有中文提示', () => {
-    expect(callErrorMessage('peer-unavailable')).toContain('无法接听')
+    expect(callErrorMessage('peer-unavailable')).toContain('不在线')
     expect(callErrorMessage('unavailable-id')).toContain('刷新页面')
     expect(callErrorMessage('webrtc')).toContain('协商失败')
   })

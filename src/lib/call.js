@@ -52,6 +52,14 @@ export function writeCallSuffix(storage, suffix) {
   }
 }
 
+export function userIdFromPeerId(peerId) {
+  const raw = String(peerId || '').trim()
+  if (!raw.startsWith(CALL_PEER_PREFIX)) return ''
+  const rest = raw.slice(CALL_PEER_PREFIX.length)
+  const match = rest.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
+  return match ? match[0] : ''
+}
+
 export function resolveCalleePeerId(presenceState, userId) {
   const id = String(userId || '').trim()
   if (!id) return ''
@@ -96,7 +104,7 @@ export function formatCallDuration(totalSeconds) {
 
 const PEER_ERROR_TEXT = {
   'unavailable-id': '通话通道初始化失败，请刷新页面后重试',
-  'peer-unavailable': '对方暂时无法接听，可能未停留在聊天页',
+  'peer-unavailable': '对方当前不在线，或还没有打开应用',
   network: '网络连接异常，请稍后重试',
   'server-error': '信令服务器连接失败，请稍后重试',
   'socket-error': '信令连接中断，请稍后重试',

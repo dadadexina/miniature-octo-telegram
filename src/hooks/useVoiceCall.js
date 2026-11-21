@@ -15,6 +15,7 @@ import {
   peerOptions,
   readCallSuffix,
   resolveCalleePeerId,
+  userIdFromPeerId,
   writeCallSuffix,
 } from '../lib/call'
 
@@ -62,6 +63,7 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
   const [seconds, setSeconds] = useState(0)
   const [muted, setMuted] = useState(false)
   const [remoteStream, setRemoteStream] = useState(null)
+  const [remoteUserId, setRemoteUserId] = useState('')
 
   const statusRef = useRef(CALL_STATUS.IDLE)
   const peerRef = useRef(null)
@@ -130,6 +132,7 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
       }
       stopTracks()
       setRemoteStream(null)
+      setRemoteUserId('')
       setSeconds(0)
       setMuted(false)
       applyStatus(next)
@@ -202,6 +205,7 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
         }
         incomingRef.current = call
         setError('')
+        setRemoteUserId(userIdFromPeerId(call.peer) || '')
         applyStatus(CALL_STATUS.RINGING)
         call.on('close', () => {
           if (incomingRef.current === call) teardown()
@@ -251,15 +255,20 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
     [applyStatus, enabled, myId, teardown, trackPresence]
   )
 
-  const resolveTarget = useCallback(async () => {
-    const deadline = Date.now() + PRESENCE_WAIT_MS
-    while (!presenceReadyRef.current && Date.now() < deadline) {
-      await sleep(100)
-    }
-    return resolveCalleePeerId(presenceRef.current, remoteId)
-  }, [remoteId])
+  const resolveTarget = useCallback(
+    async (calleeId) => {
+      const id = String(calleeId || remoteId || '').trim()
+      if (!id) return ''
+      const deadline = Date.now() + PRESENCE_WAIT_MS
+      while (!presenceReadyRef.current && Date.now() < deadline) {
+        await sleep(100)
+      }
+      return resolveCalleePeerId(presenceRef.current, id)
+    },
+    [remoteId]
+  )
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (calleeOverride) => {
     if (!enabled) {
       setError('登录后才能使用语音通话')
       applyStatus(CALL_STATUS.FAILED)
@@ -278,7 +287,7 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
     setMuted(false)
     applyStatus(CALL_STATUS.CALLING)
 
-    const target = await resolveTarget()
+    const target = await resolveTarget(calleeOverride)
     if (!target) {
       setError('对方账号无效，无法呼叫')
       teardown(CALL_STATUS.FAILED)
@@ -427,6 +436,7 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
     seconds,
     muted,
     remoteStream,
+    remoteUserId,
     start,
     answer,
     decline,

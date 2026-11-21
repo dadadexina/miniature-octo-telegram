@@ -6,9 +6,7 @@ import CopySql from '../components/CopySql'
 import NavBar from '../components/NavBar'
 import LongTextBody from '../components/LongTextBody'
 import SignedImage from '../components/SignedImage'
-import CallOverlay from '../components/CallOverlay'
 import useKeyboardInset from '../hooks/useKeyboardInset'
-import useVoiceCall from '../hooks/useVoiceCall'
 import {
   canRecall,
   fetchHiddenIds,
@@ -21,7 +19,7 @@ import {
   searchThreadMessages,
 } from '../lib/messages'
 import { downscaleImageFile } from '../lib/imagePipeline'
-import { CALL_STATUS } from '../lib/call'
+import { useCallCenter } from '../lib/callContext'
 import { MESSAGE_MEDIA_LIMITS, uploadMessageBlob } from '../lib/messageMedia'
 import { supabase } from '../lib/supabase'
 import { friendlyInsertError } from '../lib/syncHelpers'
@@ -78,11 +76,7 @@ export default function ChatDetail() {
   const replyTimer = useRef(null)
   const keepScrollRef = useRef(false)
   const keyboardInset = useKeyboardInset()
-  const call = useVoiceCall({
-    myId: currentUser?.id,
-    remoteId: peerId,
-    enabled: Boolean(currentUser) && isUuid(currentUser.id) && isUuid(peerId),
-  })
+  const { startCall } = useCallCenter()
   const peer = getUser(peerId) || (peerId ? { id: peerId, nickname: '用户', publicId: '' } : null)
   const cloudReady = Boolean(currentUser) && isUuid(currentUser.id) && isUuid(peerId)
   const localMessages = currentUser && peer ? messagesWith(peerId) : []
@@ -489,7 +483,7 @@ export default function ChatDetail() {
                 type="button"
                 data-testid="call-audio-btn"
                 className="flex h-9 w-9 items-center justify-center"
-                onClick={call.start}
+                onClick={() => startCall(peerId)}
                 aria-label="语音通话"
               >
                 <PhoneIcon />
@@ -866,22 +860,6 @@ export default function ChatDetail() {
             style={{ filter: 'grayscale(1) contrast(1.05)' }}
           />
         </div>
-      ) : null}
-
-      {call.status !== CALL_STATUS.IDLE ? (
-        <CallOverlay
-          state={call.status}
-          seconds={call.seconds}
-          muted={call.muted}
-          error={call.error}
-          peer={peer}
-          color={avatarColor(peer.id)}
-          remoteStream={call.remoteStream}
-          onAnswer={call.answer}
-          onDecline={call.decline}
-          onHangup={call.hangup}
-          onToggleMute={call.toggleMute}
-        />
       ) : null}
     </div>
   )
