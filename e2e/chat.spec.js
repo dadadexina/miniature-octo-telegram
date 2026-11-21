@@ -27,7 +27,7 @@ async function login(page, user) {
 // v2 好友关系为「请求 → 验证」双向流程;幂等处理已是好友/请求已存在的情况
 async function ensureFriendship(pageA, pageB) {
   await pageA.goto('/contacts')
-  const search = pageA.getByPlaceholder('输入用户名 ID 搜索')
+  const search = pageA.getByPlaceholder('搜索 ID / 邮箱 / 手机号')
   await search.fill(B.username)
   await search.press('Enter')
   const results = pageA.getByTestId('search-results')
@@ -261,7 +261,7 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
       await staleCancel.click()
       await expect(pageA.getByText('已取消请求').first()).toBeVisible({ timeout: 15000 })
     }
-    const search = pageA.getByPlaceholder('输入用户名 ID 搜索')
+    const search = pageA.getByPlaceholder('搜索 ID / 邮箱 / 手机号')
     await search.fill(B.username)
     await search.press('Enter')
     const results = pageA.getByTestId('search-results')

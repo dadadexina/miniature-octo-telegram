@@ -468,4 +468,146 @@ begin
   alter publication supabase_realtime add table public.profiles;
 exception
   when duplicate_object then null;
-end $$;`
+end $$;
+
+-- ============ 唯一 ID / 搜索方式 / 手机号 ============
+
+alter table public.profiles add column if not exists phone text;
+alter table public.profiles add column if not exists allow_email_search boolean not null default true;
+alter table public.profiles add column if not exists allow_phone_search boolean not null default true;
+alter table public.profiles add column if not exists id_change_count integer not null default 0;
+alter table public.profiles add column if not exists id_changed_at timestamptz;
+
+do $$ begin
+  alter table public.profiles add constraint profiles_phone_format
+    check (phone is null or phone = '' or phone ~ '^[0-9]{6,20}$');
+exception when duplicate_object then null; when others then
+  raise notice '跳过 profiles_phone_format: %', sqlerrm;
+end $$;
+
+-- 一个手机号只能绑定一个账号
+create unique index if not exists profiles_phone_key
+  on public.profiles (phone) where phone is not null and phone <> '';
+-- 唯一 ID 不区分大小写
+create unique index if not exists profiles_username_lower_key
+  on public.profiles (lower(username)) where username is not null;
+
+-- 首次注册即分配随机 ID(8-15 位,同时包含字母和数字)
+create or replace function public.random_public_id()
+returns text language plpgsql volatile security definer set search_path = public as $fn$
+declare
+  alphabet text := 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  letters text := 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ';
+  chars text[];
+  candidate text;
+  i integer;
+  tries integer := 0;
+begin
+  loop
+    tries := tries + 1;
+    chars := array[substr(letters, 1 + floor(random() * length(letters))::int, 1),
+                  substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1)];
+    for i in 1..(8 + floor(random() * 6)::int) loop
+      chars := chars || substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1);
+    end loop;
+    candidate := array_to_string(chars, '');
+    exit when not exists (select 1 from public.profiles where lower(username) = lower(candidate));
+    if tries > 50 then
+      raise exception '无法生成唯一 ID,请重试';
+    end if;
+  end loop;
+  return candidate;
+end $fn$;
+
+-- 修改唯一 ID:首次免费修改一次,之后每年(自注册日起)可再改一次
+create or replace function public.update_public_id(new_id text)
+returns table (ok boolean, message text, username text, change_count integer, next_change_at timestamptz)
+language plpgsql security definer set search_path = public as $fn$
+declare
+  me uuid := auth.uid();
+  row public.profiles;
+  base timestamptz;
+  wait_until timestamptz;
+begin
+  if me is null then
+    return query select false, '登录后才能修改 ID', null::text, 0, null::timestamptz;
+    return;
+  end if;
+  if new_id is null or new_id !~ '^[A-Za-z0-9]{8,15}$'
+     or new_id !~ '[A-Za-z]' or new_id !~ '[0-9]' then
+    return query select false, 'ID 需为 8-15 位,且同时包含字母和数字', null::text, 0, null::timestamptz;
+    return;
+  end if;
+  select * into row from public.profiles where id = me for update;
+  if not found then
+    return query select false, '资料尚未创建', null::text, 0, null::timestamptz;
+    return;
+  end if;
+  if lower(row.username) = lower(new_id) then
+    return query select false, '新 ID 与当前一致', row.username, row.id_change_count, null::timestamptz;
+    return;
+  end if;
+  if row.id_change_count > 0 then
+    base := greatest(coalesce(row.created_at, now()), coalesce(row.id_changed_at, row.created_at, now()));
+    wait_until := base + interval '1 year';
+    if now() < wait_until then
+      return query select false, '每年只能修改一次 ID', row.username, row.id_change_count, wait_until;
+      return;
+    end if;
+  end if;
+  begin
+    update public.profiles p
+      set username = new_id, id_change_count = p.id_change_count + 1, id_changed_at = now()
+      where p.id = me;
+  exception when unique_violation then
+    return query select false, '这个 ID 已被占用', row.username, row.id_change_count, null::timestamptz;
+    return;
+  end;
+  return query
+    select true, 'ID 已更新', new_id, row.id_change_count + 1, now() + interval '1 year';
+end $fn$;
+
+-- 通讯录搜索:ID / 邮箱 / 手机号,邮箱与手机号需对方允许被搜索
+drop function if exists public.search_profile(text);
+create or replace function public.search_profile(q text)
+returns table (id uuid, username text, nickname text, avatar_url text, matched_by text)
+language sql stable security definer set search_path = public as $fn$
+  select p.id, p.username, p.nickname, p.avatar_url,
+    case
+      when lower(p.username) = lower(q) then 'id'
+      when lower(u.email) = lower(q) then 'email'
+      else 'phone'
+    end
+  from public.profiles p
+  join auth.users u on u.id = p.id
+  where p.id <> auth.uid()
+    and q is not null
+    and char_length(btrim(q)) between 1 and 64
+    and (
+      lower(p.username) = lower(btrim(q))
+      or (btrim(q) ~ '^[^@[:space:]]+@[^@[:space:]]+$' and lower(u.email) = lower(btrim(q)) and p.allow_email_search)
+      or (btrim(q) ~ '^[0-9]{6,20}$' and p.phone = btrim(q) and p.allow_phone_search)
+    )
+  order by (lower(p.username) = lower(btrim(q))) desc
+  limit 5
+$fn$;
+
+-- 新建资料时兜底:ID 必须是 8-15 位且同时包含字母和数字
+create or replace function public.profiles_fill_public_id()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if new.username is null or new.username !~ '^[A-Za-z0-9]{8,15}$'
+     or new.username !~ '[A-Za-z]' or new.username !~ '[0-9]' then
+    new.username := public.random_public_id();
+  end if;
+  return new;
+end $fn$;
+
+drop trigger if exists profiles_fill_public_id on public.profiles;
+create trigger profiles_fill_public_id
+  before insert on public.profiles
+  for each row execute function public.profiles_fill_public_id();
+
+grant execute on function public.update_public_id(text) to authenticated;
+grant execute on function public.search_profile(text) to authenticated;
+grant execute on function public.random_public_id() to authenticated;`

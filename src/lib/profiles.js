@@ -27,8 +27,21 @@ export function mapProfile(row) {
     nickname: pick(row, NICKNAME_KEYS),
     username: pick(row, USERNAME_KEYS),
     avatarUrl: row.avatar_url || row.avatarUrl || '',
+    phone: row.phone || '',
+    allowEmailSearch: row.allow_email_search !== false,
+    allowPhoneSearch: row.allow_phone_search !== false,
+    idChangeCount: Number(row.id_change_count || 0),
+    idChangedAt: row.id_changed_at || '',
+    createdAt: row.created_at || '',
+    matchedBy: row.matched_by || '',
     raw: row,
   }
+}
+
+export function isUniqueViolation(error) {
+  const code = error?.code || ''
+  const msg = `${error?.message || ''}`.toLowerCase()
+  return code === '23505' || msg.includes('duplicate key') || msg.includes('unique constraint')
 }
 
 export function avatarStoragePath(publicUrl) {
@@ -170,11 +183,14 @@ export async function fetchProfilesByIds(ids) {
   return { ok: true, profiles: (data || []).map(mapProfile) }
 }
 
-export async function searchProfileByUsername(username) {
-  const q = String(username || '').trim()
+export async function searchProfile(query) {
+  const q = String(query || '').trim()
   if (!q) return { ok: true, profiles: [] }
   const rpc = await supabase.rpc('search_profile', { q })
   if (!rpc.error) return { ok: true, profiles: (rpc.data || []).map(mapProfile) }
+  if (/function .*search_profile|does not exist/i.test(rpc.error.message || '')) {
+    return { ok: false, error: '云端搜索能力未升级，请先执行云初始化 SQL', profiles: [] }
+  }
   let { data, error } = await supabase.from('profiles').select('*').eq('username', q)
   if (error && isMissingColumn(error, 'username')) {
     const retry = await supabase.from('profiles').select('*').eq('custom_id', q)
@@ -183,4 +199,44 @@ export async function searchProfileByUsername(username) {
   }
   if (error) return { ok: false, error: error.message, profiles: [], permission: isPermissionError(error) }
   return { ok: true, profiles: (data || []).map(mapProfile) }
+}
+
+export async function updatePublicId(newId) {
+  const { data, error } = await supabase.rpc('update_public_id', { new_id: String(newId || '').trim() })
+  if (error) {
+    const msg = /function .*update_public_id|does not exist/i.test(error.message || '')
+      ? '云端 ID 修改能力未升级，请先执行云初始化 SQL'
+      : error.message || '修改 ID 失败'
+    return { ok: false, error: msg, nextChangeAt: '', username: '' }
+  }
+  const row = Array.isArray(data) ? data[0] : data
+  return {
+    ok: Boolean(row?.ok),
+    error: row?.ok ? '' : row?.message || '修改 ID 失败',
+    username: row?.username || '',
+    changeCount: Number(row?.change_count || 0),
+    nextChangeAt: row?.next_change_at || '',
+  }
+}
+
+export async function updateProfileSettings(userId, { phone, allowEmailSearch, allowPhoneSearch }) {
+  const payload = {
+    phone: String(phone || '').replace(/\D/g, ''),
+    allow_email_search: Boolean(allowEmailSearch),
+    allow_phone_search: Boolean(allowPhoneSearch),
+  }
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(payload)
+    .eq('id', userId)
+    .select('*')
+    .maybeSingle()
+  if (!error) return { ok: true, profile: mapProfile(data) }
+  if (isMissingColumn(error, 'phone') || isMissingColumn(error, 'allow_email_search')) {
+    return { ok: false, error: '云端资料表缺少手机号/搜索开关字段，请重新执行云初始化 SQL', permission: false }
+  }
+  if (isUniqueViolation(error)) {
+    return { ok: false, error: '该手机号已绑定其他账号', permission: false }
+  }
+  return { ok: false, error: error.message || '保存失败', permission: isPermissionError(error) }
 }

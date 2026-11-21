@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import NavBar from '../components/NavBar'
 import { isUuid } from '../lib/messages'
-import { fetchProfilesByIds, searchProfileByUsername } from '../lib/profiles'
+import { fetchProfilesByIds, searchProfile } from '../lib/profiles'
+import { mergeSearchResults } from '../lib/searchResults'
 import { useStore } from '../store'
 
 export default function Contacts() {
@@ -64,12 +65,15 @@ export default function Contacts() {
     }
     setSearching(true)
     setQueried(q)
-    const local = searchUser(q).map((u) => ({
-      id: u.id,
-      nickname: u.nickname,
-      username: u.publicId,
-    }))
-    const result = await searchProfileByUsername(q)
+    // 本地只保留演示账号,已注销的云端账号不再从本地缓存被搜出来
+    const local = searchUser(q)
+      .filter((u) => !isUuid(u.id))
+      .map((u) => ({
+        id: u.id,
+        nickname: u.nickname,
+        username: u.publicId,
+      }))
+    const result = await searchProfile(q)
     setSearching(false)
     if (!result.ok) {
       setResults(local)
@@ -77,11 +81,7 @@ export default function Contacts() {
       return
     }
     const cloud = result.profiles.filter((p) => p.id !== currentUser.id)
-    const merged = [...cloud]
-    local.forEach((u) => {
-      if (!merged.some((p) => p.id === u.id || p.username === u.username)) merged.push(u)
-    })
-    setResults(merged)
+    setResults(mergeSearchResults(cloud, local))
   }
 
   const onAdd = async (user) => {
@@ -156,7 +156,7 @@ export default function Contacts() {
               </svg>
               <input
                 className="h-full w-full bg-transparent text-[14px] outline-none"
-                placeholder="输入用户名 ID 搜索"
+                placeholder="搜索 ID / 邮箱 / 手机号"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value.replace(/\s/g, ''))}
               />
@@ -180,7 +180,11 @@ export default function Contacts() {
           <section data-testid="search-results" className="mt-2 border-y border-eink-divider bg-eink-bar">
             <div className="px-4 py-2 text-[13px] text-eink-sub">搜索结果</div>
             {results.length === 0 ? (
-              <p className="px-4 py-6 text-[14px] text-eink-sub">未找到 ID 为 {queried} 的用户</p>
+              <p className="px-4 py-6 text-[14px] leading-6 text-eink-sub">
+                {/^[^@\s]+@[^@\s]+$/.test(queried) || /^[0-9]{6,20}$/.test(queried)
+                  ? '未找到该用户：可能尚未注册，或对方关闭了通过邮箱/手机号被搜索'
+                  : `未找到 ID 为 ${queried} 的用户`}
+              </p>
             ) : (
               results.map((user) => (
                 <div key={user.id} className="border-t border-eink-divider px-4 py-3">
@@ -188,7 +192,10 @@ export default function Contacts() {
                     <Avatar name={user.nickname} color={avatarColor(user.id)} size={48} src={user.avatarUrl || ''} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[16px]">{user.nickname}</div>
-                      <div className="mt-0.5 truncate text-[12px] text-eink-sub">ID: {user.username}</div>
+                      <div className="mt-0.5 truncate text-[12px] text-eink-sub">
+                        ID: {user.username}
+                        {user.matchedBy === 'email' ? '（邮箱匹配）' : user.matchedBy === 'phone' ? '（手机号匹配）' : ''}
+                      </div>
                     </div>
                     {isFriend(currentUser.id, user.id) ? (
                       <span className="text-[13px] text-eink-sub">已添加</span>

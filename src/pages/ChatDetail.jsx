@@ -152,7 +152,6 @@ export default function ChatDetail() {
         setHasMore(result.hasMore)
         setOldestAt(result.oldest)
         setNeedSql(false)
-        setHint('')
         return
       }
       setUseCloud(false)
@@ -168,6 +167,7 @@ export default function ChatDetail() {
 
   useEffect(() => {
     setActiveMsgId(null)
+    setHint('')
     setMenuOpen(false)
     setPendingList([])
     setHiddenIds(new Set())
