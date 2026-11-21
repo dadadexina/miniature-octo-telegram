@@ -44,6 +44,7 @@ using (auth.uid() = owner_id)
 with check (auth.uid() = owner_id);
 
 drop policy if exists "friends_delete_own" on public.friends;
+drop policy if exists "friends_delete_participant" on public.friends;
 create policy "friends_delete_participant"
 on public.friends for delete
 to authenticated
