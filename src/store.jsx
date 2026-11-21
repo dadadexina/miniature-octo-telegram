@@ -700,14 +700,15 @@ export function StoreProvider({ children }) {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return
       const latest = inboxRef.current.reduce((max, msg) => Math.max(max, msg.time || 0), 0)
-      if (!latest) return
-      const since = new Date(latest - 2000).toISOString()
+      // 收件箱尚未加载完成时退化为补拉最近一分钟,避免错过首条消息
+      const since = new Date((latest || Date.now() - 60000) - 2000).toISOString()
       const res = await fetchReceivedSince(me, since)
       if (!alive || !res.ok) return
       res.messages.forEach((msg) => ingestCloudMessage(msg))
       await refreshRequestsRef.current?.()
     }
-    const timer = setInterval(catchUp, 15000)
+    void catchUp()
+    const timer = setInterval(catchUp, 6000)
     return () => {
       alive = false
       clearInterval(timer)
