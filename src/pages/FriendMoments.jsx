@@ -14,6 +14,7 @@ import {
   unlikeMoment,
 } from '../lib/moments'
 import { useStore } from '../store'
+import usePullToRefresh from '../lib/usePullToRefresh'
 import { formatRelativeTime } from '../utils'
 
 export default function FriendMoments() {
@@ -100,6 +101,8 @@ function CloudFriendMoments() {
     [userId, hydrateUsers]
   )
 
+  const { scrollRef, pull, refreshing, threshold, handlers } = usePullToRefresh({ onRefresh: load })
+
   useEffect(() => {
     setLoading(true)
     load()
@@ -169,30 +172,27 @@ function CloudFriendMoments() {
   return (
     <div className="flex h-full flex-col bg-eink-paper">
       <NavBar
-        title={`${friendName}的朋友圈`}
+        title="纸墨信笺"
         left={<Back onClick={() => navigate(`/friend/${userId}`)} />}
-        right={
-          <button
-            type="button"
-            className="text-[13px] text-eink-sub disabled:opacity-50"
-            onClick={() => load()}
-            disabled={busy}
-            data-testid="friend-moments-refresh"
-          >
-            {busy ? '...' : '刷新'}
-          </button>
-        }
       />
       <div data-testid="moments-user-id" className="hidden">{userId}</div>
-      <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto no-scrollbar"
+        data-testid="fm-scroll"
+        {...handlers}
+      >
+        <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
         <MomentCover
           userId={userId}
           name={friendName}
           avatarSrc={friend?.avatarUrl || ''}
           avatarColor={avatarColor(userId)}
           profileHref={`/friend/${userId}`}
+          editable={false}
+          raised
         />
-        <div className="h-20" />
+        <div className="h-4" />
 
         {error ? <p data-testid="friend-moments-error" className="px-4 py-2 text-[12px] text-eink-sub">{error}</p> : null}
 
@@ -327,20 +327,38 @@ function LocalFriendMoments() {
   const friend = getUser(userId)
   const friendName = friend?.nickname || '好友'
   const items = momentsFeed().filter((m) => m.userId === userId)
+  const [, setTick] = useState(0)
+  const { scrollRef, pull, refreshing, threshold, handlers } = usePullToRefresh({
+    onRefresh: () =>
+      new Promise((resolve) => {
+        setTimeout(() => {
+          setTick((t) => t + 1)
+          resolve()
+        }, 500)
+      }),
+  })
 
   return (
     <div className="flex h-full flex-col bg-eink-paper">
-      <NavBar title={`${friendName}的朋友圈`} left={<Back onClick={() => navigate(`/friend/${userId}`)} />} />
+      <NavBar title="纸墨信笺" left={<Back onClick={() => navigate(`/friend/${userId}`)} />} />
       <div data-testid="moments-user-id" className="hidden">{userId}</div>
-      <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto no-scrollbar"
+        data-testid="fm-scroll"
+        {...handlers}
+      >
+        <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
         <MomentCover
           userId={userId}
           name={friendName}
           avatarSrc={friend?.avatarUrl || ''}
           avatarColor={avatarColor(userId)}
           profileHref={`/friend/${userId}`}
+          editable={false}
+          raised
         />
-        <div className="h-20" />
+        <div className="h-4" />
         {items.length === 0 ? (
           <p data-testid="friend-moments-empty" className="px-6 py-12 text-center text-[14px] text-eink-sub">
             对方还没有发布动态
@@ -370,5 +388,19 @@ function Back({ onClick }) {
         <path d="M9 1 1 9l8 8" stroke="#191919" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
+  )
+}
+
+function PullIndicator({ pull, refreshing, threshold }) {
+  const height = refreshing ? 40 : pull
+  const label = refreshing ? '刷新中...' : pull >= threshold ? '松手刷新' : pull > 0 ? '下拉刷新' : ''
+  return (
+    <div
+      data-testid="fm-pull-indicator"
+      className="flex items-center justify-center overflow-hidden text-[12px] text-eink-sub"
+      style={{ height }}
+    >
+      {label}
+    </div>
   )
 }

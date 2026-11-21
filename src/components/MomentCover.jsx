@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import Avatar from './Avatar'
 import { loadMomentCover, saveMomentCover } from '../lib/momentCover'
 
-export default function MomentCover({ userId, name, avatarSrc, avatarColor, profileHref = '/me', editable = true }) {
+export default function MomentCover({ userId, name, avatarSrc, avatarColor, profileHref = '/me', editable = true, raised = false }) {
   const [cover, setCover] = useState(() => loadMomentCover(userId))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -58,32 +58,49 @@ export default function MomentCover({ userId, name, avatarSrc, avatarColor, prof
         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/45 to-transparent" />
       </div>
 
-      <button
-        type="button"
-        className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm active:bg-black/55 disabled:opacity-60"
-        onClick={() => fileRef.current?.click()}
-        disabled={busy || !editable}
-        aria-label="更换背景"
-        title="更换背景"
-        data-testid="change-cover"
-      >
-        {busy ? <span className="text-[11px]">…</span> : <CameraIcon />}
-      </button>
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={onChange}
-        disabled={!editable}
-        data-testid="cover-input"
-      />
+      {editable ? (
+        <>
+          <button
+            type="button"
+            className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm active:bg-black/55 disabled:opacity-60"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+            aria-label="更换背景"
+            title="更换背景"
+            data-testid="change-cover"
+          >
+            {busy ? <span className="text-[11px]">…</span> : <CameraIcon />}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={onChange}
+            data-testid="cover-input"
+          />
+        </>
+      ) : null}
 
-      <div className="absolute inset-x-0 bottom-0 flex translate-y-[38px] flex-col items-center">
-        <Link to={profileHref} className="rounded-full ring-4 ring-eink-paper" aria-label="查看资料">
+      <div
+        className={`absolute inset-x-0 flex flex-col items-center ${
+          raised ? 'bottom-[48px]' : 'bottom-0 translate-y-[38px]'
+        }`}
+      >
+        <Link
+          to={profileHref}
+          className={`rounded-full ring-4 ${raised ? 'ring-white/80' : 'ring-eink-paper'}`}
+          aria-label="查看资料"
+        >
           <Avatar name={name} color={avatarColor} size={76} src={avatarSrc || ''} />
         </Link>
-        <span className="mt-1.5 max-w-[70%] truncate text-[16px] font-medium text-eink-ink">{name}</span>
+        <span
+          className={`mt-1.5 max-w-[70%] truncate text-[16px] font-medium ${
+            raised ? 'text-white drop-shadow' : 'text-eink-ink'
+          }`}
+        >
+          {name}
+        </span>
       </div>
 
       {error ? (

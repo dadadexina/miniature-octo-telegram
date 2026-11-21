@@ -100,7 +100,7 @@ describe('FriendMoments 好友朋友圈流', () => {
       expect.objectContaining({ authorId: FRIEND })
     )
     expect(screen.getByText('第一条动态')).toBeTruthy()
-    expect(screen.getByText('李四的朋友圈')).toBeTruthy()
+    expect(screen.getByText('纸墨信笺')).toBeTruthy()
   })
 
   it('空结果展示空态', async () => {
@@ -161,6 +161,21 @@ describe('FriendMoments 好友朋友圈流', () => {
     await screen.findByTestId('friend-moments-empty')
     fireEvent.click(screen.getByLabelText('返回'))
     expect(screen.getByTestId('profile-page')).toBeTruthy()
+  })
+
+  it('下拉松手触发重新拉取并显示刷新提示', async () => {
+    fetchMoments.mockResolvedValue({ ok: true, moments: [], hasMore: false, oldest: null })
+    setup()
+    await screen.findByTestId('friend-moments-empty')
+    expect(fetchMoments).toHaveBeenCalledTimes(1)
+
+    const scroller = screen.getByTestId('fm-scroll')
+    fireEvent.touchStart(scroller, { touches: [{ clientY: 0 }] })
+    fireEvent.touchMove(scroller, { touches: [{ clientY: 200 }] })
+    expect(screen.getByTestId('fm-pull-indicator').textContent).toBe('松手刷新')
+
+    fireEvent.touchEnd(scroller, { changedTouches: [{ clientY: 200 }] })
+    await waitFor(() => expect(fetchMoments).toHaveBeenCalledTimes(2))
   })
 
   it('本地演示模式按 userId 过滤种子动态', async () => {
