@@ -10,7 +10,12 @@ import {
   peerOptions,
   isPeerFatalError,
   mediaConstraints,
+  newCallSuffix,
   peerIdFor,
+  readCallSuffix,
+  resolveCalleePeerId,
+  writeCallSuffix,
+  CALL_TAB_STORAGE_KEY,
 } from './call'
 
 describe('peerIdFor', () => {
@@ -29,6 +34,75 @@ describe('peerIdFor', () => {
 
   it('去掉首尾空白', () => {
     expect(peerIdFor(' abc ')).toBe(`${CALL_PEER_PREFIX}abc`)
+  })
+
+  it('附加标签页后缀后彼此不冲突', () => {
+    expect(peerIdFor('u1', 'abc123')).toBe(`${CALL_PEER_PREFIX}u1-abc123`)
+    expect(peerIdFor('u1', 'abc123')).not.toBe(peerIdFor('u1', 'zzz999'))
+  })
+})
+
+function fakeStorage(initial = {}) {
+  const data = { ...initial }
+  return {
+    getItem: (k) => (k in data ? data[k] : null),
+    setItem: (k, v) => {
+      data[k] = String(v)
+    },
+    data,
+  }
+}
+
+describe('标签页后缀', () => {
+  it('生成的随机后缀为六位', () => {
+    expect(newCallSuffix(() => 0)).toBe('000000')
+    expect(newCallSuffix(() => 0.999999)).toHaveLength(6)
+  })
+
+  it('同一标签页复用已保存的后缀', () => {
+    const storage = fakeStorage()
+    const first = readCallSuffix(storage)
+    expect(readCallSuffix(storage)).toBe(first)
+    expect(storage.data[CALL_TAB_STORAGE_KEY]).toBe(first)
+  })
+
+  it('轮换后写入新后缀', () => {
+    const storage = fakeStorage()
+    readCallSuffix(storage)
+    writeCallSuffix(storage, 'next01')
+    expect(readCallSuffix(storage)).toBe('next01')
+  })
+
+  it('storage 不可用时仍返回可用后缀', () => {
+    const broken = {
+      getItem: () => {
+        throw new Error('blocked')
+      },
+      setItem: () => {
+        throw new Error('blocked')
+      },
+    }
+    expect(readCallSuffix(broken)).toHaveLength(6)
+    expect(readCallSuffix(null)).toHaveLength(6)
+  })
+})
+
+describe('resolveCalleePeerId', () => {
+  it('优先使用 presence 中最近上报的标签页 ID', () => {
+    const state = {
+      u2: [{ peerId: `${CALL_PEER_PREFIX}u2-aaa111` }, { peerId: `${CALL_PEER_PREFIX}u2-bbb222` }],
+    }
+    expect(resolveCalleePeerId(state, 'u2')).toBe(`${CALL_PEER_PREFIX}u2-bbb222`)
+  })
+
+  it('对方不在线时回退到旧版固定 ID', () => {
+    expect(resolveCalleePeerId({}, 'u2')).toBe(`${CALL_PEER_PREFIX}u2`)
+    expect(resolveCalleePeerId({ u2: [{ peerId: '' }] }, 'u2')).toBe(`${CALL_PEER_PREFIX}u2`)
+  })
+
+  it('忽略非法条目与空用户', () => {
+    expect(resolveCalleePeerId({ u2: [{ peerId: 'bad' }] }, 'u2')).toBe(`${CALL_PEER_PREFIX}u2`)
+    expect(resolveCalleePeerId({ u2: [{ peerId: `${CALL_PEER_PREFIX}u2-x` }] }, '')).toBe('')
   })
 })
 
@@ -55,7 +129,7 @@ describe('formatCallDuration', () => {
 describe('callErrorMessage / isPeerFatalError', () => {
   it('已知错误码有中文提示', () => {
     expect(callErrorMessage('peer-unavailable')).toContain('无法接听')
-    expect(callErrorMessage('unavailable-id')).toContain('其他窗口')
+    expect(callErrorMessage('unavailable-id')).toContain('刷新页面')
     expect(callErrorMessage('webrtc')).toContain('协商失败')
   })
 

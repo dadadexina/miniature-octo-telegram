@@ -1,19 +1,39 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Peer from 'peerjs'
 
+import { supabase } from '../lib/supabase'
 import {
+  CALL_PRESENCE_CHANNEL,
   CALL_STATUS,
   CALL_TIMEOUT_MS,
   ICE_SERVERS,
   callErrorMessage,
   isPeerFatalError,
   mediaConstraints,
+  newCallSuffix,
   peerIdFor,
   peerOptions,
+  readCallSuffix,
+  resolveCalleePeerId,
+  writeCallSuffix,
 } from '../lib/call'
 
 const MIC_ERROR = '无法获取麦克风权限，请在浏览器设置中允许麦克风访问'
 const SIGNAL_OPEN_TIMEOUT_MS = 8000
+const PRESENCE_WAIT_MS = 2000
+const MAX_ID_RETRIES = 3
+
+function tabStorage() {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage
+  } catch {
+    return null
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 function waitPeerOpen(peer, timeoutMs = SIGNAL_OPEN_TIMEOUT_MS) {
   if (!peer || peer.destroyed) return Promise.reject(new Error('信号通道不可用'))
@@ -29,7 +49,7 @@ function waitPeerOpen(peer, timeoutMs = SIGNAL_OPEN_TIMEOUT_MS) {
       fn(payload)
     }
     const onOpen = () => finish(resolve, peer)
-    const onError = () => finish(reject, new Error(callErrorMessage('signaling-timeout')))
+    const onError = (err) => finish(reject, new Error(callErrorMessage(err?.type || 'signaling-timeout')))
     const timer = setTimeout(() => finish(reject, new Error(callErrorMessage('signaling-timeout'))), timeoutMs)
     peer.on('open', onOpen)
     peer.on('error', onError)
@@ -50,6 +70,13 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
   const localStreamRef = useRef(null)
   const timerRef = useRef(null)
   const timeoutRef = useRef(null)
+
+  const suffixRef = useRef('')
+  const idRetryRef = useRef(0)
+  const channelRef = useRef(null)
+  const subscribedRef = useRef(false)
+  const presenceRef = useRef({})
+  const presenceReadyRef = useRef(false)
 
   const applyStatus = useCallback((next) => {
     statusRef.current = next
@@ -110,6 +137,19 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
     [applyStatus, clearTimers, stopTracks]
   )
 
+  const trackPresence = useCallback(() => {
+    const channel = channelRef.current
+    const peer = peerRef.current
+    if (!channel || !subscribedRef.current || !peer || peer.destroyed) return
+    const peerId = peer.id || peerIdFor(myId, suffixRef.current)
+    if (!peerId) return
+    try {
+      channel.track({ peerId })
+    } catch {
+      /* ignore */
+    }
+  }, [myId])
+
   const wireCall = useCallback(
     (call) => {
       callRef.current = call
@@ -130,59 +170,94 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
     [applyStatus, clearTimers, teardown]
   )
 
-  const ensurePeer = useCallback(() => {
-    if (!enabled) return null
-    if (peerRef.current) return peerRef.current
-    const selfId = peerIdFor(myId)
-    if (!selfId) return null
-    const peer = new Peer(selfId, {
-      config: { iceServers: ICE_SERVERS },
-      debug: 0,
-      ...peerOptions(import.meta.env || {}),
-    })
-    peerRef.current = peer
-
-    peer.on('call', (call) => {
-      if (statusRef.current !== CALL_STATUS.IDLE) {
-        try {
-          call.close()
-        } catch {
-          /* ignore */
-        }
-        return
+  const ensurePeer = useCallback(
+    function createPeer() {
+      if (!enabled || !myId) return null
+      if (peerRef.current) return peerRef.current
+      if (!suffixRef.current) {
+        suffixRef.current = readCallSuffix(tabStorage())
       }
-      incomingRef.current = call
-      setError('')
-      applyStatus(CALL_STATUS.RINGING)
-      call.on('close', () => {
-        if (incomingRef.current === call) teardown()
+      const selfId = peerIdFor(myId, suffixRef.current)
+      if (!selfId) return null
+      const peer = new Peer(selfId, {
+        config: { iceServers: ICE_SERVERS },
+        debug: 0,
+        ...peerOptions(import.meta.env || {}),
       })
-    })
+      peerRef.current = peer
 
-    peer.on('error', (err) => {
-      const type = err?.type
-      setError(callErrorMessage(type))
-      if (statusRef.current !== CALL_STATUS.IDLE) teardown(CALL_STATUS.FAILED)
-      if (isPeerFatalError(type) && peerRef.current === peer) {
-        peerRef.current = null
+      peer.on('open', () => {
+        idRetryRef.current = 0
+        trackPresence()
+      })
+
+      peer.on('call', (call) => {
+        if (statusRef.current !== CALL_STATUS.IDLE) {
+          try {
+            call.close()
+          } catch {
+            /* ignore */
+          }
+          return
+        }
+        incomingRef.current = call
+        setError('')
+        applyStatus(CALL_STATUS.RINGING)
+        call.on('close', () => {
+          if (incomingRef.current === call) teardown()
+        })
+      })
+
+      peer.on('error', (err) => {
+        const type = err?.type
+        if (type === 'unavailable-id' && peerRef.current === peer) {
+          peerRef.current = null
+          try {
+            peer.destroy()
+          } catch {
+            /* ignore */
+          }
+          if (idRetryRef.current < MAX_ID_RETRIES) {
+            idRetryRef.current += 1
+            const next = newCallSuffix()
+            suffixRef.current = next
+            writeCallSuffix(tabStorage(), next)
+            createPeer()
+            return
+          }
+        }
+        setError(callErrorMessage(type))
+        if (statusRef.current !== CALL_STATUS.IDLE) teardown(CALL_STATUS.FAILED)
+        if (isPeerFatalError(type) && peerRef.current === peer) {
+          peerRef.current = null
+          try {
+            peer.destroy()
+          } catch {
+            /* ignore */
+          }
+        }
+      })
+
+      peer.on('disconnected', () => {
         try {
-          peer.destroy()
+          peer.reconnect()
         } catch {
           /* ignore */
         }
-      }
-    })
+      })
 
-    peer.on('disconnected', () => {
-      try {
-        peer.reconnect()
-      } catch {
-        /* ignore */
-      }
-    })
+      return peer
+    },
+    [applyStatus, enabled, myId, teardown, trackPresence]
+  )
 
-    return peer
-  }, [applyStatus, enabled, myId, teardown])
+  const resolveTarget = useCallback(async () => {
+    const deadline = Date.now() + PRESENCE_WAIT_MS
+    while (!presenceReadyRef.current && Date.now() < deadline) {
+      await sleep(100)
+    }
+    return resolveCalleePeerId(presenceRef.current, remoteId)
+  }, [remoteId])
 
   const start = useCallback(async () => {
     if (!enabled) {
@@ -191,15 +266,9 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
       return
     }
     if (statusRef.current !== CALL_STATUS.IDLE) return
-    const peer = ensurePeer()
+    let peer = ensurePeer()
     if (!peer) {
       setError('通话功能初始化失败，请刷新后重试')
-      applyStatus(CALL_STATUS.FAILED)
-      return
-    }
-    const target = peerIdFor(remoteId)
-    if (!target) {
-      setError('对方账号无效，无法呼叫')
       applyStatus(CALL_STATUS.FAILED)
       return
     }
@@ -209,13 +278,33 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
     setMuted(false)
     applyStatus(CALL_STATUS.CALLING)
 
-    try {
-      await waitPeerOpen(peer)
-    } catch (err) {
-      setError((prev) => prev || err?.message || callErrorMessage('signaling-timeout'))
+    const target = await resolveTarget()
+    if (!target) {
+      setError('对方账号无效，无法呼叫')
+      teardown(CALL_STATUS.FAILED)
+      return
+    }
+    if (statusRef.current !== CALL_STATUS.CALLING) return
+
+    let openError = null
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await waitPeerOpen(peer)
+        openError = null
+        break
+      } catch (err) {
+        openError = err
+        const next = peerRef.current
+        if (!next || next === peer || next.destroyed) break
+        peer = next
+      }
+    }
+    if (openError) {
+      setError((prev) => prev || openError.message || callErrorMessage('signaling-timeout'))
       if (statusRef.current !== CALL_STATUS.FAILED) teardown(CALL_STATUS.FAILED)
       return
     }
+    if (statusRef.current !== CALL_STATUS.CALLING) return
 
     let stream
     try {
@@ -249,7 +338,7 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
         teardown(CALL_STATUS.FAILED)
       }
     }, CALL_TIMEOUT_MS)
-  }, [applyStatus, enabled, ensurePeer, remoteId, teardown, wireCall])
+  }, [applyStatus, enabled, ensurePeer, resolveTarget, teardown, wireCall])
 
   const answer = useCallback(async () => {
     const call = incomingRef.current
@@ -295,9 +384,30 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
   }, [])
 
   useEffect(() => {
-    if (!enabled) return undefined
+    if (!enabled || !myId) return undefined
     ensurePeer()
+    const channel = supabase.channel(CALL_PRESENCE_CHANNEL, {
+      config: { presence: { key: myId, enabled: true } },
+    })
+    channelRef.current = channel
+    channel.on('presence', { event: 'sync' }, () => {
+      presenceRef.current = channel.presenceState()
+      presenceReadyRef.current = true
+    })
+    channel.subscribe((state) => {
+      subscribedRef.current = state === 'SUBSCRIBED'
+      if (subscribedRef.current) trackPresence()
+    })
     return () => {
+      presenceRef.current = {}
+      presenceReadyRef.current = false
+      subscribedRef.current = false
+      channelRef.current = null
+      try {
+        supabase.removeChannel(channel)
+      } catch {
+        /* ignore */
+      }
       teardown()
       const peer = peerRef.current
       peerRef.current = null
@@ -309,7 +419,7 @@ export default function useVoiceCall({ myId, remoteId, enabled }) {
         }
       }
     }
-  }, [enabled, ensurePeer, teardown])
+  }, [enabled, ensurePeer, myId, teardown, trackPresence])
 
   return {
     status,

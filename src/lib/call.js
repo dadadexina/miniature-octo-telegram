@@ -8,6 +8,8 @@ export const CALL_STATUS = {
 }
 
 export const CALL_PEER_PREFIX = 'inkline-call-'
+export const CALL_PRESENCE_CHANNEL = 'inkline-call:presence'
+export const CALL_TAB_STORAGE_KEY = 'wechat-chat-app-v3:call-tab'
 export const CALL_TIMEOUT_MS = 30000
 
 export const ICE_SERVERS = [
@@ -15,9 +17,52 @@ export const ICE_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ]
 
-export function peerIdFor(userId) {
+export function peerIdFor(userId, suffix = '') {
   const id = String(userId || '').trim()
-  return id ? `${CALL_PEER_PREFIX}${id}` : ''
+  if (!id) return ''
+  const tail = String(suffix || '').trim()
+  return tail ? `${CALL_PEER_PREFIX}${id}-${tail}` : `${CALL_PEER_PREFIX}${id}`
+}
+
+export function newCallSuffix(random = Math.random) {
+  const value = Math.floor(random() * 36 ** 6)
+  return value.toString(36).padStart(6, '0')
+}
+
+export function readCallSuffix(storage) {
+  const fallback = newCallSuffix()
+  if (!storage) return fallback
+  try {
+    const saved = String(storage.getItem(CALL_TAB_STORAGE_KEY) || '').trim()
+    if (saved) return saved
+    storage.setItem(CALL_TAB_STORAGE_KEY, fallback)
+  } catch {
+    /* ignore */
+  }
+  return fallback
+}
+
+export function writeCallSuffix(storage, suffix) {
+  const tail = String(suffix || '').trim()
+  if (!tail || !storage) return
+  try {
+    storage.setItem(CALL_TAB_STORAGE_KEY, tail)
+  } catch {
+    /* ignore */
+  }
+}
+
+export function resolveCalleePeerId(presenceState, userId) {
+  const id = String(userId || '').trim()
+  if (!id) return ''
+  const entries = presenceState?.[id]
+  if (Array.isArray(entries)) {
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      const candidate = String(entries[i]?.peerId || '').trim()
+      if (candidate.startsWith(CALL_PEER_PREFIX)) return candidate
+    }
+  }
+  return peerIdFor(id)
 }
 
 export function peerOptions(env = {}) {
@@ -50,7 +95,7 @@ export function formatCallDuration(totalSeconds) {
 }
 
 const PEER_ERROR_TEXT = {
-  'unavailable-id': '通话功能已在其他窗口启用，请关闭其他窗口后重试',
+  'unavailable-id': '通话通道初始化失败，请刷新页面后重试',
   'peer-unavailable': '对方暂时无法接听，可能未停留在聊天页',
   network: '网络连接异常，请稍后重试',
   'server-error': '信令服务器连接失败，请稍后重试',
