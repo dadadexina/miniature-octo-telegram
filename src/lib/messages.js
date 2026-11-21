@@ -125,6 +125,16 @@ export async function searchThreadMessages({ userId, peerId, query, limit = 50 }
   }
 }
 
+export async function deletePairMessages(meId, peerId) {
+  if (!meId || !peerId || meId === peerId) return { ok: false, error: '参数错误' }
+  const pair = `and(sender_id.eq.${meId},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${meId})`
+  const { error } = await supabase.from('messages').delete().or(pair)
+  if (error) {
+    return { ok: false, error: error.message, permission: isPermissionError(error) }
+  }
+  return { ok: true }
+}
+
 export const THREAD_PAGE_SIZE = 50
 export const INBOX_LIMIT = 500
 

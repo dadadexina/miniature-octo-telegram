@@ -148,13 +148,12 @@ create index if not exists client_errors_session_idx on public.client_errors (se
 
 create or replace function public.are_contacts(a uuid, b uuid)
 returns boolean language sql stable security definer set search_path = public as $fn$
-  select exists (
+  select a <> b and exists (
     select 1 from public.friends f
-    where (f.owner_id = a and f.friend_id = b) or (f.owner_id = b and f.friend_id = a)
-  ) or exists (
-    select 1 from public.friend_requests r
-    where r.status = 'accepted'
-      and ((r.from_id = a and r.to_id = b) or (r.from_id = b and r.to_id = a))
+    where f.owner_id = a and f.friend_id = b
+  ) and exists (
+    select 1 from public.friends f
+    where f.owner_id = b and f.friend_id = a
   )
 $fn$;
 
@@ -220,7 +219,7 @@ grant select, insert, delete on table public.blocks to authenticated;
 grant select, insert, update on table public.read_cursors to authenticated;
 grant select, insert on table public.message_hides to authenticated;
 grant select, insert, update on table public.conversation_prefs to authenticated;
-grant select, insert, update on table public.messages to authenticated;
+grant select, insert, update, delete on table public.messages to authenticated;
 grant select, insert, delete on table public.moments to authenticated;
 grant select, insert, delete on table public.moment_likes to authenticated;
 grant select, insert, delete on table public.moment_comments to authenticated;
@@ -325,6 +324,12 @@ using (auth.uid() = sender_id and recalled_at is null
        and created_at > now() - interval '2 minutes')
 with check (auth.uid() = sender_id and recalled_at is not null);
 
+-- 删除好友时清空该会话记录:只允许消息两端删自己的会话
+drop policy if exists "messages_delete_pair" on public.messages;
+create policy "messages_delete_pair" on public.messages for delete
+to authenticated
+using (auth.uid() in (sender_id, receiver_id));
+
 drop policy if exists "profiles_select_authenticated" on public.profiles;
 create policy "profiles_select_authenticated" on public.profiles for select
 to authenticated using (public.can_view_profile(auth.uid(), id));
@@ -397,27 +402,35 @@ create policy "moments_obj_owner_delete" on storage.objects for delete
 to authenticated
 using (bucket_id = 'moments' and (storage.foldername(name))[1] = auth.uid()::text);
 
+-- ============ friends 好友边读写策略 ============
+-- 好友判定要求双方各一行(are_contacts 双向校验),任一方删除都会删掉两侧的边。
+-- 双方都能读到这两行,便于登录水合时同步好友列表与删除状态。
+
+drop policy if exists "friends_select_own" on public.friends;
+drop policy if exists "friends_select_participant" on public.friends;
+create policy "friends_select_participant" on public.friends for select
+to authenticated
+using (auth.uid() in (owner_id, friend_id));
+
+drop policy if exists "friends_delete_own" on public.friends;
+drop policy if exists "friends_delete_participant" on public.friends;
+create policy "friends_delete_participant" on public.friends for delete
+to authenticated
+using (auth.uid() in (owner_id, friend_id));
+
 -- ============ friends 对等边回写(接受方替请求方建边 / 双方互备) ============
 -- permissive 策略与 friends_insert_own 叠加(OR):本人边始终可插;
--- 对等边(owner=对方, friend=我)在「反向边已存在」或「存在已接受的好友请求」时允许插入,
--- 使 acceptFriendRequest 的双向 upsertFriend 与登录水合的对等回补在 RLS 下可成功。
+-- 对等边(owner=对方, friend=我)仅在「反向边已存在」时允许插入,
+-- 即只允许补齐已有关系,不能凭已接受的旧请求单方面重建好友。
 
 drop policy if exists "friends_insert_reciprocal" on public.friends;
 create policy "friends_insert_reciprocal" on public.friends for insert
 to authenticated
 with check (
   auth.uid() = friend_id
-  and (
-    exists (
-      select 1 from public.friends f2
-      where f2.owner_id = auth.uid() and f2.friend_id = public.friends.owner_id
-    )
-    or exists (
-      select 1 from public.friend_requests r
-      where r.status = 'accepted'
-        and ((r.from_id = auth.uid() and r.to_id = public.friends.owner_id)
-          or (r.from_id = public.friends.owner_id and r.to_id = auth.uid()))
-    )
+  and exists (
+    select 1 from public.friends f2
+    where f2.owner_id = auth.uid() and f2.friend_id = public.friends.owner_id
   )
 );
 
@@ -425,6 +438,7 @@ with check (
 
 alter table public.read_cursors replica identity full;
 alter table public.friend_requests replica identity full;
+alter table public.friends replica identity full;
 
 do $$
 begin
@@ -436,6 +450,13 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.friend_requests;
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.friends;
 exception
   when duplicate_object then null;
 end $$;`

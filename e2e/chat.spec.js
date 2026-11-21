@@ -35,17 +35,30 @@ async function ensureFriendship(pageA, pageB) {
   const addBtn = results.getByTestId('search-result-add').first()
   if (await addBtn.isVisible().catch(() => false)) {
     await addBtn.click()
+    await expect(pageA.getByText(/好友请求已发送|已发送过好友请求/).first()).toBeVisible({ timeout: 15000 })
   }
 
-  // B 端接受请求(若存在)
-  await pageB.goto('/contacts')
-  const acceptBtn = pageB.getByTestId('accept-request').first()
-  if (await acceptBtn.isVisible().catch(() => false)) {
-    await acceptBtn.click()
-    await expect(pageB.getByText('已添加好友').first()).toBeVisible({ timeout: 15000 })
+  // B 端接受请求(若存在);realtime 可能尚未订阅,未出现时重新加载页面
+  for (let i = 0; i < 3; i += 1) {
+    await pageB.goto('/contacts')
+    const acceptBtn = pageB.getByTestId('accept-request').first()
+    const hasAccept = await acceptBtn
+      .waitFor({ state: 'visible', timeout: 8000 })
+      .then(() => true)
+      .catch(() => false)
+    if (hasAccept) {
+      await acceptBtn.click()
+      await expect(pageB.getByText('已添加好友').first()).toBeVisible({ timeout: 15000 })
+      break
+    }
+    const alreadyFriend = pageB
+      .getByTestId('friend-entry')
+      .filter({ hasText: `ID: ${A.username}` })
+      .first()
+    if ((await alreadyFriend.count()) > 0) break
   }
 
-  // A 端确认好友入口出现(接受后 realtime/刷新可见)
+  // A 端确认好友入口出现(挂载刷新 + realtime)
   await pageA.goto('/contacts')
   await expect(
     pageA.getByTestId('friend-entry').filter({ hasText: `ID: ${B.username}` }).first()
@@ -200,6 +213,69 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
     await sendMessage(pageB, stamp)
     await openChatByUsername(pageA, B.username)
     await expect(pageA.getByText(stamp).last()).toBeVisible({ timeout: 30000 })
+
+    await ctxA.close()
+    await ctxB.close()
+  })
+  test('A 删除好友 → 会话与历史清空 → B 发送失败 → 重新添加需对方同意', async ({ browser }) => {
+    const stamp = `删除${Date.now()}`
+    const ctxA = await browser.newContext()
+    const ctxB = await browser.newContext()
+    const pageA = await ctxA.newPage()
+    const pageB = await ctxB.newPage()
+    await login(pageA, A)
+    await login(pageB, B)
+    await ensureFriendship(pageA, pageB)
+
+    await openChatByUsername(pageA, B.username)
+    await sendMessage(pageA, stamp)
+    await openChatByUsername(pageB, A.username)
+    await expect(pageB.getByText(stamp).last()).toBeVisible({ timeout: 20000 })
+
+    // A 在通讯录删除 B,本地会话与历史应立即清空
+    await pageA.goto('/contacts')
+    await pageA.getByRole('button', { name: '编辑', exact: true }).click()
+    const row = pageA.getByTestId('contact-edit-row').filter({ hasText: `ID: ${B.username}` }).first()
+    await row.getByTestId('contact-delete').click()
+    await pageA.getByTestId('contact-delete-confirm').click()
+    await expect(pageA.getByText('已删除好友，聊天记录已清空')).toBeVisible({ timeout: 15000 })
+    await pageA.goto('/chats')
+    await expect(pageA.getByText(stamp)).toHaveCount(0, { timeout: 15000 })
+
+    // B 仍停留在会话页,此时发送应失败并显示感叹号重试
+    await pageB.getByPlaceholder('发送消息').fill(`被删${stamp}`)
+    await pageB.getByRole('button', { name: '发送', exact: true }).click()
+    await expect(pageB.getByTestId('pending-failed').first()).toBeVisible({ timeout: 20000 })
+
+    // 重新添加必须走请求流程:A 端不立即出现好友,等 B 同意后才出现
+    await pageA.goto('/contacts')
+    // 清掉历史遗留的待处理请求,保证本次点击的是「添加」
+    const staleCancel = pageA.getByTestId('cancel-request').first()
+    if (await staleCancel.isVisible().catch(() => false)) {
+      await staleCancel.click()
+      await expect(pageA.getByText('已取消请求').first()).toBeVisible({ timeout: 15000 })
+    }
+    const search = pageA.getByPlaceholder('输入用户名 ID 搜索')
+    await search.fill(B.username)
+    await search.press('Enter')
+    const results = pageA.getByTestId('search-results')
+    await expect(results).toBeVisible({ timeout: 20000 })
+    await results.getByTestId('search-result-add').first().click()
+    await expect(pageA.getByText('好友请求已发送，等待对方同意')).toBeVisible({ timeout: 15000 })
+    await expect(
+      pageA.getByTestId('friend-entry').filter({ hasText: `ID: ${B.username}` })
+    ).toHaveCount(0)
+
+    await pageB.goto('/contacts')
+    const acceptBtn = pageB.getByTestId('accept-request').first()
+    await expect(acceptBtn).toBeVisible({ timeout: 20000 })
+    await acceptBtn.click()
+    await expect(pageB.getByText('已添加好友').first()).toBeVisible({ timeout: 15000 })
+
+    await pageA.goto('/contacts')
+    await expect(
+      pageA.getByTestId('friend-entry').filter({ hasText: `ID: ${B.username}` }).first()
+    ).toBeVisible({ timeout: 30000 })
 
     await ctxA.close()
     await ctxB.close()

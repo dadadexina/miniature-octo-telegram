@@ -63,23 +63,6 @@ export async function sendFriendRequest(meId, targetId) {
   }
 }
 
-export async function fetchAcceptedPeerIds(meId) {
-  try {
-    const { data, error } = await supabase
-      .from('friend_requests')
-      .select('from_id, to_id')
-      .eq('status', 'accepted')
-      .or(`from_id.eq.${meId},to_id.eq.${meId}`)
-      .limit(500)
-    if (error) return { ok: false, error: error.message, ids: [] }
-    const ids = (data || [])
-      .map((row) => (row.from_id === meId ? row.to_id : row.from_id))
-      .filter((id) => id && id !== meId)
-    return { ok: true, ids: [...new Set(ids)] }
-  } catch {
-    return { ok: false, error: '网络异常', ids: [] }
-  }
-}
 
 export async function fetchFriendRequests(meId) {
   try {

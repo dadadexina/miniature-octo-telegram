@@ -5,13 +5,12 @@ import {
   acceptFriendRequest,
   cancelFriendRequest,
   declineFriendRequest,
-  fetchAcceptedPeerIds,
   fetchFriendRequests,
   sendFriendRequest,
 } from './lib/friendRequests'
 import { applyDraft, loadDrafts, saveDrafts } from './lib/drafts'
 import { fetchConversationPrefs, upsertConversationPref } from './lib/conversationPrefs'
-import { fetchHiddenIds, fetchInbox, hideMessage, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
+import { deletePairMessages, fetchHiddenIds, fetchInbox, hideMessage, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
 import { fetchProfilesByIds } from './lib/profiles'
 import { buildCursorMaps, fetchCursorsFor, upsertReadCursor } from './lib/readCursors'
 import { supabase } from './lib/supabase'
@@ -220,6 +219,7 @@ export function StoreProvider({ children }) {
   const resyncRef = useRef(null)
   const refreshRequestsRef = useRef(null)
   const markLocalFriendRef = useRef(null)
+  const friendResyncRef = useRef(null)
   const hadDisconnectedRef = useRef(false)
 
   useEffect(() => {
@@ -352,6 +352,11 @@ export function StoreProvider({ children }) {
     refreshRequestsRef.current = refreshFriendRequests
   }, [refreshFriendRequests])
 
+  // 通讯录页挂载时主动拉一次好友边,避免实时订阅尚未就绪时看不到对方刚接受的好友
+  const refreshFriends = useCallback(async () => {
+    if (friendResyncRef.current) await friendResyncRef.current()
+  }, [])
+
   const syncFriendToCloud = useCallback((meId, friendId) => {
     if (!isUuid(meId) || !isUuid(friendId)) return
     upsertFriend(meId, friendId)
@@ -362,29 +367,33 @@ export function StoreProvider({ children }) {
     if (!me || !isUuid(me)) return undefined
     let alive = true
     const sync = async () => {
-      // 好友边 + 已接受请求双来源:请求方离线期间被接受的关系也能落地;
-      // 对等边回写(friend=我, owner=对方)由 friends_insert_reciprocal 策略放行,幂等
-      const [result, accepted] = await Promise.all([fetchFriends(me), fetchAcceptedPeerIds(me)])
-      if (!alive) return
-      if (!result.ok && !accepted.ok) return
+      // friends 表是唯一好友真源:双方各一行才成立。曾经用 accepted 请求+对等回补,
+      // 会在对方删除后把关系自动写回,导致删除失效,现已移除。
+      const result = await fetchFriends(me)
+      if (!alive || !result.ok) return
       const prev = stateRef.current
       const localIds = new Set(
         prev.friendships.filter((f) => f.userId === me && isUuid(f.friendId)).map((f) => f.friendId)
       )
-      const cloudIds = [
-        ...new Set([
-          ...(result.ok ? result.friends.map((f) => f.friendId) : []),
-          ...(accepted.ok ? accepted.ids : []),
-        ].filter((id) => id && id !== me)),
-      ]
+      const cloudIds = [...new Set(result.friends.map((f) => f.friendId))].filter((id) => id && id !== me)
       const newIds = cloudIds.filter((id) => !localIds.has(id))
+      const removedIds = [...localIds].filter((id) => !cloudIds.includes(id))
+      if (!newIds.length && !removedIds.length) return
       const profilesResult = newIds.length
         ? await fetchProfilesByIds(newIds)
         : { ok: true, profiles: [] }
       if (!alive) return
-      const backfill = [...localIds].filter((id) => !cloudIds.includes(id))
-      backfill.forEach((id) => upsertFriend(me, id))
-      cloudIds.forEach((id) => upsertFriend(id, me))
+      if (removedIds.length) {
+        const removed = new Set(removedIds)
+        setState((p) => ({
+          ...p,
+          friendships: p.friendships.filter(
+            (f) =>
+              !(f.userId === me && removed.has(f.friendId)) &&
+              !(f.friendId === me && removed.has(f.userId))
+          ),
+        }))
+      }
       if (!newIds.length) return
       setState((p) => {
         const users = [...p.users]
@@ -414,9 +423,17 @@ export function StoreProvider({ children }) {
         return { ...p, users, friendships: [...p.friendships, ...pairs] }
       })
     }
+    let timer = null
+    const schedule = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(sync, 150)
+    }
+    friendResyncRef.current = schedule
     sync()
     return () => {
       alive = false
+      if (timer) clearTimeout(timer)
+      if (friendResyncRef.current === schedule) friendResyncRef.current = null
     }
   }, [authUser?.id])
 
@@ -519,6 +536,11 @@ export function StoreProvider({ children }) {
           }
           setPeerReadAt({ ...peerReadAtRef.current })
         }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'friends' },
+        () => friendResyncRef.current?.()
       )
       .on(
         'postgres_changes',
@@ -856,6 +878,7 @@ export function StoreProvider({ children }) {
       hiddenIds,
       openPeer,
       refreshFriendRequests,
+      refreshFriends,
       requestFriendFromProfile,
       respondToRequest,
       cancelRequest,
@@ -1074,7 +1097,7 @@ export function StoreProvider({ children }) {
         return { ok: true }
       },
 
-      removeFriend(friendId) {
+      async removeFriend(friendId) {
         const me = state.currentUserId
         if (!me || !friendId) return { ok: false, error: '参数错误' }
         patch((prev) => ({
@@ -1093,7 +1116,22 @@ export function StoreProvider({ children }) {
           delete next[friendId]
           return next
         })
-        if (isUuid(me) && isUuid(friendId)) deleteFriend(me, friendId)
+        setDrafts((prev) => {
+          if (!(friendId in prev)) return prev
+          const next = { ...prev }
+          delete next[friendId]
+          return next
+        })
+        if (!isUuid(me) || !isUuid(friendId)) return { ok: true }
+        // 双向删除好友边并清空该会话双方的历史消息,否则对方仍是联系人可继续收发
+        const [edge, history] = await Promise.all([
+          deleteFriend(me, friendId),
+          deletePairMessages(me, friendId),
+        ])
+        if (!edge.ok || !history.ok) {
+          friendResyncRef.current?.()
+          return { ok: false, error: edge.error || history.error || '删除失败' }
+        }
         return { ok: true }
       },
 
@@ -1215,7 +1253,7 @@ export function StoreProvider({ children }) {
         return { ok: true }
       },
     }
-  }, [state, currentUser, authReady, authUser, profile, profileReady, profileSynced, inbox, unread, drafts, setDraft, activePeerId, offline, syncTick, peerReadAt, requests, blockedIds, convPrefs, setConversationPref, ingestCloudMessage, mergeInbox, replaceInbox, removeThread, hiddenIds, openPeer, setCloudProfile, syncFriendToCloud, refreshFriendRequests, requestFriendFromProfile, respondToRequest, cancelRequest, setBlockedFor])
+  }, [state, currentUser, authReady, authUser, profile, profileReady, profileSynced, inbox, unread, drafts, setDraft, activePeerId, offline, syncTick, peerReadAt, requests, blockedIds, convPrefs, setConversationPref, ingestCloudMessage, mergeInbox, replaceInbox, removeThread, hiddenIds, openPeer, setCloudProfile, syncFriendToCloud, refreshFriendRequests, refreshFriends, requestFriendFromProfile, respondToRequest, cancelRequest, setBlockedFor])
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>
 }

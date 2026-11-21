@@ -24,10 +24,11 @@ describe('mapFriend', () => {
 })
 
 describe('FRIENDS_SQL', () => {
-  it('包含删除好友的策略与授权', () => {
+  it('双方都可读可删好友边', () => {
     expect(FRIENDS_SQL).toContain('grant select, insert, delete on table public.friends to authenticated')
-    expect(FRIENDS_SQL).toContain('friends_delete_own')
+    expect(FRIENDS_SQL).toContain('friends_delete_participant')
+    expect(FRIENDS_SQL).toContain('friends_select_participant')
     expect(FRIENDS_SQL).toContain('for delete')
-    expect(FRIENDS_SQL).toContain('using (auth.uid() = owner_id)')
+    expect(FRIENDS_SQL).toContain('using (auth.uid() in (owner_id, friend_id))')
   })
 })

@@ -15,10 +15,10 @@ grant select, insert, delete on table public.friends to authenticated;
 alter table public.friends enable row level security;
 
 drop policy if exists "friends_select_own" on public.friends;
-create policy "friends_select_own"
+create policy "friends_select_participant"
 on public.friends for select
 to authenticated
-using (auth.uid() = owner_id);
+using (auth.uid() in (owner_id, friend_id));
 
 drop policy if exists "friends_insert_own" on public.friends;
 create policy "friends_insert_own"
@@ -27,10 +27,10 @@ to authenticated
 with check (auth.uid() = owner_id);
 
 drop policy if exists "friends_delete_own" on public.friends;
-create policy "friends_delete_own"
+create policy "friends_delete_participant"
 on public.friends for delete
 to authenticated
-using (auth.uid() = owner_id);
+using (auth.uid() in (owner_id, friend_id));
 
 create index if not exists friends_owner_idx on public.friends (owner_id);
 create index if not exists friends_friend_idx on public.friends (friend_id);
@@ -80,11 +80,12 @@ export async function upsertFriend(meId, friendId) {
 }
 
 export async function deleteFriend(meId, friendId) {
+  // 好友关系是双方各一行,单删一侧会残留反向边,必须成对删除
+  const pair = `and(owner_id.eq.${meId},friend_id.eq.${friendId}),and(owner_id.eq.${friendId},friend_id.eq.${meId})`
   const { error } = await supabase
     .from('friends')
     .delete()
-    .eq('owner_id', meId)
-    .eq('friend_id', friendId)
+    .or(pair)
   if (error) {
     return { ok: false, error: error.message, permission: isPermissionError(error) }
   }

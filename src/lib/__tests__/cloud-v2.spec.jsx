@@ -7,7 +7,9 @@ const { canRecall, mergeMessages, recallMessage, hideMessage, fetchHiddenIds, RE
 const { mergeReadAtMaps, recomputeUnreadCounts, friendlyInsertError } = await import('../syncHelpers')
 const { mapCursor, buildCursorMaps, upsertReadCursor, fetchCursorsFor } = await import('../readCursors')
 const { fetchMyBlocks, blockUser, unblockUser } = await import('../blocks')
-const { mapRequest, splitRequests, sendFriendRequest, acceptFriendRequest, declineFriendRequest, fetchAcceptedPeerIds } = await import('../friendRequests')
+const { mapRequest, splitRequests, sendFriendRequest, acceptFriendRequest, declineFriendRequest } = await import('../friendRequests')
+const { deleteFriend } = await import('../friends')
+const { deletePairMessages } = await import('../messages')
 
 function okChain(result, capture = {}) {
   const chain = {
@@ -313,20 +315,33 @@ describe('friendRequests 好友请求', () => {
     expect(res.error).toBe('请求已被处理')
   })
 
-  it('fetchAcceptedPeerIds 从双向 accepted 请求中提取对端并去重', async () => {
-    supabase.from.mockImplementationOnce(() =>
-      okChain({
-        data: [
-          { from_id: 'alice', to_id: 'me' },
-          { from_id: 'me', to_id: 'bob' },
-          { from_id: 'me', to_id: 'bob' },
-          { from_id: 'me', to_id: 'me' },
-        ],
-        error: null,
-      })
-    )
-    const res = await fetchAcceptedPeerIds('me')
+  it('deleteFriend 双向删除两侧好友边', async () => {
+    const chain = okChain({ error: null })
+    supabase.from.mockImplementationOnce(() => chain)
+    const res = await deleteFriend('me', 'alice')
     expect(res.ok).toBe(true)
-    expect(res.ids).toEqual(['alice', 'bob'])
+    expect(supabase.from).toHaveBeenCalledWith('friends')
+    expect(chain.delete).toHaveBeenCalled()
+    expect(chain.or).toHaveBeenCalledWith(
+      'and(owner_id.eq.me,friend_id.eq.alice),and(owner_id.eq.alice,friend_id.eq.me)'
+    )
+    supabase.from.mockReset()
+  })
+
+  it('deletePairMessages 按会话双方删除全部消息', async () => {
+    const chain = okChain({ error: null })
+    supabase.from.mockImplementationOnce(() => chain)
+    const res = await deletePairMessages('me', 'alice')
+    expect(res.ok).toBe(true)
+    expect(supabase.from).toHaveBeenCalledWith('messages')
+    expect(chain.or).toHaveBeenCalledWith(
+      'and(sender_id.eq.me,receiver_id.eq.alice),and(sender_id.eq.alice,receiver_id.eq.me)'
+    )
+    supabase.from.mockReset()
+  })
+
+  it('deletePairMessages 拒绝自己与自己', async () => {
+    const res = await deletePairMessages('me', 'me')
+    expect(res.ok).toBe(false)
   })
 })

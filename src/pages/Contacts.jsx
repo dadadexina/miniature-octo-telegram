@@ -9,7 +9,7 @@ import { useStore } from '../store'
 export default function Contacts() {
   const {
     currentUser, avatarColor, profile, friendsOf, isFriend, addFriendFromProfile, removeFriend,
-    searchUser, suggestedUsers, requests, respondToRequest, cancelRequest, requestFriendFromProfile,
+    searchUser, suggestedUsers, requests, respondToRequest, cancelRequest, requestFriendFromProfile, refreshFriends,
     upsertUsers, getUser, refreshFriendRequests, syncTick,
   } = useStore()
   const [keyword, setKeyword] = useState('')
@@ -28,7 +28,8 @@ export default function Contacts() {
   useEffect(() => {
     if (!isCloud) return
     refreshFriendRequests()
-  }, [isCloud, syncTick, refreshFriendRequests])
+    refreshFriends()
+  }, [isCloud, syncTick, refreshFriendRequests, refreshFriends])
 
   useEffect(() => {
     if (!isCloud) return
@@ -84,9 +85,14 @@ export default function Contacts() {
   }
 
   const onAdd = async (user) => {
-    if (isCloud && isUuid(user.id)) {
+    // 云端用户的 uuid 一律走「请求 → 对方同意」,避免单方面直接建立好友关系
+    if (isUuid(user.id)) {
+      if (!isCloud) {
+        showToast('请登录后再添加好友')
+        return
+      }
       const result = await requestFriendFromProfile(user)
-      showToast(result.ok ? '好友请求已发送' : result.error || '发送失败')
+      showToast(result.ok ? '好友请求已发送，等待对方同意' : result.error || '发送失败')
       return
     }
     const added = addFriendFromProfile(user)
@@ -117,14 +123,14 @@ export default function Contacts() {
     setResults(null)
   }
 
-  const onRemove = (friend) => {
+  const onRemove = async (friend) => {
     setConfirmId('')
-    const result = removeFriend(friend.id)
-    if (!result.ok) {
-      showToast(result.error || '删除失败')
+    const result = await removeFriend(friend.id)
+    if (!result?.ok) {
+      showToast(result?.error || '删除失败')
       return
     }
-    showToast('已删除好友')
+    showToast('已删除好友，聊天记录已清空')
   }
 
   const meName = profile?.nickname || currentUser.nickname
@@ -241,7 +247,7 @@ export default function Contacts() {
             {requests.outgoing.map((request) => {
               const user = getUser(request.toId) || { id: request.toId, nickname: '用户', avatarUrl: '' }
               return (
-                <div key={request.id} className="flex items-center gap-3 border-t border-eink-divider px-4 py-3">
+                <div key={request.id} data-testid="outgoing-request" className="flex items-center gap-3 border-t border-eink-divider px-4 py-3">
                   <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[16px]">{user.nickname}</div>
@@ -249,6 +255,7 @@ export default function Contacts() {
                   </div>
                   <button
                     type="button"
+                    data-testid="cancel-request"
                     className="shrink-0 rounded-none border border-eink-line/40 bg-eink-paper px-3 py-1.5 text-[13px] text-eink-sub active:bg-eink-pressed"
                     onClick={() => onCancelRequest(request)}
                   >
@@ -313,7 +320,7 @@ export default function Contacts() {
           ) : (
             friends.map((friend) =>
               editing ? (
-                <div key={friend.id} className="border-t border-eink-divider">
+                <div key={friend.id} data-testid="contact-edit-row" className="border-t border-eink-divider">
                   <div className="flex items-center gap-3 px-4 py-3">
                     <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={40} src={friend.avatarUrl || ''} />
                     <div className="min-w-0 flex-1">
@@ -324,6 +331,7 @@ export default function Contacts() {
                     </div>
                     <button
                       type="button"
+                      data-testid="contact-delete"
                       className="shrink-0 rounded-none border border-eink-line/40 bg-eink-paper px-3 py-1.5 text-[13px] text-eink-ink active:bg-eink-pressed"
                       onClick={() => setConfirmId(friend.id)}
                     >
@@ -336,6 +344,7 @@ export default function Contacts() {
                       <div className="flex shrink-0 gap-2">
                         <button
                           type="button"
+                          data-testid="contact-delete-cancel"
                           className="rounded-none border border-eink-line/40 bg-eink-paper px-3 py-1 text-[13px] text-eink-ink active:bg-eink-pressed"
                           onClick={() => setConfirmId('')}
                         >
@@ -343,6 +352,7 @@ export default function Contacts() {
                         </button>
                         <button
                           type="button"
+                          data-testid="contact-delete-confirm"
                           className="rounded-none bg-eink-ink px-3 py-1 text-[13px] text-eink-paper active:bg-eink-pressed"
                           onClick={() => onRemove(friend)}
                         >
