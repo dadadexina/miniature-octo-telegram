@@ -13,24 +13,45 @@ export default function ResetPassword() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const hasCode = params.has('code') || params.has('access_token') || window.location.hash.includes('access_token')
-    if (!hasCode) {
+    const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''))
+    const code = params.get('code')
+    const urlError = hashParams.get('error') || params.get('error')
+
+    let alive = true
+
+    if (urlError) {
       setPhase('invalid')
       return undefined
     }
-    let alive = true
-    const timer = setTimeout(() => {
-      if (alive) setPhase((prev) => (prev === 'waiting' ? 'invalid' : prev))
-    }, 8000)
+
+    const markReady = () => {
+      if (alive) setPhase('ready')
+    }
+
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (!alive) return
-      if ((event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') && session) {
-        setPhase('ready')
-      }
+      if ((event === 'PASSWORD_RECOVERY' || event === 'INITIAL_SESSION') && session) markReady()
     })
+
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!alive) return
+      if (data?.session) {
+        markReady()
+        return
+      }
+      if (code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+        if (!alive) return
+        if (!exchangeError) {
+          markReady()
+          return
+        }
+      }
+      if (alive) setPhase('invalid')
+    })
+
     return () => {
       alive = false
-      clearTimeout(timer)
       sub.subscription.unsubscribe()
     }
   }, [])
