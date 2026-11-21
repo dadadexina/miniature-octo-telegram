@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CallOverlay from './CallOverlay'
 
 afterEach(cleanup)
@@ -82,5 +82,58 @@ describe('CallOverlay', () => {
     expect(screen.getByTestId('call-status').textContent).toBe('对方无应答')
     fireEvent.click(screen.getByTestId('call-dismiss'))
     expect(closed).toBe(1)
+  })
+
+  it('接通后把远端音频流挂到 audio 元素上', () => {
+    const track = { kind: 'audio', enabled: true, stop: () => {} }
+    const stream = { getTracks: () => [track], getAudioTracks: () => [track] }
+    render(<CallOverlay state="connected" remoteStream={stream} peer={{ nickname: '小明' }} onHangup={() => {}} />)
+    const audio = screen.getByTestId('remote-audio')
+    expect(audio.srcObject).toBe(stream)
+    expect(audio.getAttribute('playsinline')).not.toBeNull()
+  })
+
+  describe('免提切换', () => {
+    beforeEach(() => {
+      vi.restoreAllMocks()
+      localStorage.clear()
+      Object.defineProperty(globalThis.HTMLMediaElement.prototype, 'setSinkId', {
+        configurable: true,
+        value: vi.fn(async () => {}),
+      })
+      globalThis.navigator.mediaDevices = {
+        enumerateDevices: vi.fn(async () => [
+          { kind: 'audiooutput', deviceId: 'earpiece', label: '听筒' },
+          { kind: 'audiooutput', deviceId: 'speaker', label: 'Speaker' },
+        ]),
+        getUserMedia: vi.fn(),
+      }
+    })
+
+    afterEach(() => {
+      delete globalThis.HTMLMediaElement.prototype.setSinkId
+      delete globalThis.navigator.mediaDevices
+    })
+
+    it('默认免提,优先切到扬声器设备;关闭后回到默认输出', async () => {
+      render(<CallOverlay state="connected" peer={{ nickname: '小明' }} onHangup={() => {}} />)
+      const audio = screen.getByTestId('remote-audio')
+      await waitFor(() => expect(audio.setSinkId).toHaveBeenCalledWith('speaker'))
+      const toggle = screen.getByTestId('call-speaker')
+      expect(toggle.getAttribute('aria-pressed')).toBe('true')
+      fireEvent.click(toggle)
+      await waitFor(() => expect(audio.setSinkId).toHaveBeenCalledWith(''))
+      expect(screen.getByTestId('call-speaker').getAttribute('aria-pressed')).toBe('false')
+    })
+
+    it('设备不支持外放时给出提示', async () => {
+      globalThis.navigator.mediaDevices.enumerateDevices = vi.fn(async () => [
+        { kind: 'audiooutput', deviceId: 'earpiece', label: '听筒' },
+      ])
+      render(<CallOverlay state="connected" peer={{ nickname: '小明' }} onHangup={() => {}} />)
+      await waitFor(() => expect(screen.getByTestId('remote-audio').setSinkId).toHaveBeenCalledWith('earpiece'))
+      fireEvent.click(screen.getByTestId('call-speaker'))
+      await waitFor(() => expect(screen.getByText('当前设备无法切换到外放')).toBeTruthy())
+    })
   })
 })

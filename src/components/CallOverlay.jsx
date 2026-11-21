@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { formatCallDuration } from '../lib/call'
+import { SPEAKER_STORAGE_KEY, formatCallDuration } from '../lib/call'
 import Avatar from './Avatar'
 
 const STATUS_TEXT = {
@@ -24,14 +24,52 @@ export default function CallOverlay({
   onToggleMute,
 }) {
   const audioRef = useRef(null)
+  const [speaker, setSpeaker] = useState(readSpeakerPref)
+  const [speakerHint, setSpeakerHint] = useState('')
+  const supportsSink =
+    typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype
+
+  const applySink = useCallback(async () => {
+    const el = audioRef.current
+    if (!el || !supportsSink) return
+    try {
+      if (!speaker) {
+        await el.setSinkId('')
+        setSpeakerHint('')
+        return
+      }
+      const devices = (await navigator.mediaDevices?.enumerateDevices?.()) || []
+      const outputs = devices.filter((device) => device.kind === 'audiooutput')
+      const speakerLike = outputs.find((device) => /speaker|外放|扬声器/i.test(device.label || ''))
+      const fallback = outputs.find((device) => /default|默认/i.test(device.label || '')) || outputs[0]
+      const target = speakerLike || fallback
+      await el.setSinkId(target?.deviceId || '')
+      const canSpeak = Boolean(speakerLike) || Boolean(target && !/earpiece|听筒|receiver/i.test(target.label || ''))
+      setSpeakerHint(canSpeak ? '' : '当前设备无法切换到外放')
+    } catch {
+      setSpeakerHint('当前设备不支持切换外放')
+    }
+  }, [speaker, supportsSink])
 
   useEffect(() => {
     const el = audioRef.current
     if (!el || !remoteStream) return
     el.srcObject = remoteStream
+    el.muted = false
+    el.volume = 1
     const played = el.play()
     if (played && typeof played.catch === 'function') played.catch(() => {})
   }, [remoteStream])
+
+  useEffect(() => {
+    applySink()
+  }, [applySink])
+
+  const toggleSpeaker = () => {
+    const next = !speaker
+    setSpeaker(next)
+    writeSpeakerPref(next)
+  }
 
   const ringing = state === 'ringing'
   const failed = state === 'failed'
@@ -44,9 +82,7 @@ export default function CallOverlay({
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-eink-ink/95 text-eink-paper">
-      {remoteStream ? (
-        <audio ref={audioRef} data-testid="remote-audio" autoPlay playsInline className="hidden" />
-      ) : null}
+      <audio ref={audioRef} data-testid="remote-audio" autoPlay playsInline className="hidden" />
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8">
         <div className="ring-1 ring-eink-paper/40">
           <Avatar name={peer?.nickname || '用户'} color={color || '#4A4A4A'} size={88} src={peer?.avatarUrl || ''} />
@@ -57,6 +93,9 @@ export default function CallOverlay({
         </div>
         {muted && !failed && !ringing ? (
           <div data-testid="call-muted-hint" className="text-[12px] text-eink-paper/60">麦克风已静音</div>
+        ) : null}
+        {speakerHint && !failed ? (
+          <div className="text-[12px] text-eink-paper/60">{speakerHint}</div>
         ) : null}
       </div>
       <div className="pb-10">
@@ -114,6 +153,23 @@ export default function CallOverlay({
                   <MicIcon muted={muted} />
                 </button>
                 <span className="text-[13px] text-eink-paper/70">{muted ? '取消静音' : '静音'}</span>
+              </div>
+            ) : null}
+            {supportsSink ? (
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="call-speaker"
+                  onClick={toggleSpeaker}
+                  aria-pressed={speaker}
+                  aria-label={speaker ? '关闭免提' : '打开免提'}
+                  className={`flex h-[64px] w-[64px] items-center justify-center rounded-full border active:bg-eink-paper/10 ${
+                    speaker ? 'border-eink-paper bg-eink-paper text-eink-ink' : 'border-eink-paper/60 text-eink-paper'
+                  }`}
+                >
+                  <SpeakerIcon on={speaker} />
+                </button>
+                <span className="text-[13px] text-eink-paper/70">{speaker ? '免提开' : '免提关'}</span>
               </div>
             ) : null}
             <div className="flex flex-col items-center gap-2">
@@ -178,6 +234,38 @@ function HangupIcon() {
         strokeLinejoin="round"
       />
       <path d="M19.8 15.8 15.8 19.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function readSpeakerPref() {
+  try {
+    return localStorage.getItem(SPEAKER_STORAGE_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+function writeSpeakerPref(on) {
+  try {
+    localStorage.setItem(SPEAKER_STORAGE_KEY, on ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
+
+function SpeakerIcon({ on }) {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+      <path d="M4 9.5h3L11.5 6v12L7 14.5H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      {on ? (
+        <>
+          <path d="M15 8.8a4.5 4.5 0 0 1 0 6.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M17.6 6.2a8 8 0 0 1 0 11.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        </>
+      ) : (
+        <path d="M15 12h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      )}
     </svg>
   )
 }

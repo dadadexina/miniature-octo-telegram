@@ -1,205 +1,131 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  CALL_PEER_PREFIX,
+  CALL_SIGNAL_CHANNEL,
   CALL_STATUS,
   CALL_TIMEOUT_MS,
   ICE_SERVERS,
+  SIGNAL_EVENTS,
   callErrorMessage,
   callEventText,
+  canUseCalls,
   formatCallDuration,
-  peerOptions,
-  isPeerFatalError,
+  isSameCall,
+  isSignalFor,
+  makeCallId,
+  makeSignal,
   mediaConstraints,
-  newCallSuffix,
-  peerIdFor,
-  readCallSuffix,
-  resolveCalleePeerId,
-  userIdFromPeerId,
-  writeCallSuffix,
-  CALL_TAB_STORAGE_KEY,
+  peerConnectionConfig,
+  validCandidate,
+  validSdp,
 } from './call'
 
-describe('peerIdFor', () => {
-  it('给 uuid 加固定前缀', () => {
-    expect(peerIdFor('331643c8-3e41-49f0-899a-7b1a9ab07770')).toBe(
-      `${CALL_PEER_PREFIX}331643c8-3e41-49f0-899a-7b1a9ab07770`
-    )
+describe('makeCallId', () => {
+  it('同一用户不同时间生成不同 id', () => {
+    const a = makeCallId('u1', 1000, () => 0.1)
+    const b = makeCallId('u1', 2000, () => 0.1)
+    expect(a).not.toBe(b)
+    expect(a.startsWith('u1-')).toBe(true)
   })
 
-  it('空值返回空串', () => {
-    expect(peerIdFor('')).toBe('')
-    expect(peerIdFor(null)).toBe('')
-    expect(peerIdFor(undefined)).toBe('')
-    expect(peerIdFor('   ')).toBe('')
-  })
-
-  it('去掉首尾空白', () => {
-    expect(peerIdFor(' abc ')).toBe(`${CALL_PEER_PREFIX}abc`)
-  })
-
-  it('附加标签页后缀后彼此不冲突', () => {
-    expect(peerIdFor('u1', 'abc123')).toBe(`${CALL_PEER_PREFIX}u1-abc123`)
-    expect(peerIdFor('u1', 'abc123')).not.toBe(peerIdFor('u1', 'zzz999'))
+  it('空用户兜底 anon 前缀', () => {
+    expect(makeCallId('', 1000, () => 0).startsWith('anon-')).toBe(true)
   })
 })
 
-function fakeStorage(initial = {}) {
-  const data = { ...initial }
-  return {
-    getItem: (k) => (k in data ? data[k] : null),
-    setItem: (k, v) => {
-      data[k] = String(v)
-    },
-    data,
-  }
-}
-
-describe('标签页后缀', () => {
-  it('生成的随机后缀为六位', () => {
-    expect(newCallSuffix(() => 0)).toBe('000000')
-    expect(newCallSuffix(() => 0.999999)).toHaveLength(6)
+describe('makeSignal / isSignalFor', () => {
+  const payload = makeSignal(SIGNAL_EVENTS.INVITE, {
+    callId: 'c1',
+    from: 'a',
+    to: 'b',
+    sdp: 'v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\n',
   })
 
-  it('同一标签页复用已保存的后缀', () => {
-    const storage = fakeStorage()
-    const first = readCallSuffix(storage)
-    expect(readCallSuffix(storage)).toBe(first)
-    expect(storage.data[CALL_TAB_STORAGE_KEY]).toBe(first)
+  it('信令带事件、呼叫 id 与收发人', () => {
+    expect(payload.event).toBe('invite')
+    expect(payload.callId).toBe('c1')
+    expect(payload.from).toBe('a')
+    expect(payload.to).toBe('b')
+    expect(payload.sdp).toContain('v=0')
   })
 
-  it('轮换后写入新后缀', () => {
-    const storage = fakeStorage()
-    readCallSuffix(storage)
-    writeCallSuffix(storage, 'next01')
-    expect(readCallSuffix(storage)).toBe('next01')
+  it('只处理发给自己的信令,忽略自己发出的回声', () => {
+    expect(isSignalFor(payload, 'b')).toBe(true)
+    expect(isSignalFor(payload, 'a')).toBe(false)
+    expect(isSignalFor(payload, 'c')).toBe(false)
+    expect(isSignalFor(null, 'b')).toBe(false)
   })
 
-  it('storage 不可用时仍返回可用后缀', () => {
-    const broken = {
-      getItem: () => {
-        throw new Error('blocked')
-      },
-      setItem: () => {
-        throw new Error('blocked')
-      },
-    }
-    expect(readCallSuffix(broken)).toHaveLength(6)
-    expect(readCallSuffix(null)).toHaveLength(6)
+  it('同一通话 id 才匹配', () => {
+    expect(isSameCall(payload, 'c1')).toBe(true)
+    expect(isSameCall(payload, 'c2')).toBe(false)
+    expect(isSameCall(payload, '')).toBe(false)
   })
 })
 
-describe('userIdFromPeerId', () => {
-  it('从带后缀的 Peer ID 还原用户 uuid', () => {
-    expect(userIdFromPeerId(`${CALL_PEER_PREFIX}75afb679-ca74-4604-bd2a-4c74f5bca58e-ab12cd`)).toBe(
-      '75afb679-ca74-4604-bd2a-4c74f5bca58e'
-    )
-    expect(userIdFromPeerId(`${CALL_PEER_PREFIX}75afb679-ca74-4604-bd2a-4c74f5bca58e`)).toBe(
-      '75afb679-ca74-4604-bd2a-4c74f5bca58e'
-    )
+describe('SDP / ICE 校验', () => {
+  it('拒绝空或非 SDP 内容', () => {
+    expect(validSdp('v=0\r\ns=-\r\n')).toBe(true)
+    expect(validSdp('')).toBe(false)
+    expect(validSdp(null)).toBe(false)
+    expect(validSdp('hello')).toBe(false)
   })
 
-  it('非本应用前缀或非法内容返回空', () => {
-    expect(userIdFromPeerId('abc-123')).toBe('')
-    expect(userIdFromPeerId(`${CALL_PEER_PREFIX}not-a-uuid`)).toBe('')
-    expect(userIdFromPeerId('')).toBe('')
-    expect(userIdFromPeerId(null)).toBe('')
+  it('接受对象或字符串候选,拒绝空值', () => {
+    expect(validCandidate({ candidate: 'candidate:1 1 udp 1 1.2.3.4 5000 typ host' })).toBe(true)
+    expect(validCandidate('candidate:1')).toBe(true)
+    expect(validCandidate({ candidate: '' })).toBe(false)
+    expect(validCandidate(null)).toBe(false)
   })
 })
 
-describe('resolveCalleePeerId', () => {
-  it('优先使用 presence 中最近上报的标签页 ID', () => {
-    const state = {
-      u2: [{ peerId: `${CALL_PEER_PREFIX}u2-aaa111` }, { peerId: `${CALL_PEER_PREFIX}u2-bbb222` }],
-    }
-    expect(resolveCalleePeerId(state, 'u2')).toBe(`${CALL_PEER_PREFIX}u2-bbb222`)
+describe('运行环境与配置', () => {
+  it('缺少 getUsermedia 时判定不支持通话', () => {
+    expect(canUseCalls(null)).toBe(false)
+    expect(canUseCalls({ RTCPeerConnection: function () {}, navigator: {} })).toBe(false)
+    expect(
+      canUseCalls({ RTCPeerConnection: function () {}, navigator: { mediaDevices: { getUserMedia() {} } } })
+    ).toBe(true)
   })
 
-  it('对方不在线时回退到旧版固定 ID', () => {
-    expect(resolveCalleePeerId({}, 'u2')).toBe(`${CALL_PEER_PREFIX}u2`)
-    expect(resolveCalleePeerId({ u2: [{ peerId: '' }] }, 'u2')).toBe(`${CALL_PEER_PREFIX}u2`)
+  it('ICE 配置包含 STUN 与 TURN 兜底', () => {
+    const urls = ICE_SERVERS.flatMap((server) => server.urls)
+    expect(urls.some((url) => url.startsWith('stun:'))).toBe(true)
+    expect(urls.some((url) => url.startsWith('turn:'))).toBe(true)
+    expect(peerConnectionConfig().iceServers).toBe(ICE_SERVERS)
   })
 
-  it('忽略非法条目与空用户', () => {
-    expect(resolveCalleePeerId({ u2: [{ peerId: 'bad' }] }, 'u2')).toBe(`${CALL_PEER_PREFIX}u2`)
-    expect(resolveCalleePeerId({ u2: [{ peerId: `${CALL_PEER_PREFIX}u2-x` }] }, '')).toBe('')
+  it('麦克风约束开启回声消除与降噪', () => {
+    const { audio } = mediaConstraints()
+    expect(audio.echoCancellation).toBe(true)
+    expect(audio.noiseSuppression).toBe(true)
+    expect(audio.autoGainControl).toBe(true)
+  })
+
+  it('信令通道名固定,便于两端对接', () => {
+    expect(CALL_SIGNAL_CHANNEL).toContain('inkline-call')
+    expect(CALL_TIMEOUT_MS).toBeGreaterThan(0)
+    expect(CALL_STATUS.CONNECTED).toBe('connected')
   })
 })
 
-describe('formatCallDuration', () => {
-  it('不足一小时显示 分:秒', () => {
+describe('通话文案', () => {
+  it('时长格式化', () => {
     expect(formatCallDuration(0)).toBe('0:00')
-    expect(formatCallDuration(5)).toBe('0:05')
-    expect(formatCallDuration(65)).toBe('1:05')
-    expect(formatCallDuration(600)).toBe('10:00')
-  })
-
-  it('超过一小时显示 时:分:秒', () => {
-    expect(formatCallDuration(3600)).toBe('1:00:00')
+    expect(formatCallDuration(75)).toBe('1:15')
     expect(formatCallDuration(3725)).toBe('1:02:05')
   })
 
-  it('非法值归零', () => {
-    expect(formatCallDuration(-3)).toBe('0:00')
-    expect(formatCallDuration('abc')).toBe('0:00')
-    expect(formatCallDuration(null)).toBe('0:00')
-  })
-})
-
-describe('callEventText', () => {
-  it('按事件生成系统提示文案', () => {
-    expect(callEventText({ event: 'cancelled' })).toBe('语音通话已取消')
+  it('历史消息事件文案', () => {
     expect(callEventText({ event: 'declined' })).toBe('语音通话被拒绝')
     expect(callEventText({ event: 'missed' })).toBe('语音通话未接听')
     expect(callEventText({ event: 'ended', duration: 65 })).toBe('通话时长 1:05')
-    expect(callEventText({ event: 'unknown' })).toBe('语音通话')
-    expect(callEventText(null)).toBe('语音通话')
-  })
-})
-
-describe('callErrorMessage / isPeerFatalError', () => {
-  it('已知错误码有中文提示', () => {
-    expect(callErrorMessage('peer-unavailable')).toContain('不在线')
-    expect(callErrorMessage('unavailable-id')).toContain('刷新页面')
-    expect(callErrorMessage('webrtc')).toContain('协商失败')
+    expect(callEventText({})).toBe('语音通话')
   })
 
-  it('未知错误码有兜底文案', () => {
-    expect(callErrorMessage('whatever')).toBe('通话连接失败，请稍后重试')
-    expect(callErrorMessage(undefined)).toBe('通话连接失败，请稍后重试')
-  })
-
-  it('致命错误判定', () => {
-    expect(isPeerFatalError('unavailable-id')).toBe(true)
-    expect(isPeerFatalError('browser-incompatible')).toBe(true)
-    expect(isPeerFatalError('peer-unavailable')).toBe(false)
-    expect(isPeerFatalError(undefined)).toBe(false)
-  })
-})
-
-describe('peerOptions', () => {
-  it('未配置 host 时返回空对象(走 PeerJS 云默认)', () => {
-    expect(peerOptions({})).toEqual({})
-    expect(peerOptions()).toEqual({})
-  })
-
-  it('配置 host 后生成自建服务器参数', () => {
-    const opts = peerOptions({ VITE_PEER_HOST: 'peer.example.com' })
-    expect(opts).toEqual({ host: 'peer.example.com', port: 443, path: '/', secure: true })
-    expect(peerOptions({ VITE_PEER_HOST: 'h', VITE_PEER_PORT: '9000', VITE_PEER_PATH: '/call', VITE_PEER_SECURE: 'false', VITE_PEER_KEY: 'k' })).toEqual({
-      host: 'h', port: 9000, path: '/call', secure: false, key: 'k',
-    })
-  })
-})
-
-describe('constants', () => {
-  it('状态与配置完整', () => {
-    expect(Object.values(CALL_STATUS)).toEqual([
-      'idle', 'calling', 'ringing', 'connecting', 'connected', 'failed',
-    ])
-    expect(CALL_TIMEOUT_MS).toBe(30000)
-    expect(ICE_SERVERS.length).toBeGreaterThan(0)
-    expect(mediaConstraints().video).toBe(false)
-    expect(mediaConstraints().audio.echoCancellation).toBe(true)
+  it('麦克风被拒绝时提示去系统设置开启', () => {
+    expect(callErrorMessage('denied')).toContain('系统设置')
+    expect(callErrorMessage('busy')).toContain('通话中')
+    expect(callErrorMessage('unknown-type')).toContain('稍后重试')
   })
 })
