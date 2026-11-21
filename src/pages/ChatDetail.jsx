@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import AuthBar from '../components/AuthBar'
 import Avatar from '../components/Avatar'
@@ -7,6 +7,8 @@ import NavBar from '../components/NavBar'
 import LongTextBody from '../components/LongTextBody'
 import SignedImage from '../components/SignedImage'
 import useKeyboardInset from '../hooks/useKeyboardInset'
+import useSwipeBack from '../hooks/useSwipeBack'
+import { goBackOr } from '../lib/navigation'
 import {
   canRecall,
   fetchHiddenIds,
@@ -240,12 +242,38 @@ export default function ChatDetail() {
     }
   }, [cloudReady, currentUser?.id, peerId])
 
+  const handleBack = useCallback(() => {
+    if (viewerUrl) {
+      setViewerUrl(null)
+      return
+    }
+    if (menuOpen) {
+      setMenuOpen(false)
+      return
+    }
+    if (activeMsgId) {
+      setActiveMsgId(null)
+      return
+    }
+    if (searchOpen) {
+      setSearchOpen(false)
+      return
+    }
+    if (quoteMsg) {
+      setQuoteMsg(null)
+      return
+    }
+    goBackOr(navigate, '/chats')
+  }, [viewerUrl, menuOpen, activeMsgId, searchOpen, quoteMsg, navigate])
+
+  useSwipeBack(handleBack)
+
   if (!currentUser) return <Navigate to="/login" replace />
 
   if (!peer) {
     return (
       <div className="flex h-full flex-col bg-eink-paper">
-        <NavBar title="聊天" left={<Back onClick={() => navigate('/chats')} />} />
+        <NavBar title="聊天" left={<Back onClick={handleBack} />} />
         <p className="p-8 text-center text-eink-sub">用户不存在</p>
       </div>
     )
@@ -467,7 +495,7 @@ export default function ChatDetail() {
       <AuthBar email={currentUser.email} onSignOut={onSignOut} />
       <NavBar
         title={peerTyping ? <span data-testid="typing-indicator">正在输入…</span> : peer.nickname}
-        left={<Back onClick={() => navigate('/chats')} />}
+        left={<Back onClick={handleBack} />}
         right={
           <div className="relative flex items-center gap-1">
             <button

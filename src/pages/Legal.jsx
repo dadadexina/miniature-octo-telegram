@@ -1,5 +1,7 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
+import useSwipeBack from '../hooks/useSwipeBack'
+import { goBackOr } from '../lib/navigation'
 
 const TERMS = {
   title: '用户协议',
@@ -27,6 +29,8 @@ const PRIVACY = {
 }
 
 export default function Legal({ kind = 'terms' }) {
+  const navigate = useNavigate()
+  useSwipeBack(() => goBackOr(navigate, '/login'))
   const doc = kind === 'privacy' ? PRIVACY : TERMS
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-eink-paper">

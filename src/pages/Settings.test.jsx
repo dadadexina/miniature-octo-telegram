@@ -113,7 +113,7 @@ describe('Settings 设置页', () => {
     expect(screen.getByText('通知')).toBeTruthy()
     expect(screen.getByText('新消息提醒、声音与震动设置')).toBeTruthy()
     expect(screen.getByText('界面显示')).toBeTruthy()
-    expect(screen.getByText('深色模式、字体大小调整')).toBeTruthy()
+    expect(screen.getByText('主题、字体大小调整')).toBeTruthy()
     expect(screen.getByText('账号安全')).toBeTruthy()
     expect(screen.getByText('修改密码、注销账号')).toBeTruthy()
     expect(screen.getByText('其他设置')).toBeTruthy()

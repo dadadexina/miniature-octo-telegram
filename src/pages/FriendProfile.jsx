@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import NavBar from '../components/NavBar'
+import useSwipeBack from '../hooks/useSwipeBack'
+import { goBackOr } from '../lib/navigation'
 import { fetchProfileById } from '../lib/profiles'
 import { useStore } from '../store'
 
 export default function FriendProfile() {
   const { userId } = useParams()
   const navigate = useNavigate()
-  const location = useLocation()
   const { getUser, avatarColor } = useStore()
   const cached = getUser(userId)
   const [profile, setProfile] = useState(null)
@@ -39,11 +40,10 @@ export default function FriendProfile() {
       : null
 
   const goBack = () => {
-    const idx = window.history.state?.idx
-    const canGoBack = typeof idx === 'number' ? idx > 0 : location.key !== 'default'
-    if (canGoBack) navigate(-1)
-    else navigate('/contacts', { replace: true })
+    goBackOr(navigate, '/contacts')
   }
+
+  useSwipeBack(goBack)
 
   return (
     <div className="flex h-full flex-col bg-eink-paper">

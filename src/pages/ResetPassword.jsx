@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
+import useSwipeBack from '../hooks/useSwipeBack'
+import { goBackOr } from '../lib/navigation'
 import { supabase } from '../lib/supabase'
 
 export default function ResetPassword() {
@@ -10,6 +12,7 @@ export default function ResetPassword() {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  useSwipeBack(() => goBackOr(navigate, '/login'))
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)

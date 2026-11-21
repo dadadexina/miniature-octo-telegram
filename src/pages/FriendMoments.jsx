@@ -5,6 +5,8 @@ import MomentCover from '../components/MomentCover'
 import { CommentIcon, ThumbIcon } from '../components/MomentIcons'
 import NavBar from '../components/NavBar'
 import PullIndicator from '../components/PullIndicator'
+import useSwipeBack from '../hooks/useSwipeBack'
+import { goBackOr } from '../lib/navigation'
 import { fetchProfilesByIds } from '../lib/profiles'
 import { isUuid } from '../lib/messages'
 import {
@@ -28,6 +30,8 @@ function CloudFriendMoments() {
   const meName = profile?.nickname || currentUser.nickname
   const friend = getUser(userId)
   const friendName = friend?.nickname || '好友'
+  const goBack = () => goBackOr(navigate, `/friend/${userId}`)
+  useSwipeBack(goBack)
 
   const [feed, setFeed] = useState([])
   const [likes, setLikes] = useState([])
@@ -130,7 +134,7 @@ function CloudFriendMoments() {
     <div className="flex h-full flex-col bg-eink-paper">
       <NavBar
         title="纸墨信笺"
-        left={<Back onClick={() => navigate(`/friend/${userId}`)} />}
+        left={<Back onClick={goBack} />}
       />
       <div data-testid="moments-user-id" className="hidden">{userId}</div>
       <div
@@ -294,6 +298,8 @@ function LocalFriendMoments() {
   const friendName = friend?.nickname || '好友'
   const items = momentsFeed().filter((m) => m.userId === userId)
   const [, setTick] = useState(0)
+  const goBack = () => goBackOr(navigate, `/friend/${userId}`)
+  useSwipeBack(goBack)
   const { scrollRef, pull, refreshing, threshold, handlers } = usePullToRefresh({
     onRefresh: () =>
       new Promise((resolve) => {
@@ -306,7 +312,7 @@ function LocalFriendMoments() {
 
   return (
     <div className="flex h-full flex-col bg-eink-paper">
-      <NavBar title="纸墨信笺" left={<Back onClick={() => navigate(`/friend/${userId}`)} />} />
+      <NavBar title="纸墨信笺" left={<Back onClick={goBack} />} />
       <div data-testid="moments-user-id" className="hidden">{userId}</div>
       <div
         ref={scrollRef}

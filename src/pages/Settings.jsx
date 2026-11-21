@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
+import useSwipeBack from '../hooks/useSwipeBack'
 import {
   loadSettings,
   notifyIncoming,
@@ -8,6 +9,7 @@ import {
   saveSettings,
   vibrateNow,
 } from '../lib/appSettings'
+import { goBackOr } from '../lib/navigation'
 import { isUuid } from '../lib/messages'
 import { saveMomentCover } from '../lib/momentCover'
 import { NOTIFICATION_SOUNDS, playNotificationSound } from '../lib/notificationSounds'
@@ -37,7 +39,7 @@ import { useStore } from '../store'
 
 const MAIN_ITEMS = [
   { key: 'notify', title: '通知', desc: '新消息提醒、声音与震动设置' },
-  { key: 'display', title: '界面显示', desc: '深色模式、字体大小调整' },
+  { key: 'display', title: '界面显示', desc: '主题、字体大小调整' },
   { key: 'security', title: '账号安全', desc: '修改密码、注销账号' },
   { key: 'other', title: '其他设置', desc: '个性签名等更多偏好' },
 ]
@@ -241,12 +243,22 @@ export default function Settings() {
   }
 
   const goBack = () => {
+    if (confirmDelete) {
+      setConfirmDelete(false)
+      return
+    }
+    if (notice) {
+      setNotice('')
+      return
+    }
     if (view !== 'main') {
       setView('main')
       return
     }
-    navigate('/me')
+    goBackOr(navigate, '/me')
   }
+
+  useSwipeBack(goBack)
 
   const onChangeCover = async (e) => {
     const file = e.target.files?.[0]

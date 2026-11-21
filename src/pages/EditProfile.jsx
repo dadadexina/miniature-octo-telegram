@@ -2,7 +2,9 @@ import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import NavBar from '../components/NavBar'
+import useSwipeBack from '../hooks/useSwipeBack'
 import { downscaleAvatar, validateAvatarFile } from '../lib/avatarImage'
+import { goBackOr } from '../lib/navigation'
 import {
   insertProfile,
   updateProfileAvatar,
@@ -29,6 +31,8 @@ export default function EditProfile() {
   const [hint, setHint] = useState('')
   const [saving, setSaving] = useState(false)
   const fileRef = useRef(null)
+  const goBack = () => goBackOr(navigate, '/me')
+  useSwipeBack(goBack)
 
   if (!userId) {
     navigate('/login', { replace: true })
@@ -165,7 +169,7 @@ export default function EditProfile() {
 
   return (
     <div className="flex h-full flex-col bg-eink-paper">
-      <NavBar title="编辑资料" left={<Back onClick={() => navigate('/me')} />} />
+      <NavBar title="编辑资料" left={<Back onClick={goBack} />} />
       <form className="flex flex-1 flex-col overflow-y-auto px-6" onSubmit={submit}>
         <div className="mt-6 flex items-center gap-4">
           <button
