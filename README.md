@@ -139,7 +139,9 @@ supabase/functions/
 
 ## 数据备份
 
-`.github/workflows/backup.yml` 提供每日自动备份（03:15 UTC，也可手动触发）：`pg_dump` 导出 → AES-256 加密 → 以密文 artifact 保留 30 天。因本仓库公开，artifact 任何人可下载，**必须加密后才会上传**；未配置密钥时工作流自动跳过。
+`.github/workflows/backup.yml` 提供每日自动备份（03:15 UTC，也可手动触发）：`pg_dump` 导出 → AES-256 加密 → 以密文 artifact 保留 30 天。仓库为私有，artifact 仅仓库协作者可下载，仍建议保持加密；未配置密钥时工作流自动跳过。
+
+私有仓库的 Actions 会消耗账号额度（免费版每月 2000 分钟），当前 CI 与备份工作流耗时较短，正常开发不受影响；若额度用完可临时改为手动触发备份。
 
 需在 GitHub 仓库 Settings → Secrets and variables → Actions 配置两个 secret：
 
