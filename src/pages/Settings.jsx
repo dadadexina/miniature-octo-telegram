@@ -88,6 +88,7 @@ export default function Settings() {
   const ringtoneFileRef = useRef(null)
   const previewRef = useRef(null)
   const ringtonePreviewRef = useRef(null)
+  const ringtoneTimerRef = useRef(null)
 
   const cloudAccount = isUuid(currentUser?.id)
   const email = authUser?.email || currentUser?.email || ''
@@ -104,6 +105,7 @@ export default function Settings() {
       }
       stopRingtone(ringtonePreviewRef.current)
       ringtonePreviewRef.current = null
+      clearTimeout(ringtoneTimerRef.current)
     }
   }, [])
 
@@ -139,16 +141,27 @@ export default function Settings() {
   }
 
   const stopRingtonePreview = () => {
+    clearTimeout(ringtoneTimerRef.current)
+    ringtoneTimerRef.current = null
     stopRingtone(ringtonePreviewRef.current)
     ringtonePreviewRef.current = null
   }
+
+  useEffect(() => {
+    if (view !== 'notify') stopRingtonePreview()
+    // 离开通知面板时停止循环试听
+  }, [view])
 
   const previewCallRingtone = async (id) => {
     stopRingtonePreview()
     ringtonePreviewRef.current = await playRingtone(id)
     if (!ringtonePreviewRef.current) {
       setNotice(id === CUSTOM_RINGTONE_ID ? '自定义铃声不可用，请重新上传' : '当前环境无法播放铃声')
+      return
     }
+    ringtoneTimerRef.current = setTimeout(() => {
+      stopRingtonePreview()
+    }, 8000)
   }
 
   const onSelectRingtone = (id) => {
