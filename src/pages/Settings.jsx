@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 
@@ -10,16 +10,7 @@ const ITEMS = [
 
 export default function Settings() {
   const navigate = useNavigate()
-  const [toast, setToast] = useState('')
-  const timerRef = useRef(null)
-
-  useEffect(() => () => clearTimeout(timerRef.current), [])
-
-  const showDeveloping = () => {
-    setToast('该功能正在开发中，敬请期待')
-    clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => setToast(''), 1800)
-  }
+  const [notice, setNotice] = useState(false)
 
   return (
     <div className="flex h-full flex-col bg-eink-paper">
@@ -46,7 +37,7 @@ export default function Settings() {
               <button
                 type="button"
                 className="flex w-full items-center justify-between px-4 py-3.5 text-left active:bg-[#E7E5DD]"
-                onClick={showDeveloping}
+                onClick={() => setNotice(true)}
                 data-testid={`settings-item-${index}`}
               >
                 <span className="min-w-0">
@@ -60,9 +51,27 @@ export default function Settings() {
         </ul>
       </div>
 
-      {toast ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-30 flex justify-center" role="status">
-          <span className="bg-eink-ink px-4 py-2 text-[13px] text-eink-paper">{toast}</span>
+      {notice ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setNotice(false)}
+        >
+          <div
+            className="w-full max-w-[280px] border border-eink-divider bg-eink-paper px-5 pb-4 pt-5 text-center"
+            data-testid="settings-notice"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-[14px] leading-6 text-eink-text">该功能正在开发中，敬请期待</p>
+            <button
+              type="button"
+              className="mt-4 h-10 w-full bg-eink-ink text-[14px] text-eink-paper active:bg-eink-pressed"
+              onClick={() => setNotice(false)}
+            >
+              确认
+            </button>
+          </div>
         </div>
       ) : null}
     </div>

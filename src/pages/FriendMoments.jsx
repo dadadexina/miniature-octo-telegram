@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
+import MomentCover from '../components/MomentCover'
 import NavBar from '../components/NavBar'
 import { fetchProfilesByIds } from '../lib/profiles'
 import { isUuid } from '../lib/messages'
@@ -184,13 +185,14 @@ function CloudFriendMoments() {
       />
       <div data-testid="moments-user-id" className="hidden">{userId}</div>
       <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
-        <div className="flex items-center gap-3 border-b border-eink-divider px-4 py-4">
-          <Avatar name={friendName} color={avatarColor(userId)} size={52} src={friend?.avatarUrl || ''} />
-          <div className="min-w-0">
-            <div className="truncate text-[16px] font-medium text-eink-ink">{friendName}</div>
-            <div className="mt-0.5 text-[12px] text-eink-faint">仅展示你可见的动态</div>
-          </div>
-        </div>
+        <MomentCover
+          userId={userId}
+          name={friendName}
+          avatarSrc={friend?.avatarUrl || ''}
+          avatarColor={avatarColor(userId)}
+          profileHref={`/friend/${userId}`}
+        />
+        <div className="h-20" />
 
         {error ? <p data-testid="friend-moments-error" className="px-4 py-2 text-[12px] text-eink-sub">{error}</p> : null}
 
@@ -330,14 +332,15 @@ function LocalFriendMoments() {
     <div className="flex h-full flex-col bg-eink-paper">
       <NavBar title={`${friendName}的朋友圈`} left={<Back onClick={() => navigate(`/friend/${userId}`)} />} />
       <div data-testid="moments-user-id" className="hidden">{userId}</div>
-      <div className="flex items-center gap-3 border-b border-eink-divider px-4 py-4">
-        <Avatar name={friendName} color={avatarColor(userId)} size={52} src={friend?.avatarUrl || ''} />
-        <div className="min-w-0">
-          <div className="truncate text-[16px] font-medium text-eink-ink">{friendName}</div>
-          <div className="mt-0.5 text-[12px] text-eink-faint">演示数据 · 仅本机可见</div>
-        </div>
-      </div>
       <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
+        <MomentCover
+          userId={userId}
+          name={friendName}
+          avatarSrc={friend?.avatarUrl || ''}
+          avatarColor={avatarColor(userId)}
+          profileHref={`/friend/${userId}`}
+        />
+        <div className="h-20" />
         {items.length === 0 ? (
           <p data-testid="friend-moments-empty" className="px-6 py-12 text-center text-[14px] text-eink-sub">
             对方还没有发布动态

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import Avatar from './Avatar'
 import { loadMomentCover, saveMomentCover } from '../lib/momentCover'
 
-export default function MomentCover({ userId, name, avatarSrc, avatarColor }) {
+export default function MomentCover({ userId, name, avatarSrc, avatarColor, profileHref = '/me', editable = true }) {
   const [cover, setCover] = useState(() => loadMomentCover(userId))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -60,14 +60,14 @@ export default function MomentCover({ userId, name, avatarSrc, avatarColor }) {
 
       <button
         type="button"
-        className="absolute right-3 top-3 z-10 flex h-8 items-center gap-1.5 rounded-full bg-black/35 px-3 text-[12px] text-white backdrop-blur-sm active:bg-black/55 disabled:opacity-60"
+        className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm active:bg-black/55 disabled:opacity-60"
         onClick={() => fileRef.current?.click()}
-        disabled={busy}
+        disabled={busy || !editable}
         aria-label="更换背景"
+        title="更换背景"
         data-testid="change-cover"
       >
-        <ImageIcon />
-        <span>{busy ? '处理中' : '更换背景'}</span>
+        {busy ? <span className="text-[11px]">…</span> : <CameraIcon />}
       </button>
       <input
         ref={fileRef}
@@ -75,11 +75,12 @@ export default function MomentCover({ userId, name, avatarSrc, avatarColor }) {
         accept="image/*"
         className="hidden"
         onChange={onChange}
+        disabled={!editable}
         data-testid="cover-input"
       />
 
       <div className="absolute inset-x-0 bottom-0 flex translate-y-[38px] flex-col items-center">
-        <Link to="/me" className="rounded-full ring-4 ring-eink-paper" aria-label="查看我的资料">
+        <Link to={profileHref} className="rounded-full ring-4 ring-eink-paper" aria-label="查看资料">
           <Avatar name={name} color={avatarColor} size={76} src={avatarSrc || ''} />
         </Link>
         <span className="mt-1.5 max-w-[70%] truncate text-[16px] font-medium text-eink-ink">{name}</span>
@@ -94,12 +95,16 @@ export default function MomentCover({ userId, name, avatarSrc, avatarColor }) {
   )
 }
 
-function ImageIcon() {
+function CameraIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="3.5" y="4.5" width="17" height="15" stroke="currentColor" strokeWidth="1.7" />
-      <circle cx="9" cy="10" r="1.8" stroke="currentColor" strokeWidth="1.5" />
-      <path d="m4.5 17 4.8-4.6 3.2 3 2.6-2.4 4.4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M9 7.2 10.1 5.5h3.8L15 7.2h2.2A2.3 2.3 0 0 1 19.5 9.5v7.2A2.3 2.3 0 0 1 17.2 19H6.8A2.3 2.3 0 0 1 4.5 16.7V9.5A2.3 2.3 0 0 1 6.8 7.2H9Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="13" r="3.1" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   )
 }
