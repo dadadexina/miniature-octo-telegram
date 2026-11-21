@@ -10,12 +10,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      injectRegister: null,
       manifest: false,
       workbox: {
         navigateFallback: '/index.html',
-        skipWaiting: true,
-        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,svg,webmanifest}'],
         cleanupOutdatedCaches: true
       }
