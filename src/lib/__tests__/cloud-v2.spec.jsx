@@ -7,7 +7,7 @@ const { canRecall, mergeMessages, recallMessage, hideMessage, fetchHiddenIds, RE
 const { mergeReadAtMaps, recomputeUnreadCounts, friendlyInsertError } = await import('../syncHelpers')
 const { mapCursor, buildCursorMaps, upsertReadCursor, fetchCursorsFor } = await import('../readCursors')
 const { fetchMyBlocks, blockUser, unblockUser } = await import('../blocks')
-const { mapRequest, splitRequests, sendFriendRequest, acceptFriendRequest, declineFriendRequest } = await import('../friendRequests')
+const { mapRequest, splitRequests, sendFriendRequest, acceptFriendRequest, declineFriendRequest, deleteFriendRequestsBetween } = await import('../friendRequests')
 const { deleteFriend } = await import('../friends')
 const { deletePairMessages } = await import('../messages')
 
@@ -343,5 +343,17 @@ describe('friendRequests 好友请求', () => {
   it('deletePairMessages 拒绝自己与自己', async () => {
     const res = await deletePairMessages('me', 'me')
     expect(res.ok).toBe(false)
+  })
+
+  it('deleteFriendRequestsBetween 清空双方历史请求', async () => {
+    const chain = okChain({ error: null })
+    supabase.from.mockImplementationOnce(() => chain)
+    const res = await deleteFriendRequestsBetween('me', 'alice')
+    expect(res.ok).toBe(true)
+    expect(supabase.from).toHaveBeenCalledWith('friend_requests')
+    expect(chain.or).toHaveBeenCalledWith(
+      'and(from_id.eq.me,to_id.eq.alice),and(from_id.eq.alice,to_id.eq.me)'
+    )
+    supabase.from.mockReset()
   })
 })

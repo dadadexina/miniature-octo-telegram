@@ -268,6 +268,11 @@ drop policy if exists "fr_delete_sender" on public.friend_requests;
 create policy "fr_delete_sender" on public.friend_requests for delete
 to authenticated using (auth.uid() = from_id);
 
+-- 删除好友时双方都能清空彼此的历史请求,避免旧客户端凭「已接受请求」把好友关系复原
+drop policy if exists "fr_delete_participant" on public.friend_requests;
+create policy "fr_delete_participant" on public.friend_requests for delete
+to authenticated using (auth.uid() in (from_id, to_id));
+
 drop policy if exists "blocks_select_own" on public.blocks;
 create policy "blocks_select_own" on public.blocks for select
 to authenticated using (auth.uid() = blocker_id);

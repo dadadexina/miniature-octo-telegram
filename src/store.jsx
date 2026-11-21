@@ -5,6 +5,7 @@ import {
   acceptFriendRequest,
   cancelFriendRequest,
   declineFriendRequest,
+  deleteFriendRequestsBetween,
   fetchFriendRequests,
   sendFriendRequest,
 } from './lib/friendRequests'
@@ -1124,13 +1125,14 @@ export function StoreProvider({ children }) {
         })
         if (!isUuid(me) || !isUuid(friendId)) return { ok: true }
         // 双向删除好友边并清空该会话双方的历史消息,否则对方仍是联系人可继续收发
-        const [edge, history] = await Promise.all([
+        const [edge, history, requestsHistory] = await Promise.all([
           deleteFriend(me, friendId),
           deletePairMessages(me, friendId),
+          deleteFriendRequestsBetween(me, friendId),
         ])
-        if (!edge.ok || !history.ok) {
+        if (!edge.ok || !history.ok || !requestsHistory.ok) {
           friendResyncRef.current?.()
-          return { ok: false, error: edge.error || history.error || '删除失败' }
+          return { ok: false, error: edge.error || history.error || requestsHistory.error || '删除失败' }
         }
         return { ok: true }
       },

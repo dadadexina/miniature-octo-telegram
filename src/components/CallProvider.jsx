@@ -58,6 +58,16 @@ export default function CallProvider({ children }) {
     call.abort(hit.attachments.event === 'declined' ? '对方已拒绝通话' : '对方已挂断')
   }, [call, inbox, targetId])
 
+  // 通话期间标记页面状态,Service Worker 换版刷新时据此避让,避免断线
+  useEffect(() => {
+    const root = document.documentElement
+    if (call.status === CALL_STATUS.IDLE) delete root.dataset.callActive
+    else root.dataset.callActive = '1'
+    return () => {
+      delete root.dataset.callActive
+    }
+  }, [call.status])
+
   const value = useMemo(() => ({ startCall, status: call.status }), [call.status, startCall])
 
   return (

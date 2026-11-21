@@ -95,6 +95,16 @@ async function updateStatus(requestId, status) {
   return { ok: true, request: mapRequest(data) }
 }
 
+export async function deleteFriendRequestsBetween(meId, peerId) {
+  if (!meId || !peerId || meId === peerId) return { ok: false, error: '参数错误' }
+  const pair = `and(from_id.eq.${meId},to_id.eq.${peerId}),and(from_id.eq.${peerId},to_id.eq.${meId})`
+  const { error } = await supabase.from('friend_requests').delete().or(pair)
+  if (error) {
+    return { ok: false, error: error.message, permission: isPermissionError(error) }
+  }
+  return { ok: true }
+}
+
 export async function acceptFriendRequest(request) {
   const result = await updateStatus(request.id, 'accepted')
   if (!result.ok) return result
