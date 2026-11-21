@@ -4,6 +4,7 @@ import Avatar from '../components/Avatar'
 import MomentCover from '../components/MomentCover'
 import { CommentIcon, ThumbIcon } from '../components/MomentIcons'
 import NavBar from '../components/NavBar'
+import PullIndicator from '../components/PullIndicator'
 import { fetchProfilesByIds } from '../lib/profiles'
 import { isUuid } from '../lib/messages'
 import {
@@ -138,7 +139,12 @@ function CloudFriendMoments() {
         data-testid="fm-scroll"
         {...handlers}
       >
-        <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
+        <PullIndicator
+          pull={pull}
+          refreshing={refreshing}
+          threshold={threshold}
+          testId="fm-pull-indicator"
+        />
         <MomentCover
           userId={userId}
           coverUserId={meId}
@@ -179,7 +185,7 @@ function CloudFriendMoments() {
                 <div className="min-w-0 flex-1 pr-2">
                   <div className="text-[15px] font-medium text-eink-ink">{nameOf(moment.authorId)}</div>
                   {moment.content ? (
-                    <p className="mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-[#191919]">
+                    <p className="moment-text mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-[#191919]">
                       {moment.content}
                     </p>
                   ) : null}
@@ -309,7 +315,12 @@ function LocalFriendMoments() {
         data-testid="fm-scroll"
         {...handlers}
       >
-        <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
+        <PullIndicator
+          pull={pull}
+          refreshing={refreshing}
+          threshold={threshold}
+          testId="fm-pull-indicator"
+        />
         <MomentCover
           userId={userId}
           coverUserId={currentUser?.id || userId}
@@ -331,7 +342,7 @@ function LocalFriendMoments() {
               <Avatar name={friendName} color={avatarColor(userId)} size={42} src="" />
               <div className="min-w-0 flex-1">
                 <div className="text-[15px] font-medium text-eink-ink">{friendName}</div>
-                <p className="mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-[#191919]">{m.text}</p>
+                <p className="moment-text mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-[#191919]">{m.text}</p>
                 <div className="mt-2.5 text-[12px] text-eink-faint">{formatRelativeTime(m.time)}</div>
               </div>
             </article>
@@ -347,22 +358,8 @@ function Back({ onClick }) {
   return (
     <button type="button" onClick={onClick} className="-ml-1 flex h-9 w-9 items-center justify-start" aria-label="返回">
       <svg width="10" height="18" viewBox="0 0 18 18" fill="none">
-        <path d="M9 1 1 9l8 8" stroke="#191919" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M9 1 1 9l8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
-  )
-}
-
-function PullIndicator({ pull, refreshing, threshold }) {
-  const height = refreshing ? 40 : pull
-  const label = refreshing ? '刷新中...' : pull >= threshold ? '松手刷新' : pull > 0 ? '下拉刷新' : ''
-  return (
-    <div
-      data-testid="fm-pull-indicator"
-      className="flex items-center justify-center overflow-hidden text-[12px] text-eink-sub"
-      style={{ height }}
-    >
-      {label}
-    </div>
   )
 }

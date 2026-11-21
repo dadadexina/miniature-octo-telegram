@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { clearAccountStorage } from './lib/accountCleanup'
+import { notifyIncoming } from './lib/appSettings'
 import { blockUser, fetchMyBlocks, unblockUser } from './lib/blocks'
 import { deleteFriend, fetchFriends, upsertFriend } from './lib/friends'
 import {
@@ -578,6 +579,13 @@ export function StoreProvider({ children }) {
         { event: 'INSERT', schema: 'public', table: 'messages' },
         (payload) => {
           ingestCloudMessage(payload.new)
+          const raw = payload.new
+          const fromId = raw?.sender_id || raw?.from_id
+          const toId = raw?.receiver_id || raw?.to_id
+          if (fromId && toId === me && fromId !== me && fromId !== activePeerRef.current) {
+            const body = raw.content || raw.text || raw.body || ''
+            notifyIncoming({ body: String(body).slice(0, 40) || '[新消息]' })
+          }
         }
       )
       .on(

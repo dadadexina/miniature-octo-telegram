@@ -51,7 +51,7 @@ export default function MomentCover({
   }
 
   return (
-    <div className="relative h-[260px]" data-testid="moments-cover">
+    <div className="relative h-[260px]" data-testid="moments-cover" data-raised={raised ? 'true' : 'false'}>
       <div className="absolute inset-0 overflow-hidden">
         {cover ? (
           <img

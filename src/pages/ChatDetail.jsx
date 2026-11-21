@@ -722,7 +722,7 @@ export default function ChatDetail() {
                   <div className="flex max-w-[78%] flex-col items-end">
                     <div className="relative mr-1 max-w-full opacity-70">
                       <span className="bubble-tail bubble-tail-mine" />
-                      <div className="break-words whitespace-pre-wrap rounded-none bg-eink-ink px-2.5 py-[7px] text-[16px] leading-[22px] text-eink-paper">
+                      <div className="chat-bubble-text break-words whitespace-pre-wrap rounded-none bg-eink-ink px-2.5 py-[7px] text-[16px] leading-[22px] text-eink-paper">
                         {item.reply ? <QuoteStrip mine quote={item.reply} /> : null}
                         {item.image ? (
                           <img
@@ -908,7 +908,7 @@ function Bubble({ mine, children }) {
     <div className={`relative max-w-full ${mine ? 'mr-1' : 'ml-1'}`}>
       <span className={`bubble-tail ${mine ? 'bubble-tail-mine' : 'bubble-tail-peer'}`} />
       <div
-        className={`break-words whitespace-pre-wrap rounded-none px-2.5 py-[7px] text-[16px] leading-[22px] ${
+        className={`chat-bubble-text break-words whitespace-pre-wrap rounded-none px-2.5 py-[7px] text-[16px] leading-[22px] ${
           mine ? 'bg-eink-ink text-eink-paper' : 'border border-eink-line/25 bg-eink-bar text-eink-text'
         }`}
       >

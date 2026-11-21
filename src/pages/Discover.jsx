@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Avatar from '../components/Avatar'
 import MomentCover from '../components/MomentCover'
 import { CommentIcon, ThumbIcon } from '../components/MomentIcons'
+import PullIndicator from '../components/PullIndicator'
 import { isUuid } from '../lib/messages'
 import { downscaleMomentImage } from '../lib/momentImage'
+import usePullToRefresh from '../lib/usePullToRefresh'
 import {
   createMoment,
   deleteMoment,
@@ -41,7 +43,6 @@ function CloudDiscover() {
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState({})
   const [commentText, setCommentText] = useState({})
-  const listRef = useRef(null)
   const fileRef = useRef(null)
   const hydratedRef = useRef(new Set())
 
@@ -98,6 +99,8 @@ function CloudDiscover() {
     [hydrateAuthors]
   )
 
+  const { scrollRef, pull, refreshing, threshold, handlers } = usePullToRefresh({ onRefresh: () => load() })
+
   useEffect(() => {
     setLoading(true)
     load()
@@ -147,7 +150,7 @@ function CloudDiscover() {
     setImageFile(null)
     setImagePreview('')
     await load()
-    requestAnimationFrame(() => listRef.current?.scrollTo({ top: 0, behavior: 'smooth' }))
+    requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }))
   }
 
   const toggleLike = (moment) => {
@@ -204,17 +207,7 @@ function CloudDiscover() {
   return (
     <div className="flex h-full flex-col bg-white">
       <header className="sticky top-0 z-20 flex h-11 shrink-0 items-center border-b border-eink-divider bg-eink-bar px-3">
-        <div className="flex w-16 items-center">
-          <button
-            type="button"
-            className="text-[13px] text-eink-sub disabled:opacity-50"
-            onClick={() => load()}
-            disabled={busy}
-            data-testid="moments-refresh"
-          >
-            {busy ? '...' : '刷新'}
-          </button>
-        </div>
+        <div className="w-16" />
         <h1 className="flex-1 truncate text-center text-[17px] font-medium">朋友圈</h1>
         <div className="flex w-16 justify-end">
           <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => setOpen(true)} aria-label="发布">
@@ -223,15 +216,23 @@ function CloudDiscover() {
         </div>
       </header>
 
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto no-scrollbar"
+        data-testid="moments-scroll"
+        {...handlers}
+      >
+        <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} testId="moments-pull-indicator" />
         <MomentCover
           userId={meId}
           name={meName}
           avatarSrc={profile?.avatarUrl || currentUser.avatarUrl || ''}
           avatarColor={avatarColor(meId)}
+          editable={false}
+          raised
         />
 
-        <div className="h-20" />
+        <div className="h-4" />
 
         {error ? <p className="px-4 py-2 text-[12px] text-eink-sub">{error}</p> : null}
 
@@ -255,7 +256,7 @@ function CloudDiscover() {
                 <div className="min-w-0 flex-1 pr-2">
                   <div className="text-[15px] font-medium text-eink-ink">{authorName}</div>
                   {moment.content ? (
-                    <p className="mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-[#191919]">
+                    <p className="moment-text mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-[#191919]">
                       {moment.content}
                     </p>
                   ) : null}
@@ -530,9 +531,11 @@ function LocalDiscover() {
           name={meName}
           avatarSrc={profile?.avatarUrl || currentUser.avatarUrl || ''}
           avatarColor={avatarColor(currentUser.id)}
+          editable={false}
+          raised
         />
 
-        <div className="h-20" />
+        <div className="h-4" />
 
         <p className="mx-3 mb-2 border border-eink-divider bg-eink-bar px-3 py-1.5 text-center text-[12px] text-eink-sub">
           演示数据 · 登录云端账号后同步真实朋友圈
@@ -551,7 +554,7 @@ function LocalDiscover() {
                 <div className="min-w-0 flex-1 pr-2">
                   <div className="text-[15px] font-medium text-eink-ink">{authorName}</div>
                   {moment.text ? (
-                    <p className="mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-[#191919]">
+                    <p className="moment-text mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-[#191919]">
                       {moment.text}
                     </p>
                   ) : null}

@@ -85,6 +85,8 @@ describe('FriendMoments 好友朋友圈流', () => {
     )
     expect(screen.getByText('第一条动态')).toBeTruthy()
     expect(screen.getByText('纸墨信笺')).toBeTruthy()
+    expect(screen.getByTestId('moments-cover').dataset.raised).toBe('true')
+    expect(screen.queryByTestId('change-cover')).toBeNull()
   })
 
   it('空结果展示空态', async () => {
