@@ -26,6 +26,7 @@ vi.mock('../store', () => ({
     upsertUsers: vi.fn(),
     syncTick: 0,
     momentsFeed: () => storeHolder.momentsFeed(),
+    displayNameOf: (id) => storeHolder.users[id]?.nickname || '',
   }),
 }))
 

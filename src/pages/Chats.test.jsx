@@ -29,6 +29,7 @@ vi.mock('../store', () => ({
     hiddenIds: new Set(),
     removeThread: vi.fn(),
     drafts: storeHolder.drafts,
+    displayNameOf: (id) => storeHolder.users[id]?.nickname || '',
   }),
 }))
 

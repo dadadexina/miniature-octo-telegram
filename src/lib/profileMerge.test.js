@@ -39,6 +39,21 @@ describe('applyProfileRow 云端资料合并', () => {
     expect(next).toBe(users)
   })
 
+  it('同步性别、签名与注册时间', () => {
+    const users = [{ id: ALICE, nickname: '乙', avatarUrl: '' }]
+    const next = applyProfileRow(users, {
+      id: ALICE,
+      nickname: '乙',
+      avatar_url: '',
+      gender: 'female',
+      signature: '见字如面',
+      created_at: '2026-01-01T00:00:00Z',
+    })
+    expect(next[0].gender).toBe('female')
+    expect(next[0].signature).toBe('见字如面')
+    expect(next[0].createdAt).toBe('2026-01-01T00:00:00Z')
+  })
+
   it('昵称与自定义 ID 同步更新,空字段不覆盖本地', () => {
     const users = [{ id: ALICE, nickname: '旧名', publicId: 'old_id', avatarUrl: 'a.png' }]
     const next = applyProfileRow(users, { id: ALICE, nickname: '新名' })

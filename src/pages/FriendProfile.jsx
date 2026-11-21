@@ -3,18 +3,30 @@ import { useNavigate, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import NavBar from '../components/NavBar'
 import useSwipeBack from '../hooks/useSwipeBack'
+import { REMARK_MAX, normalizeRemark } from '../lib/friends'
 import { goBackOr } from '../lib/navigation'
+import {
+  addSourceLabel,
+  formatRegistrationDate,
+  genderLabel,
+  registrationDays,
+} from '../lib/profileMeta'
 import { fetchProfileById } from '../lib/profiles'
 import { useStore } from '../store'
 
 export default function FriendProfile() {
   const { userId } = useParams()
   const navigate = useNavigate()
-  const { getUser, avatarColor } = useStore()
+  const { currentUser, getUser, avatarColor, friendMetaOf, displayNameOf, setFriendRemark } = useStore()
   const cached = getUser(userId)
+  const meta = friendMetaOf(currentUser?.id, userId)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [editingFor, setEditingFor] = useState('')
+  const [remarkDraft, setRemarkDraft] = useState('')
+  const [remarkSaving, setRemarkSaving] = useState(false)
+  const [remarkHint, setRemarkHint] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -34,9 +46,21 @@ export default function FriendProfile() {
   }, [userId])
 
   const info = profile
-    ? { nickname: profile.nickname, publicId: profile.username, avatarUrl: profile.avatarUrl || '' }
+    ? {
+        nickname: profile.nickname,
+        publicId: profile.username,
+        avatarUrl: profile.avatarUrl || '',
+        gender: profile.gender,
+        createdAt: profile.createdAt,
+      }
     : cached
-      ? { nickname: cached.nickname, publicId: cached.publicId || cached.username || '', avatarUrl: cached.avatarUrl || '' }
+      ? {
+          nickname: cached.nickname,
+          publicId: cached.publicId || cached.username || '',
+          avatarUrl: cached.avatarUrl || '',
+          gender: cached.gender,
+          createdAt: cached.createdAt,
+        }
       : null
 
   const goBack = () => {
@@ -45,6 +69,34 @@ export default function FriendProfile() {
 
   useSwipeBack(goBack)
 
+  const originalName = info?.nickname || '用户'
+  const editingRemark = editingFor === userId
+  const heading = meta?.remark || displayNameOf(userId) || originalName
+  const days = registrationDays(info?.createdAt)
+  const friendSince = meta?.createdAt
+    ? `${formatRegistrationDate(meta.createdAt)} · ${addSourceLabel(meta.source)}`
+    : '未知'
+
+  const openRemark = () => {
+    setRemarkDraft(meta?.remark || '')
+    setRemarkHint('')
+    setEditingFor(userId)
+  }
+
+  const submitRemark = async (e) => {
+    e.preventDefault()
+    if (remarkSaving) return
+    setRemarkSaving(true)
+    const result = await setFriendRemark(userId, normalizeRemark(remarkDraft))
+    setRemarkSaving(false)
+    if (!result.ok) {
+      setRemarkHint(result.error || '保存备注失败')
+      return
+    }
+    setRemarkHint(result.localOnly ? result.error || '备注已保存到本机' : '')
+    setEditingFor('')
+  }
+
   return (
     <div className="flex h-full flex-col bg-eink-paper">
       <NavBar title="个人资料" left={<Back onClick={goBack} />} />
@@ -52,20 +104,85 @@ export default function FriendProfile() {
       {info ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto no-scrollbar">
           <div className="flex flex-col items-center px-6 pb-2 pt-10">
-            <Avatar name={info.nickname} color={avatarColor(userId)} size={88} src={info.avatarUrl} />
+            <Avatar name={heading} color={avatarColor(userId)} size={88} src={info.avatarUrl} />
             <h2 data-testid="friend-nickname" className="mt-4 text-center text-[22px] font-medium text-[#191919]">
-              {info.nickname || '用户'}
+              {heading}
             </h2>
+            {meta?.remark ? (
+              <p data-testid="friend-original-nickname" className="mt-1 text-center text-[12px] text-eink-faint">
+                昵称：{originalName}
+              </p>
+            ) : null}
             <p data-testid="friend-id" className="mt-1.5 text-center text-[13px] text-eink-faint">
               ID: {info.publicId || '未设置'}
             </p>
           </div>
 
           <div className="mt-8 border-y border-eink-divider bg-eink-paper">
+            <div className="flex min-h-[52px] items-center gap-3 border-b border-eink-divider px-4 py-3">
+              <span className="shrink-0 text-[15px] text-eink-sub">备注</span>
+              {editingRemark ? (
+                <form className="flex min-w-0 flex-1 items-center gap-2" onSubmit={submitRemark}>
+                  <input
+                    data-testid="friend-remark-input"
+                    className="h-9 min-w-0 flex-1 border border-eink-line/30 bg-eink-bar px-2 text-[15px] outline-none"
+                    maxLength={REMARK_MAX}
+                    placeholder="输入备注（最多 20 字）"
+                    value={remarkDraft}
+                    onChange={(e) => setRemarkDraft(e.target.value)}
+                    autoFocus
+                  />
+                  <button
+                    type="submit"
+                    data-testid="friend-remark-save"
+                    disabled={remarkSaving}
+                    className="shrink-0 bg-eink-ink px-3 py-1.5 text-[13px] text-eink-paper disabled:bg-eink-disabled"
+                  >
+                    {remarkSaving ? '保存中...' : '保存'}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="friend-remark-cancel"
+                    className="shrink-0 text-[13px] text-eink-sub"
+                    onClick={() => setEditingFor('')}
+                  >
+                    取消
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <span className="min-w-0 flex-1 truncate text-[15px] text-eink-text">
+                    {meta?.remark || '未设置'}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="friend-remark-edit"
+                    className="shrink-0 text-[13px] text-eink-ink underline underline-offset-2"
+                    onClick={openRemark}
+                  >
+                    修改
+                  </button>
+                </>
+              )}
+            </div>
+
+            <InfoRow label="性别" value={genderLabel(info.gender)} testId="friend-gender" />
+            <InfoRow label="来纸墨" value={days ? `${days} 天` : '未知'} testId="friend-days" />
+            <InfoRow label="加好友" value={friendSince} testId="friend-since" />
+
+            {remarkHint ? (
+              <p
+                data-testid="friend-remark-hint"
+                className="border-t border-eink-divider px-4 py-2 text-[12px] leading-5 text-eink-sub"
+              >
+                {remarkHint}
+              </p>
+            ) : null}
+
             <button
               type="button"
               data-testid="friend-moments-entry"
-              className="flex w-full items-center justify-between px-4 py-3.5 text-left active:bg-[#E7E5DD]"
+              className="flex w-full items-center justify-between border-t border-eink-divider px-4 py-3.5 text-left active:bg-[#E7E5DD]"
               onClick={() => navigate(`/friend/${userId}/moments`)}
             >
               <span className="text-[15px] text-[#191919]">朋友圈</span>
@@ -97,6 +214,17 @@ export default function FriendProfile() {
           发送信息
         </button>
       </div>
+    </div>
+  )
+}
+
+function InfoRow({ label, value, testId }) {
+  return (
+    <div className="flex min-h-[48px] items-center gap-3 border-b border-eink-divider px-4 py-3">
+      <span className="shrink-0 text-[15px] text-eink-sub">{label}</span>
+      <span data-testid={testId} className="min-w-0 flex-1 text-right text-[14px] text-eink-text">
+        {value}
+      </span>
     </div>
   )
 }

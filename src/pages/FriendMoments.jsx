@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import MomentCover from '../components/MomentCover'
 import { CommentIcon, ThumbIcon } from '../components/MomentIcons'
@@ -25,11 +25,11 @@ export default function FriendMoments() {
 function CloudFriendMoments() {
   const { userId } = useParams()
   const navigate = useNavigate()
-  const { currentUser, profile, avatarColor, getUser, upsertUsers, syncTick } = useStore()
+  const { currentUser, profile, avatarColor, getUser, upsertUsers, syncTick, displayNameOf } = useStore()
   const meId = currentUser.id
   const meName = profile?.nickname || currentUser.nickname
   const friend = getUser(userId)
-  const friendName = friend?.nickname || '好友'
+  const friendName = displayNameOf(userId) || friend?.nickname || '好友'
   const goBack = () => goBackOr(navigate, `/friend/${userId}`)
   useSwipeBack(goBack)
 
@@ -97,7 +97,7 @@ function CloudFriendMoments() {
 
   const nameOf = (id) => {
     if (id === meId) return meName
-    return getUser(id)?.nickname || '用户'
+    return displayNameOf(id) || getUser(id)?.nickname || '用户'
   }
 
   const toggleLike = (moment) => {
@@ -185,7 +185,14 @@ function CloudFriendMoments() {
                 data-testid="friend-moment-item"
                 className="flex gap-3 border-b border-eink-divider px-3 py-3.5"
               >
-                <Avatar name={friendName} color={avatarColor(userId)} size={42} src={friend?.avatarUrl || ''} />
+                <Link
+                  to={`/friend/${userId}`}
+                  data-testid="friend-moment-avatar"
+                  aria-label={`查看${friendName}的资料`}
+                  className="shrink-0"
+                >
+                  <Avatar name={friendName} color={avatarColor(userId)} size={42} src={friend?.avatarUrl || ''} />
+                </Link>
                 <div className="min-w-0 flex-1 pr-2">
                   <div className="text-[15px] font-medium text-eink-ink">{nameOf(moment.authorId)}</div>
                   {moment.content ? (
@@ -293,9 +300,9 @@ function CloudFriendMoments() {
 function LocalFriendMoments() {
   const { userId } = useParams()
   const navigate = useNavigate()
-  const { getUser, avatarColor, momentsFeed, currentUser } = useStore()
+  const { getUser, avatarColor, momentsFeed, currentUser, displayNameOf } = useStore()
   const friend = getUser(userId)
-  const friendName = friend?.nickname || '好友'
+  const friendName = displayNameOf(userId) || friend?.nickname || '好友'
   const items = momentsFeed().filter((m) => m.userId === userId)
   const [, setTick] = useState(0)
   const goBack = () => goBackOr(navigate, `/friend/${userId}`)
@@ -344,7 +351,14 @@ function LocalFriendMoments() {
         ) : (
           items.map((m) => (
             <article key={m.id} data-testid="friend-moment-item" className="flex gap-3 border-b border-eink-divider px-3 py-3.5">
-              <Avatar name={friendName} color={avatarColor(userId)} size={42} src="" />
+              <Link
+                to={`/friend/${userId}`}
+                data-testid="friend-moment-avatar"
+                aria-label={`查看${friendName}的资料`}
+                className="shrink-0"
+              >
+                <Avatar name={friendName} color={avatarColor(userId)} size={42} src="" />
+              </Link>
               <div className="min-w-0 flex-1">
                 <div className="text-[15px] font-medium text-eink-ink">{friendName}</div>
                 <p className="moment-text mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-[#191919]">{m.text}</p>

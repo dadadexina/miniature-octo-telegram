@@ -11,7 +11,7 @@ import { useStore } from '../store'
 import { formatTime } from '../utils'
 
 export default function Chats() {
-  const { conversations, avatarColor, currentUser, getUser, upsertUsers, inbox, mergeInbox, unreadOf, syncTick, hiddenIds, removeThread, drafts, convPrefs, setConversationPref } = useStore()
+  const { conversations, avatarColor, currentUser, getUser, upsertUsers, inbox, mergeInbox, unreadOf, syncTick, hiddenIds, removeThread, drafts, convPrefs, setConversationPref, displayNameOf } = useStore()
   const [swipedId, setSwipedId] = useState(null)
   const [hint, setHint] = useState('')
   const [needSql, setNeedSql] = useState(false)
@@ -163,7 +163,7 @@ export default function Chats() {
               }}
             >
               <Avatar
-                name={friend.nickname}
+                name={displayNameOf(friend.id) || friend.nickname}
                 color={avatarColor(friend.id)}
                 size={48}
                 badge={convPrefs[friend.id]?.muted ? 0 : unreadOf(friend.id)}
@@ -172,7 +172,7 @@ export default function Chats() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between">
                   <span className="truncate text-[16px] text-[#191919]">
-                    {friend.nickname}
+                    {displayNameOf(friend.id) || friend.nickname}
                     {convPrefs[friend.id]?.muted && unreadOf(friend.id) > 0 ? (
                       <span data-testid="muted-dot" className="ml-1.5 inline-block h-1.5 w-1.5 rounded-none bg-eink-sub align-middle" />
                     ) : null}

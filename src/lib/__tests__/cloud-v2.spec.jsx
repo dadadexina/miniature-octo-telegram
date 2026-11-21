@@ -249,7 +249,7 @@ describe('blocks 拉黑', () => {
 describe('friendRequests 好友请求', () => {
   it('mapRequest 默认 pending 且时间转毫秒', () => {
     const req = mapRequest({ id: 'r1', from_id: 'alice', to_id: 'me', created_at: new Date(NOW).toISOString() })
-    expect(req).toEqual({ id: 'r1', fromId: 'alice', toId: 'me', status: 'pending', createdAt: NOW })
+    expect(req).toEqual({ id: 'r1', fromId: 'alice', toId: 'me', status: 'pending', source: '', createdAt: NOW })
     expect(mapRequest(null)).toBeNull()
   })
 
@@ -284,8 +284,18 @@ describe('friendRequests 好友请求', () => {
     supabase.from.mockReset()
   })
 
+  it('sendFriendRequest 记录加好友来源', async () => {
+    const capture = {}
+    supabase.from.mockImplementation(() => okChain({ data: { id: 'r1', from_id: 'me', to_id: 'alice', status: 'pending', source: 'phone' }, error: null }, capture))
+    const res = await sendFriendRequest('me', 'alice', 'phone')
+    expect(res.ok).toBe(true)
+    expect(capture.insert).toMatchObject({ from_id: 'me', to_id: 'alice', source: 'phone' })
+    expect(res.request.source).toBe('phone')
+    supabase.from.mockReset()
+  })
+
   it('acceptFriendRequest 通过后写入双向好友边', async () => {
-    const acceptedRow = { id: 'r1', from_id: 'alice', to_id: 'me', status: 'accepted', created_at: new Date(NOW).toISOString() }
+    const acceptedRow = { id: 'r1', from_id: 'alice', to_id: 'me', status: 'accepted', source: 'phone', created_at: new Date(NOW).toISOString() }
     const friendInserts = []
     supabase.from.mockImplementation((table) => {
       if (table === 'friends') {
@@ -298,12 +308,12 @@ describe('friendRequests 好友请求', () => {
       }
       return okChain({ data: acceptedRow, error: null })
     })
-    const res = await acceptFriendRequest(mapRequest({ id: 'r1', from_id: 'alice', to_id: 'me' }))
+    const res = await acceptFriendRequest(mapRequest({ id: 'r1', from_id: 'alice', to_id: 'me', source: 'phone' }))
     expect(res.ok).toBe(true)
     expect(res.request.status).toBe('accepted')
     expect(friendInserts).toEqual([
-      { owner_id: 'me', friend_id: 'alice' },
-      { owner_id: 'alice', friend_id: 'me' },
+      { owner_id: 'me', friend_id: 'alice', source: 'phone' },
+      { owner_id: 'alice', friend_id: 'me', source: 'phone' },
     ])
     supabase.from.mockReset()
   })

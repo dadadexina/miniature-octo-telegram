@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { normalizeGender } from './profileMeta'
 import { normalizeSignature } from './signature'
 
 const USERNAME_KEYS = ['username', 'custom_id', 'public_id', 'user_id']
@@ -29,6 +30,7 @@ export function mapProfile(row) {
     username: pick(row, USERNAME_KEYS),
     avatarUrl: row.avatar_url || row.avatarUrl || '',
     signature: normalizeSignature(row.signature || ''),
+    gender: normalizeGender(row.gender),
     phone: row.phone || '',
     allowEmailSearch: row.allow_email_search !== false,
     allowPhoneSearch: row.allow_phone_search !== false,
@@ -85,6 +87,27 @@ export async function updateProfileSignature(userId, signature) {
     }
   }
   return { ok: false, error: error.message || '保存个性签名失败', permission: isPermissionError(error) }
+}
+
+export async function updateProfileGender(userId, gender) {
+  const value = normalizeGender(gender)
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ gender: value })
+    .eq('id', userId)
+    .select('*')
+    .maybeSingle()
+  if (!error && !data) return { ok: false, error: '资料不存在，请先完成资料初始化' }
+  if (!error) return { ok: true, profile: mapProfile(data) }
+  if (isMissingColumn(error, 'gender')) {
+    return {
+      ok: false,
+      localOnly: true,
+      error: '云端资料表缺少 gender 列，性别已仅保存在本机，请执行云初始化 SQL 升级',
+      permission: false,
+    }
+  }
+  return { ok: false, error: error.message || '保存性别失败', permission: isPermissionError(error) }
 }
 
 export async function uploadAvatarFile(userId, blob, contentType = 'image/jpeg') {

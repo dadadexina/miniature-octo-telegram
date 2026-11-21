@@ -21,10 +21,17 @@ export function applyProfileRow(users, row, { keepAvatarIfEmpty = false } = {}) 
     publicId: publicId || current.publicId,
     avatarUrl: keepAvatarIfEmpty ? avatarUrl || current.avatarUrl || '' : avatarUrl,
   }
+  if (row.gender) next.gender = row.gender
+  if (Object.prototype.hasOwnProperty.call(row, 'signature')) next.signature = row.signature || ''
+  const createdAt = row.created_at || row.createdAt
+  if (createdAt) next.createdAt = createdAt
   if (
     next.nickname === current.nickname &&
     next.publicId === current.publicId &&
-    next.avatarUrl === current.avatarUrl
+    next.avatarUrl === current.avatarUrl &&
+    next.gender === current.gender &&
+    next.signature === current.signature &&
+    next.createdAt === current.createdAt
   ) {
     return users
   }

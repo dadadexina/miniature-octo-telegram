@@ -5,9 +5,11 @@ import NavBar from '../components/NavBar'
 import useSwipeBack from '../hooks/useSwipeBack'
 import { downscaleAvatar, validateAvatarFile } from '../lib/avatarImage'
 import { goBackOr } from '../lib/navigation'
+import { DEFAULT_GENDER, GENDER_OPTIONS, formatRegistrationDate } from '../lib/profileMeta'
 import {
   insertProfile,
   updateProfileAvatar,
+  updateProfileGender,
   updateProfileNickname,
   updateProfileSettings,
   updatePublicId,
@@ -22,6 +24,7 @@ export default function EditProfile() {
   const userId = authUser?.id || currentUser?.id
   const [nickname, setNickname] = useState(profile?.nickname || currentUser?.nickname || '')
   const [idDraft, setIdDraft] = useState(profile?.username || currentUser?.publicId || '')
+  const [gender, setGender] = useState(profile?.gender || DEFAULT_GENDER)
   const [phone, setPhone] = useState(profile?.phone || '')
   const [allowEmailSearch, setAllowEmailSearch] = useState(profile?.allowEmailSearch !== false)
   const [allowPhoneSearch, setAllowPhoneSearch] = useState(profile?.allowPhoneSearch !== false)
@@ -45,10 +48,12 @@ export default function EditProfile() {
   const idChanged = idDraft.trim() !== username
   const idChangeAllowed = canChangePublicId(profile)
   const nextChangeAt = nextPublicIdChangeAt(profile)
+  const genderUnchanged = gender === (profile?.gender || DEFAULT_GENDER)
   const settingsUnchanged =
     phone.replace(/\D/g, '') === String(profile?.phone || '') &&
     allowEmailSearch === (profile?.allowEmailSearch !== false) &&
     allowPhoneSearch === (profile?.allowPhoneSearch !== false)
+  const registeredAt = formatRegistrationDate(profile?.createdAt || currentUser?.createdAt)
 
   const pickFile = (e) => {
     const file = e.target.files && e.target.files[0]
@@ -103,6 +108,19 @@ export default function EditProfile() {
 
     let nextProfile = profile
     let avatarUnsaved = false
+    let genderWarning = ''
+    if (!genderUnchanged) {
+      const savedGender = await updateProfileGender(userId, gender)
+      if (!savedGender.ok && !savedGender.localOnly) {
+        setSaving(false)
+        setError(savedGender.error || '保存性别失败')
+        return
+      }
+      if (savedGender.ok && savedGender.profile) {
+        nextProfile = { ...(nextProfile || {}), ...savedGender.profile }
+      }
+      if (savedGender.localOnly) genderWarning = savedGender.error || '性别未能同步到云端，已先保存到本地'
+    }
     if (pendingAvatar?.blob) {
       const up = await uploadAvatarFile(userId, pendingAvatar.blob, pendingAvatar.contentType)
       if (up.ok && up.url) {
@@ -149,6 +167,16 @@ export default function EditProfile() {
       applyProfileToUser(userId, merged)
       setCloudProfile(merged, true)
       setPendingAvatar(null)
+      if (genderWarning) {
+        saveLocalProfile(userId, {
+          ...merged,
+          gender,
+          createdAt: merged.createdAt || profile?.createdAt || currentUser?.createdAt || '',
+        })
+        setHint(genderWarning)
+        setSaving(false)
+        return
+      }
       navigate('/me', { replace: true })
       return
     }
@@ -157,6 +185,8 @@ export default function EditProfile() {
       nickname: name,
       username: nextProfile?.username || idValue,
       avatarUrl: pendingAvatar?.dataUrl || result.profile?.avatarUrl || '',
+      gender,
+      createdAt: nextProfile?.createdAt || profile?.createdAt || currentUser?.createdAt || '',
     })
     setPendingAvatar(null)
     setHint(
@@ -209,6 +239,32 @@ export default function EditProfile() {
             }}
           />
         </label>
+        <div className="mt-4 border-b border-eink-line/30 py-3" data-testid="profile-gender-options">
+          <div className="flex items-center">
+            <span className="w-16 text-[16px]">性别</span>
+            <div className="flex gap-2" role="group" aria-label="性别">
+              {GENDER_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  data-testid={`profile-gender-${option.value}`}
+                  aria-pressed={gender === option.value}
+                  className={`border px-3 py-1.5 text-[14px] active:bg-eink-pressed ${
+                    gender === option.value
+                      ? 'border-eink-ink bg-eink-ink text-eink-paper'
+                      : 'border-eink-line/40 bg-eink-paper text-eink-text'
+                  }`}
+                  onClick={() => {
+                    setGender(option.value)
+                    setError('')
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
         <label className="mt-4 flex items-center border-b border-eink-line/30 py-3">
           <span className="w-16 text-[16px]">唯一 ID</span>
           <input
@@ -229,6 +285,13 @@ export default function EditProfile() {
             ? '本次可修改一次。ID 需 8-15 位，且同时包含字母和数字。'
             : `下次可修改时间：${formatChangeDate(nextChangeAt)}（每年一次）`}
         </p>
+        <div className="mt-4 flex items-center border-b border-eink-line/30 py-3">
+          <span className="w-16 text-[16px]">注册日期</span>
+          <span data-testid="profile-created-at" className="flex-1 text-[15px] text-eink-sub">
+            {registeredAt || '未知'}
+          </span>
+        </div>
+        <p className="mt-2 text-[12px] leading-5 text-eink-sub">注册日期固定保存，不可修改。</p>
         <label className="mt-4 flex items-center border-b border-eink-line/30 py-3">
           <span className="w-16 text-[16px]">手机号</span>
           <input
@@ -272,7 +335,7 @@ export default function EditProfile() {
         <button
           type="submit"
           className="mt-6 mb-8 h-11 rounded-none bg-eink-ink text-[16px] text-eink-paper active:bg-eink-pressed disabled:bg-eink-disabled"
-          disabled={saving || (nameUnchanged && !pendingAvatar && !idChanged && settingsUnchanged)}
+          disabled={saving || (nameUnchanged && genderUnchanged && !pendingAvatar && !idChanged && settingsUnchanged)}
         >
           {saving ? '保存中...' : '保存'}
         </button>

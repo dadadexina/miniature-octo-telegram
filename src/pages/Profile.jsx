@@ -4,6 +4,7 @@ import AuthBar from '../components/AuthBar'
 import Avatar from '../components/Avatar'
 import CopySql from '../components/CopySql'
 import NavBar from '../components/NavBar'
+import { formatRegistrationDate, genderLabel } from '../lib/profileMeta'
 import { fetchProfilesByIds } from '../lib/profiles'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../store'
@@ -78,6 +79,16 @@ export default function Profile() {
         <div className="flex items-center justify-between border-t border-eink-divider px-4 py-4">
           <span className="text-[16px]">ID</span>
           <span className="text-[14px] text-eink-sub">{username}</span>
+        </div>
+        <div className="flex items-center justify-between border-t border-eink-divider px-4 py-4">
+          <span className="text-[16px]">性别</span>
+          <span data-testid="my-gender" className="text-[14px] text-eink-sub">{genderLabel(profile?.gender)}</span>
+        </div>
+        <div className="flex items-center justify-between border-t border-eink-divider px-4 py-4">
+          <span className="text-[16px]">注册日期</span>
+          <span data-testid="my-created-at" className="text-[14px] text-eink-sub">
+            {formatRegistrationDate(profile?.createdAt || currentUser.createdAt) || '未知'}
+          </span>
         </div>
         <div className="flex items-center justify-between border-t border-eink-divider px-4 py-4">
           <span className="text-[16px]">邮箱</span>

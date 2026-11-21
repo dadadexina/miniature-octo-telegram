@@ -9,10 +9,13 @@ create table if not exists public.friend_requests (
   to_id uuid not null references auth.users (id) on delete cascade,
   status text not null default 'pending'
     check (status in ('pending', 'accepted', 'declined', 'canceled')),
+  source text,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
   check (from_id <> to_id)
 );
+
+alter table public.friend_requests add column if not exists source text;
 
 create table if not exists public.blocks (
   blocker_id uuid not null references auth.users (id) on delete cascade,
@@ -404,19 +407,38 @@ using (bucket_id = 'moments' and (storage.foldername(name))[1] = auth.uid()::tex
 
 -- ============ friends 好友边读写策略 ============
 -- 好友判定要求双方各一行(are_contacts 双向校验),任一方删除都会删掉两侧的边。
--- 双方都能读到这两行,便于登录水合时同步好友列表与删除状态。
+-- 仅能读取本人持有的好友边,备注/来源等私有字段不会暴露给对方;
+-- 删除仍允许参与双方操作,便于任一方解除关系时成对清理。
 
 drop policy if exists "friends_select_own" on public.friends;
 drop policy if exists "friends_select_participant" on public.friends;
-create policy "friends_select_participant" on public.friends for select
+create policy "friends_select_own" on public.friends for select
 to authenticated
-using (auth.uid() in (owner_id, friend_id));
+using (auth.uid() = owner_id);
 
 drop policy if exists "friends_delete_own" on public.friends;
 drop policy if exists "friends_delete_participant" on public.friends;
 create policy "friends_delete_participant" on public.friends for delete
 to authenticated
 using (auth.uid() in (owner_id, friend_id));
+
+-- 备注仅好友关系所有者可写,且只授权 remark 列
+alter table public.friends add column if not exists remark text;
+alter table public.friends add column if not exists source text;
+grant update (remark) on table public.friends to authenticated;
+
+drop policy if exists "friends_update_remark_own" on public.friends;
+create policy "friends_update_remark_own" on public.friends for update
+to authenticated
+using (auth.uid() = owner_id)
+with check (auth.uid() = owner_id);
+
+do $$ begin
+  alter table public.friends add constraint friends_remark_len
+    check (remark is null or char_length(remark) <= 20);
+exception when duplicate_object then null; when others then
+  raise notice '跳过 friends_remark_len: %', sqlerrm;
+end $$;
 
 -- ============ friends 对等边回写(接受方替请求方建边 / 双方互备) ============
 -- permissive 策略与 friends_insert_own 叠加(OR):本人边始终可插;
@@ -480,6 +502,16 @@ alter table public.profiles add column if not exists id_changed_at timestamptz;
 
 -- 个性签名(最多 30 字),展示在发现页头像下方
 alter table public.profiles add column if not exists signature text;
+
+-- 性别:male / female / secret,默认保密
+alter table public.profiles add column if not exists gender text not null default 'secret';
+
+do $$ begin
+  alter table public.profiles add constraint profiles_gender_valid
+    check (gender in ('male', 'female', 'secret'));
+exception when duplicate_object then null; when others then
+  raise notice '跳过 profiles_gender_valid: %', sqlerrm;
+end $$;
 
 do $$ begin
   alter table public.profiles add constraint profiles_signature_len

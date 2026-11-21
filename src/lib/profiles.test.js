@@ -41,6 +41,13 @@ describe('mapProfile', () => {
     expect(mapProfile({ id: 'u5', signature: '字'.repeat(40) }).signature).toHaveLength(30)
   })
 
+  it('映射性别，非法或缺失时回退保密', () => {
+    expect(mapProfile({ id: 'u6', gender: 'female' }).gender).toBe('female')
+    expect(mapProfile({ id: 'u7', gender: 'male' }).gender).toBe('male')
+    expect(mapProfile({ id: 'u8', gender: 'other' }).gender).toBe('secret')
+    expect(mapProfile({ id: 'u9' }).gender).toBe('secret')
+  })
+
   it('空行返回 null', () => {
     expect(mapProfile(null)).toBeNull()
   })

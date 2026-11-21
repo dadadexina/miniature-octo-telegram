@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { clearAccountStorage } from './lib/accountCleanup'
 import { notifyIncoming } from './lib/appSettings'
 import { blockUser, fetchMyBlocks, unblockUser } from './lib/blocks'
-import { deleteFriend, fetchFriends, upsertFriend } from './lib/friends'
+import { deleteFriend, fetchFriends, normalizeRemark, updateFriendRemark, upsertFriend } from './lib/friends'
 import {
   acceptFriendRequest,
   cancelFriendRequest,
@@ -416,9 +416,9 @@ export function StoreProvider({ children }) {
     if (friendResyncRef.current) await friendResyncRef.current()
   }, [])
 
-  const syncFriendToCloud = useCallback((meId, friendId) => {
+  const syncFriendToCloud = useCallback((meId, friendId, source = '') => {
     if (!isUuid(meId) || !isUuid(friendId)) return
-    upsertFriend(meId, friendId)
+    upsertFriend(meId, friendId, { source })
   }, [])
 
   useEffect(() => {
@@ -434,11 +434,41 @@ export function StoreProvider({ children }) {
       const localIds = new Set(
         prev.friendships.filter((f) => f.userId === me && isUuid(f.friendId)).map((f) => f.friendId)
       )
+      const metaById = new Map(result.friends.map((f) => [f.friendId, f]))
       const cloudIds = [...new Set(result.friends.map((f) => f.friendId))].filter((id) => id && id !== me)
       // 每次好友同步都刷新一次资料,覆盖离线期间对方更换的头像
       refreshProfiles(cloudIds)
       const newIds = cloudIds.filter((id) => !localIds.has(id))
       const removedIds = [...localIds].filter((id) => !cloudIds.includes(id))
+      const metaChanged = result.friends.some((f) => {
+        const current = prev.friendships.find((x) => x.userId === me && x.friendId === f.friendId)
+        return (
+          current &&
+          (current.createdAt !== (f.createdAt || '') ||
+            (f.hasSource && current.source !== (f.source || '')) ||
+            (f.hasRemark &&
+              !(current.remarkLocalOnly && !f.remark) &&
+              current.remark !== (f.remark || '')))
+        )
+      })
+      if (metaChanged) {
+        setState((p) => ({
+          ...p,
+          friendships: p.friendships.map((f) => {
+            if (f.userId !== me) return f
+            const meta = metaById.get(f.friendId)
+            if (!meta) return f
+            const keepLocalRemark = Boolean(f.remarkLocalOnly && !meta.remark)
+            return {
+              ...f,
+              createdAt: meta.createdAt || f.createdAt || '',
+              source: meta.hasSource ? meta.source || '' : f.source || '',
+              remark: meta.hasRemark && !keepLocalRemark ? meta.remark || '' : f.remark || '',
+              remarkLocalOnly: keepLocalRemark,
+            }
+          }),
+        }))
+      }
       if (!newIds.length && !removedIds.length) return
       const profilesResult = newIds.length
         ? await fetchProfilesByIds(newIds)
@@ -479,7 +509,17 @@ export function StoreProvider({ children }) {
         const pairs = []
         newIds.forEach((id) => {
           if (exists.has(id)) return
-          pairs.push({ userId: me, friendId: id }, { userId: id, friendId: me })
+          const meta = metaById.get(id)
+          pairs.push(
+            {
+              userId: me,
+              friendId: id,
+              createdAt: meta?.createdAt || '',
+              source: meta?.source || '',
+              remark: meta?.remark || '',
+            },
+            { userId: id, friendId: me, createdAt: meta?.createdAt || '', source: meta?.source || '', remark: '' }
+          )
         })
         return { ...p, users, friendships: [...p.friendships, ...pairs] }
       })
@@ -648,8 +688,8 @@ export function StoreProvider({ children }) {
             // 我发出的请求被接受:即时落本地好友边并回写云端(owner=我,策略始终放行)
             const other = row.from_id === me ? row.to_id : row.from_id
             if (other) {
-              markLocalFriendRef.current?.(me, other)
-              upsertFriend(me, other)
+              markLocalFriendRef.current?.(me, other, { source: row.source || '' })
+              upsertFriend(me, other, { source: row.source || '' })
             }
           }
           refreshRequestsRef.current?.()
@@ -845,16 +885,27 @@ export function StoreProvider({ children }) {
     })
   }, [])
 
-  const markLocalFriend = useCallback((meId, friendId) => {
+  const markLocalFriend = useCallback((meId, friendId, meta = {}) => {
     setState((prev) => {
       const exists = new Set(prev.friendships.filter((f) => f.userId === meId).map((f) => f.friendId))
-      if (exists.has(friendId)) return prev
+      if (exists.has(friendId)) {
+        if (!meta.source) return prev
+        return {
+          ...prev,
+          friendships: prev.friendships.map((f) =>
+            f.userId === meId && f.friendId === friendId
+              ? { ...f, source: meta.source || f.source || '', createdAt: f.createdAt || new Date().toISOString() }
+              : f
+          ),
+        }
+      }
+      const createdAt = new Date().toISOString()
       return {
         ...prev,
         friendships: [
           ...prev.friendships,
-          { userId: meId, friendId },
-          { userId: friendId, friendId: meId },
+          { userId: meId, friendId, createdAt, source: meta.source || '', remark: '' },
+          { userId: friendId, friendId: meId, createdAt, source: meta.source || '', remark: '' },
         ],
       }
     })
@@ -865,12 +916,12 @@ export function StoreProvider({ children }) {
   }, [markLocalFriend])
 
   const requestFriendFromProfile = useCallback(
-    async (prof) => {
+    async (prof, source = 'id') => {
       const me = authUserRef.current?.id
       if (!me || !prof?.id || prof.id === me) return { ok: false, error: '无法添加' }
       if (!isUuid(me) || !isUuid(prof.id)) return { ok: false, error: '仅云端账号支持好友请求' }
       registerUserFromProfile(prof)
-      const result = await sendFriendRequest(me, prof.id)
+      const result = await sendFriendRequest(me, prof.id, source)
       if (result.ok) {
         await refreshFriendRequests()
         return { ok: true, pending: true }
@@ -891,7 +942,7 @@ export function StoreProvider({ children }) {
       const result =
         action === 'accept' ? await acceptFriendRequest(request) : await declineFriendRequest(request.id)
       if (result.ok && action === 'accept') {
-        markLocalFriend(me, request.fromId)
+        markLocalFriend(me, request.fromId, { source: request.source })
         const profilesRes = await fetchProfilesByIds([request.fromId])
         if (profilesRes.ok) (profilesRes.profiles || []).forEach(registerUserFromProfile)
       }
@@ -975,6 +1026,17 @@ export function StoreProvider({ children }) {
     const isFriend = (userId, friendId) =>
       state.friendships.some((f) => f.userId === userId && f.friendId === friendId)
 
+    const friendMetaOf = (userId, friendId) =>
+      state.friendships.find((f) => f.userId === userId && f.friendId === friendId) || null
+
+    const displayNameOf = (userId) => {
+      if (!userId) return ''
+      const me = state.currentUserId || currentUser?.id
+      if (userId === me) return profile?.nickname || currentUser?.nickname || getUser(userId)?.nickname || ''
+      const meta = friendMetaOf(me, userId)
+      return meta?.remark || getUser(userId)?.nickname || ''
+    }
+
     const lastMessageOf = (userId, peerId) => {
       const key = pairKey(userId, peerId)
       const list = state.messages.filter((m) => m.pair === key)
@@ -1013,6 +1075,47 @@ export function StoreProvider({ children }) {
       respondToRequest,
       cancelRequest,
       setBlockedFor,
+      friendMetaOf,
+      displayNameOf,
+      async setFriendRemark(friendId, remark) {
+        const me = state.currentUserId || currentUser?.id
+        if (!me || !friendId) return { ok: false, error: '参数错误' }
+        const value = normalizeRemark(remark)
+        const previousMeta = friendMetaOf(me, friendId)
+        setState((prev) => ({
+          ...prev,
+          friendships: prev.friendships.map((f) =>
+            f.userId === me && f.friendId === friendId
+              ? { ...f, remark: value, remarkLocalOnly: false }
+              : f
+          ),
+        }))
+        if (!isUuid(me) || !isUuid(friendId)) return { ok: true, remark: value }
+        const result = await updateFriendRemark(me, friendId, value)
+        if (result.ok) return { ok: true, remark: value }
+        if (result.localOnly) {
+          setState((prev) => ({
+            ...prev,
+            friendships: prev.friendships.map((f) =>
+              f.userId === me && f.friendId === friendId ? { ...f, remarkLocalOnly: true } : f
+            ),
+          }))
+          return { ok: true, localOnly: true, remark: value, error: result.error }
+        }
+        setState((prev) => ({
+          ...prev,
+          friendships: prev.friendships.map((f) =>
+            f.userId === me && f.friendId === friendId
+              ? {
+                  ...f,
+                  remark: previousMeta?.remark || '',
+                  remarkLocalOnly: Boolean(previousMeta?.remarkLocalOnly),
+                }
+              : f
+          ),
+        }))
+        return result
+      },
       isBlocked(targetId) {
         return blockedIds.includes(targetId)
       },
@@ -1188,7 +1291,7 @@ export function StoreProvider({ children }) {
         return { ok: true }
       },
 
-      addFriendFromProfile(profile) {
+      addFriendFromProfile(profile, source = 'id') {
         const me = state.currentUserId
         if (!me || !profile?.id || profile.id === me) return { ok: false, error: '无法添加' }
         if (isFriend(me, profile.id)) return { ok: false, error: '已经是好友' }
@@ -1201,6 +1304,7 @@ export function StoreProvider({ children }) {
           phone: '',
           createdAt: now(),
         }
+        const createdAt = new Date().toISOString()
         patch((prev) => {
           const exist = prev.users.find((u) => u.id === profile.id)
           const users = exist
@@ -1215,12 +1319,12 @@ export function StoreProvider({ children }) {
             users,
             friendships: [
               ...prev.friendships,
-              { userId: me, friendId: profile.id },
-              { userId: profile.id, friendId: me },
+              { userId: me, friendId: profile.id, createdAt, source, remark: '' },
+              { userId: profile.id, friendId: me, createdAt, source, remark: '' },
             ],
           }
         })
-        syncFriendToCloud(me, profile.id)
+        syncFriendToCloud(me, profile.id, source)
         return { ok: true }
       },
 

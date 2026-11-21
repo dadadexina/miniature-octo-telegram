@@ -5,12 +5,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchProfileById } from '../lib/profiles'
 import FriendProfile from './FriendProfile'
 
-const storeHolder = { friends: {} }
+const storeHolder = { friends: {}, meta: null }
+
+const setFriendRemarkMock = vi.fn(async (friendId, remark) => {
+  storeHolder.meta = { ...(storeHolder.meta || {}), remark }
+  return { ok: true }
+})
 
 vi.mock('../store', () => ({
   useStore: () => ({
+    currentUser: { id: 'me' },
     getUser: (id) => storeHolder.friends[id] || null,
     avatarColor: () => '#191919',
+    friendMetaOf: () => storeHolder.meta,
+    displayNameOf: (id) => storeHolder.meta?.remark || storeHolder.friends[id]?.nickname || '',
+    setFriendRemark: setFriendRemarkMock,
   }),
 }))
 
@@ -24,6 +33,8 @@ vi.mock('../components/Avatar', () => ({
 
 beforeEach(() => {
   storeHolder.friends = {}
+  storeHolder.meta = null
+  setFriendRemarkMock.mockClear()
   fetchProfileById.mockReset()
 })
 
@@ -91,6 +102,46 @@ describe('FriendProfile 好友资料页', () => {
     await waitFor(() => expect(screen.getByTestId('friend-nickname')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: '返回' }))
     expect(screen.getByTestId('contacts-page')).toBeTruthy()
+  })
+
+  it('展示性别、加好友时间方式与来纸墨天数', async () => {
+    const now = new Date().toISOString()
+    storeHolder.meta = { createdAt: now, source: 'phone', remark: '' }
+    fetchProfileById.mockResolvedValue({
+      ok: true,
+      profile: { id: 'u1', nickname: '李四', username: 'lisi', avatarUrl: '', gender: 'female', createdAt: now },
+    })
+    setup()
+    await waitFor(() => expect(screen.getByTestId('friend-gender').textContent).toBe('女'))
+    expect(screen.getByTestId('friend-days').textContent).toBe('1 天')
+    expect(screen.getByTestId('friend-since').textContent).toContain('通过手机号搜索添加')
+    expect(screen.getByTestId('friend-since').textContent).toMatch(/\d{4}年\d{1,2}月\d{1,2}日/)
+  })
+
+  it('备注保存后更新页面称呼并展示原昵称', async () => {
+    fetchProfileById.mockResolvedValue({
+      ok: true,
+      profile: { id: 'u1', nickname: '李四', username: 'lisi', avatarUrl: '', gender: 'male', createdAt: new Date().toISOString() },
+    })
+    setup()
+    await waitFor(() => expect(screen.getByTestId('friend-nickname').textContent).toBe('李四'))
+    fireEvent.click(screen.getByTestId('friend-remark-edit'))
+    fireEvent.change(screen.getByTestId('friend-remark-input'), { target: { value: '老李' } })
+    fireEvent.click(screen.getByTestId('friend-remark-save'))
+    await waitFor(() => expect(screen.getByTestId('friend-nickname').textContent).toBe('老李'))
+    expect(setFriendRemarkMock).toHaveBeenCalledWith('u1', '老李')
+    expect(screen.getByTestId('friend-original-nickname').textContent).toContain('李四')
+  })
+
+  it('历史好友缺少来源时显示未知', async () => {
+    storeHolder.meta = { createdAt: '', source: '', remark: '' }
+    fetchProfileById.mockResolvedValue({
+      ok: true,
+      profile: { id: 'u1', nickname: '李四', username: 'lisi', avatarUrl: '', gender: 'secret' },
+    })
+    setup()
+    await waitFor(() => expect(screen.getByTestId('friend-since').textContent).toContain('未知'))
+    expect(screen.getByTestId('friend-days').textContent).toBe('未知')
   })
 
   it('直接打开资料页(无应用内历史)时返回按钮兜底回通讯录', async () => {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import MomentCover from '../components/MomentCover'
 import { CommentIcon, ThumbIcon } from '../components/MomentIcons'
@@ -26,7 +27,7 @@ export default function Discover() {
 }
 
 function CloudDiscover() {
-  const { currentUser, profile, avatarColor, getUser, upsertUsers, syncTick } = useStore()
+  const { currentUser, profile, avatarColor, getUser, upsertUsers, syncTick, displayNameOf } = useStore()
   const meName = profile?.nickname || currentUser.nickname
   const meId = currentUser.id
   const meSignature = profile?.signature || loadLocalSignature(meId)
@@ -118,7 +119,7 @@ function CloudDiscover() {
 
   const nameOf = (userId) => {
     if (userId === meId) return meName
-    return getUser(userId)?.nickname || '用户'
+    return displayNameOf(userId) || getUser(userId)?.nickname || '用户'
   }
 
   const submit = async (e) => {
@@ -255,7 +256,14 @@ function CloudDiscover() {
             const canDeleteComment = (c) => c.userId === meId || moment.authorId === meId
             return (
               <article key={moment.id} data-testid="moment-item" className="flex gap-3 border-b border-eink-divider px-3 py-3.5">
-                <Avatar name={authorName} color={avatarColor(author.id)} size={42} src={author.avatarUrl || ''} />
+                <Link
+                  to={moment.authorId === meId ? '/me' : `/friend/${moment.authorId}`}
+                  data-testid="moment-author-avatar"
+                  aria-label={`查看${authorName}的资料`}
+                  className="shrink-0"
+                >
+                  <Avatar name={authorName} color={avatarColor(author.id)} size={42} src={author.avatarUrl || ''} />
+                </Link>
                 <div className="min-w-0 flex-1 pr-2">
                   <div className="text-[15px] font-medium text-eink-ink">{authorName}</div>
                   {moment.content ? (
@@ -480,7 +488,7 @@ function PhotoGrid({ count, seed = '' }) {
 }
 
 function LocalDiscover() {
-  const { currentUser, momentsFeed, publishMoment, getUser, avatarColor, profile } = useStore()
+  const { currentUser, momentsFeed, publishMoment, getUser, avatarColor, profile, displayNameOf } = useStore()
   const meName = profile?.nickname || currentUser.nickname
   const meSignature = profile?.signature || loadLocalSignature(currentUser.id)
   const [open, setOpen] = useState(false)
@@ -550,10 +558,17 @@ function LocalDiscover() {
           feed.map((moment) => {
             const author = getUser(moment.userId)
             if (!author) return null
-            const authorName = author.id === currentUser.id ? meName : author.nickname
+            const authorName = author.id === currentUser.id ? meName : displayNameOf(author.id) || author.nickname
             return (
               <article key={moment.id} className="flex gap-3 border-b border-eink-divider px-3 py-3.5">
-                <Avatar name={authorName} color={avatarColor(author.id)} size={42} src={author.avatarUrl || ''} />
+                <Link
+                  to={author.id === currentUser.id ? '/me' : `/friend/${author.id}`}
+                  data-testid="moment-author-avatar"
+                  aria-label={`查看${authorName}的资料`}
+                  className="shrink-0"
+                >
+                  <Avatar name={authorName} color={avatarColor(author.id)} size={42} src={author.avatarUrl || ''} />
+                </Link>
                 <div className="min-w-0 flex-1 pr-2">
                   <div className="text-[15px] font-medium text-eink-ink">{authorName}</div>
                   {moment.text ? (

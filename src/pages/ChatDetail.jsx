@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import AuthBar from '../components/AuthBar'
 import Avatar from '../components/Avatar'
 import CopySql from '../components/CopySql'
@@ -44,6 +44,7 @@ export default function ChatDetail() {
   const {
     currentUser, getUser, messagesWith, sendMessage, receiveMessage, avatarColor, logout, profile,
     inbox, mergeInbox, openPeer, readReceiptOf, isBlocked, setBlockedFor, syncTick, drafts, setDraft,
+    displayNameOf,
   } = useStore()
   const meName = profile?.nickname || currentUser?.nickname
   const text = drafts?.[peerId] || ''
@@ -91,7 +92,7 @@ export default function ChatDetail() {
   )
   const peerReadTs = cloudReady ? readReceiptOf(peerId) : 0
   const msgById = new Map(messages.map((m) => [String(m.id), m]))
-  const peerDisplayName = peer?.nickname || '用户'
+  const peerDisplayName = displayNameOf(peerId) || peer?.nickname || '用户'
   const nameOfSender = (fromId) => (fromId === currentUser?.id ? meName : peerDisplayName)
   const resolveQuote = (replyToId) => {
     if (!replyToId) return null
@@ -494,7 +495,21 @@ export default function ChatDetail() {
     >
       <AuthBar email={currentUser.email} onSignOut={onSignOut} />
       <NavBar
-        title={peerTyping ? <span data-testid="typing-indicator">正在输入…</span> : peer.nickname}
+        title={
+          peerTyping ? (
+            <span data-testid="typing-indicator">正在输入…</span>
+          ) : (
+            <Link
+              to={`/friend/${peerId}`}
+              data-testid="chat-peer-title"
+              aria-label={`查看${peerDisplayName}的资料`}
+              className="inline-flex max-w-full items-center justify-center gap-1.5 align-middle"
+            >
+              <Avatar name={peerDisplayName} color={avatarColor(peerId)} size={22} src={peer?.avatarUrl || ''} />
+              <span className="truncate">{peerDisplayName}</span>
+            </Link>
+          )
+        }
         left={<Back onClick={handleBack} />}
         right={
           <div className="relative flex items-center gap-1">
@@ -589,7 +604,7 @@ export default function ChatDetail() {
                 onClick={() => jumpToResult(m)}
               >
                 <span className="block text-[11px] text-eink-faint">
-                  {formatChatTime(m.time)} · {m.fromId === currentUser.id ? '我' : peer.nickname}
+                  {formatChatTime(m.time)} · {m.fromId === currentUser.id ? '我' : peerDisplayName}
                 </span>
                 <span className="mt-0.5 block truncate text-[13px] text-eink-ink">{m.text}</span>
               </button>
@@ -676,7 +691,19 @@ export default function ChatDetail() {
                       setActiveMsgId(activeMsgId === msg.id ? null : msg.id)
                     }}
                   >
-                    <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />
+                    {mine ? (
+                      <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />
+                    ) : (
+                      <Link
+                        to={`/friend/${user.id}`}
+                        data-testid="chat-peer-avatar"
+                        aria-label={`查看${peerDisplayName}的资料`}
+                        className="shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />
+                      </Link>
+                    )}
                     <div className={`flex max-w-[78%] flex-col ${mine ? 'items-end' : 'items-start'}`}>
                       <Bubble mine={mine}>
                         {msg.replyToId ? <QuoteStrip mine={mine} quote={resolveQuote(msg.replyToId)} /> : null}

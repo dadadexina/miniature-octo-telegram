@@ -16,6 +16,7 @@ vi.mock('../store', () => ({
     getUser: () => null,
     upsertUsers: vi.fn(),
     syncTick: 0,
+    displayNameOf: () => '',
   }),
 }))
 

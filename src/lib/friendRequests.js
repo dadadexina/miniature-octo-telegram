@@ -1,5 +1,5 @@
 import { upsertFriend } from './friends'
-import { isPermissionError } from './profiles'
+import { isMissingColumn, isPermissionError } from './profiles'
 import { supabase } from './supabase'
 
 export function mapRequest(row) {
@@ -9,6 +9,7 @@ export function mapRequest(row) {
     fromId: row.from_id || '',
     toId: row.to_id || '',
     status: row.status || 'pending',
+    source: row.source || '',
     createdAt: row.created_at ? new Date(row.created_at).getTime() : 0,
   }
 }
@@ -41,14 +42,22 @@ export async function fetchPendingReverse(meId, targetId) {
   }
 }
 
-export async function sendFriendRequest(meId, targetId) {
+export async function sendFriendRequest(meId, targetId, source = 'id') {
   if (!meId || !targetId || meId === targetId) return { ok: false, error: '无法添加' }
   try {
-    const { data, error } = await supabase
+    let result = await supabase
       .from('friend_requests')
-      .insert({ from_id: meId, to_id: targetId, status: 'pending' })
+      .insert({ from_id: meId, to_id: targetId, status: 'pending', source })
       .select('*')
       .single()
+    if (result.error && isMissingColumn(result.error, 'source')) {
+      result = await supabase
+        .from('friend_requests')
+        .insert({ from_id: meId, to_id: targetId, status: 'pending' })
+        .select('*')
+        .single()
+    }
+    const { data, error } = result
     if (error) {
       if (isDuplicatePending(error)) {
         const reverse = await fetchPendingReverse(meId, targetId)
@@ -98,8 +107,8 @@ async function updateStatus(requestId, status) {
 export async function acceptFriendRequest(request) {
   const result = await updateStatus(request.id, 'accepted')
   if (!result.ok) return result
-  await upsertFriend(request.toId, request.fromId)
-  await upsertFriend(request.fromId, request.toId)
+  await upsertFriend(request.toId, request.fromId, { source: request.source })
+  await upsertFriend(request.fromId, request.toId, { source: request.source })
   return result
 }
 

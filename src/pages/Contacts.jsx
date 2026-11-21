@@ -11,7 +11,7 @@ export default function Contacts() {
   const {
     currentUser, avatarColor, profile, friendsOf, isFriend, addFriendFromProfile, removeFriend,
     searchUser, suggestedUsers, requests, respondToRequest, cancelRequest, requestFriendFromProfile, refreshFriends,
-    upsertUsers, getUser, refreshFriendRequests, syncTick,
+    upsertUsers, getUser, refreshFriendRequests, syncTick, displayNameOf,
   } = useStore()
   const [keyword, setKeyword] = useState('')
   const [queried, setQueried] = useState('')
@@ -84,18 +84,18 @@ export default function Contacts() {
     setResults(mergeSearchResults(cloud, local))
   }
 
-  const onAdd = async (user) => {
+  const onAdd = async (user, source = 'id') => {
     // 云端用户的 uuid 一律走「请求 → 对方同意」,避免单方面直接建立好友关系
     if (isUuid(user.id)) {
       if (!isCloud) {
         showToast('请登录后再添加好友')
         return
       }
-      const result = await requestFriendFromProfile(user)
+      const result = await requestFriendFromProfile(user, source)
       showToast(result.ok ? '好友请求已发送，等待对方同意' : result.error || '发送失败')
       return
     }
-    const added = addFriendFromProfile(user)
+    const added = addFriendFromProfile(user, source)
     if (!added.ok) {
       showToast(added.error || '添加失败')
       return
@@ -206,7 +206,9 @@ export default function Contacts() {
                         type="button"
                         data-testid="search-result-add"
                         className="rounded-none bg-eink-ink px-3 py-1.5 text-[13px] text-eink-paper active:bg-eink-pressed"
-                        onClick={() => onAdd(user)}
+                        onClick={() =>
+                          onAdd(user, user.matchedBy === 'email' ? 'email' : user.matchedBy === 'phone' ? 'phone' : 'id')
+                        }
                       >
                         添加
                       </button>
@@ -297,7 +299,7 @@ export default function Contacts() {
                 <button
                   type="button"
                   className="rounded-none bg-eink-ink px-3 py-1.5 text-[13px] text-eink-paper active:bg-eink-pressed"
-                  onClick={() => onAdd({ id: user.id, nickname: user.nickname, username: user.publicId })}
+                  onClick={() => onAdd({ id: user.id, nickname: user.nickname, username: user.publicId }, 'recommend')}
                 >
                   添加
                 </button>
@@ -329,9 +331,9 @@ export default function Contacts() {
               editing ? (
                 <div key={friend.id} data-testid="contact-edit-row" className="border-t border-eink-divider">
                   <div className="flex items-center gap-3 px-4 py-3">
-                    <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={40} src={friend.avatarUrl || ''} />
+                    <Avatar name={displayNameOf(friend.id) || friend.nickname} color={avatarColor(friend.id)} size={40} src={friend.avatarUrl || ''} />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[16px]">{friend.nickname}</div>
+                      <div className="truncate text-[16px]">{displayNameOf(friend.id) || friend.nickname}</div>
                       <div className="truncate text-[12px] text-eink-sub">
                         ID: {friend.publicId || friend.username || ''}
                       </div>
@@ -374,11 +376,12 @@ export default function Contacts() {
                   key={friend.id}
                   to={`/friend/${friend.id}`}
                   data-testid="friend-entry"
+                  aria-label={`查看${displayNameOf(friend.id) || friend.nickname}的资料`}
                   className="flex items-center gap-3 border-t border-eink-divider px-4 py-3 active:bg-[#E7E5DD]"
                 >
-                  <Avatar name={friend.nickname} color={avatarColor(friend.id)} size={40} src={friend.avatarUrl || ''} />
+                  <Avatar name={displayNameOf(friend.id) || friend.nickname} color={avatarColor(friend.id)} size={40} src={friend.avatarUrl || ''} />
                   <div className="min-w-0">
-                    <div className="truncate text-[16px]">{friend.nickname}</div>
+                    <div className="truncate text-[16px]">{displayNameOf(friend.id) || friend.nickname}</div>
                     <div className="truncate text-[12px] text-eink-sub">ID: {friend.publicId || friend.username || ''}</div>
                   </div>
                 </Link>
