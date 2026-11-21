@@ -187,15 +187,6 @@ returns boolean language sql stable security definer set search_path = public as
   )
 $fn$;
 
-create or replace function public.search_profile(q text)
-returns table (id uuid, username text, nickname text, avatar_url text)
-language sql stable security definer set search_path = public as $fn$
-  select p.id, p.username, p.nickname, p.avatar_url
-  from public.profiles p
-  where p.username = q and p.id <> auth.uid()
-  limit 5
-$fn$;
-
 -- ============ client_errors 防刷（BEFORE 触发器超限静默丢弃） ============
 
 create or replace function public.client_errors_throttle()
@@ -226,7 +217,6 @@ grant select, insert, update, delete on table public.messages to authenticated;
 grant select, insert, delete on table public.moments to authenticated;
 grant select, insert, delete on table public.moment_likes to authenticated;
 grant select, insert, delete on table public.moment_comments to authenticated;
-grant execute on function public.search_profile(text) to authenticated;
 
 -- ============ 清理遗留宽策略（历史手工创建，存在越权读取风险） ============
 
