@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import MomentCover from '../components/MomentCover'
@@ -7,12 +7,7 @@ import NavBar from '../components/NavBar'
 import { fetchProfilesByIds } from '../lib/profiles'
 import { isUuid } from '../lib/messages'
 import {
-  addMomentComment,
-  deleteMomentComment,
-  fetchMomentInteractions,
   fetchMoments,
-  likeMoment,
-  unlikeMoment,
 } from '../lib/moments'
 import { useStore } from '../store'
 import usePullToRefresh from '../lib/usePullToRefresh'
@@ -44,27 +39,6 @@ function CloudFriendMoments() {
   const [denied, setDenied] = useState(false)
   const [expanded, setExpanded] = useState({})
   const [commentText, setCommentText] = useState({})
-  const hydratedRef = useRef(new Set())
-
-  const hydrateUsers = useCallback(
-    async (ids) => {
-      const missing = [...new Set((ids || []).filter((id) => id && !hydratedRef.current.has(id) && !getUser(id)))]
-      if (!missing.length) return
-      missing.forEach((id) => hydratedRef.current.add(id))
-      const res = await fetchProfilesByIds(missing)
-      if (res.ok && res.profiles?.length) {
-        upsertUsers(
-          res.profiles.map((p) => ({
-            id: p.id,
-            nickname: p.nickname,
-            publicId: p.username,
-            avatarUrl: p.avatarUrl || '',
-          }))
-        )
-      }
-    },
-    [getUser, upsertUsers]
-  )
 
   const load = useCallback(
     async ({ append = false, before = null } = {}) => {
@@ -83,15 +57,7 @@ function CloudFriendMoments() {
       )
       setHasMore(res.hasMore)
       if (res.oldest) setOldestAt(res.oldest)
-      const ids = res.moments.map((m) => m.id)
-      if (ids.length) {
-        const inter = await fetchMomentInteractions(ids)
-        if (inter.ok) {
-          setLikes((prev) => (append ? [...prev, ...inter.likes] : inter.likes))
-          setComments((prev) => (append ? [...prev, ...inter.comments] : inter.comments))
-        }
-        await hydrateUsers(inter.ok ? inter.comments.map((c) => c.userId).concat(inter.likes.map((l) => l.userId)) : [])
-      } else if (!append) {
+      if (!res.moments.length && !append) {
         setLikes([])
         setComments([])
       }
@@ -99,7 +65,7 @@ function CloudFriendMoments() {
       setLoading(false)
       setError('')
     },
-    [userId, hydrateUsers]
+    [userId]
   )
 
   const { scrollRef, pull, refreshing, threshold, handlers } = usePullToRefresh({ onRefresh: load })
@@ -129,45 +95,34 @@ function CloudFriendMoments() {
     return getUser(id)?.nickname || '用户'
   }
 
-  const toggleLike = async (moment) => {
+  const toggleLike = (moment) => {
     const liked = likes.some((l) => l.momentId === moment.id && l.userId === meId)
-    if (liked) {
-      setLikes((prev) => prev.filter((l) => !(l.momentId === moment.id && l.userId === meId)))
-      const res = await unlikeMoment(moment.id, meId)
-      if (!res.ok) {
-        setError(res.error || '操作失败')
-        await load()
-      }
-      return
-    }
-    setLikes((prev) => [...prev, { momentId: moment.id, userId: meId }])
-    const res = await likeMoment(moment.id, meId)
-    if (!res.ok) {
-      setError(res.error || '操作失败')
-      await load()
-    }
+    setLikes((prev) =>
+      liked
+        ? prev.filter((l) => !(l.momentId === moment.id && l.userId === meId))
+        : [...prev, { momentId: moment.id, userId: meId }]
+    )
   }
 
-  const submitComment = async (momentId, e) => {
+  const submitComment = (momentId, e) => {
     e.preventDefault()
     const content = (commentText[momentId] || '').trim()
     if (!content) return
-    const res = await addMomentComment({ momentId, userId: meId, content })
-    if (!res.ok) {
-      setError(res.error || '评论失败')
-      return
-    }
-    setComments((prev) => [...prev, res.comment])
+    setComments((prev) => [
+      ...prev,
+      {
+        id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        momentId,
+        userId: meId,
+        content,
+        createdAt: Date.now(),
+      },
+    ])
     setCommentText((prev) => ({ ...prev, [momentId]: '' }))
   }
 
-  const removeComment = async (comment) => {
+  const removeComment = (comment) => {
     setComments((prev) => prev.filter((c) => c.id !== comment.id))
-    const res = await deleteMomentComment(comment.id)
-    if (!res.ok) {
-      setError(res.error || '删除失败')
-      await load()
-    }
   }
 
   return (
@@ -186,6 +141,7 @@ function CloudFriendMoments() {
         <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
         <MomentCover
           userId={userId}
+          coverUserId={meId}
           name={friendName}
           avatarSrc={friend?.avatarUrl || ''}
           avatarColor={avatarColor(userId)}
@@ -328,7 +284,7 @@ function CloudFriendMoments() {
 function LocalFriendMoments() {
   const { userId } = useParams()
   const navigate = useNavigate()
-  const { getUser, avatarColor, momentsFeed } = useStore()
+  const { getUser, avatarColor, momentsFeed, currentUser } = useStore()
   const friend = getUser(userId)
   const friendName = friend?.nickname || '好友'
   const items = momentsFeed().filter((m) => m.userId === userId)
@@ -356,6 +312,7 @@ function LocalFriendMoments() {
         <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
         <MomentCover
           userId={userId}
+          coverUserId={currentUser?.id || userId}
           name={friendName}
           avatarSrc={friend?.avatarUrl || ''}
           avatarColor={avatarColor(userId)}

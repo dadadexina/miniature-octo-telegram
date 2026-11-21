@@ -5,16 +5,11 @@ import { CommentIcon, ThumbIcon } from '../components/MomentIcons'
 import { isUuid } from '../lib/messages'
 import { downscaleMomentImage } from '../lib/momentImage'
 import {
-  addMomentComment,
   createMoment,
   deleteMoment,
-  deleteMomentComment,
-  fetchMomentInteractions,
   fetchMoments,
-  likeMoment,
   momentStoragePath,
   removeMomentImage,
-  unlikeMoment,
   uploadMomentImage,
 } from '../lib/moments'
 import { fetchProfilesByIds } from '../lib/profiles'
@@ -56,7 +51,6 @@ function CloudDiscover() {
         ...new Set(
           (moments || [])
             .map((m) => m.authorId)
-            .concat((comments || []).map((c) => c.userId))
             .filter((id) => id && !hydratedRef.current.has(id) && !getUser(id))
         ),
       ]
@@ -74,7 +68,7 @@ function CloudDiscover() {
         )
       }
     },
-    [getUser, upsertUsers, comments]
+    [getUser, upsertUsers]
   )
 
   const load = useCallback(
@@ -87,19 +81,12 @@ function CloudDiscover() {
         setError(res.error || '读取动态失败')
         return
       }
-      let nextIds = res.moments.map((m) => m.id)
       setFeed((prev) =>
         append ? [...prev, ...res.moments.filter((m) => !prev.some((x) => x.id === m.id))] : res.moments
       )
       setHasMore(res.hasMore)
       if (res.oldest) setOldestAt(res.oldest)
-      if (nextIds.length) {
-        const inter = await fetchMomentInteractions(nextIds)
-        if (inter.ok) {
-          setLikes((prev) => (append ? [...prev, ...inter.likes] : inter.likes))
-          setComments((prev) => (append ? [...prev, ...inter.comments] : inter.comments))
-        }
-      } else if (!append) {
+      if (!res.moments.length && !append) {
         setLikes([])
         setComments([])
       }
@@ -163,45 +150,34 @@ function CloudDiscover() {
     requestAnimationFrame(() => listRef.current?.scrollTo({ top: 0, behavior: 'smooth' }))
   }
 
-  const toggleLike = async (moment) => {
+  const toggleLike = (moment) => {
     const liked = likes.some((l) => l.momentId === moment.id && l.userId === meId)
-    if (liked) {
-      setLikes((prev) => prev.filter((l) => !(l.momentId === moment.id && l.userId === meId)))
-      const res = await unlikeMoment(moment.id, meId)
-      if (!res.ok) {
-        setError(res.error || '操作失败')
-        await load()
-      }
-      return
-    }
-    setLikes((prev) => [...prev, { momentId: moment.id, userId: meId }])
-    const res = await likeMoment(moment.id, meId)
-    if (!res.ok) {
-      setError(res.error || '操作失败')
-      await load()
-    }
+    setLikes((prev) =>
+      liked
+        ? prev.filter((l) => !(l.momentId === moment.id && l.userId === meId))
+        : [...prev, { momentId: moment.id, userId: meId }]
+    )
   }
 
-  const submitComment = async (momentId, e) => {
+  const submitComment = (momentId, e) => {
     e.preventDefault()
     const content = (commentText[momentId] || '').trim()
     if (!content) return
-    const res = await addMomentComment({ momentId, userId: meId, content })
-    if (!res.ok) {
-      setError(res.error || '评论失败')
-      return
-    }
-    setComments((prev) => [...prev, res.comment])
+    setComments((prev) => [
+      ...prev,
+      {
+        id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        momentId,
+        userId: meId,
+        content,
+        createdAt: Date.now(),
+      },
+    ])
     setCommentText((prev) => ({ ...prev, [momentId]: '' }))
   }
 
-  const removeComment = async (comment) => {
+  const removeComment = (comment) => {
     setComments((prev) => prev.filter((c) => c.id !== comment.id))
-    const res = await deleteMomentComment(comment.id)
-    if (!res.ok) {
-      setError(res.error || '删除失败')
-      await load()
-    }
   }
 
   const removeMoment = async (moment) => {

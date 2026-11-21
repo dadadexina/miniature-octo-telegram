@@ -3,8 +3,18 @@ import { Link } from 'react-router-dom'
 import Avatar from './Avatar'
 import { loadMomentCover, saveMomentCover } from '../lib/momentCover'
 
-export default function MomentCover({ userId, name, avatarSrc, avatarColor, profileHref = '/me', editable = true, raised = false }) {
-  const [cover, setCover] = useState(() => loadMomentCover(userId))
+export default function MomentCover({
+  userId,
+  coverUserId,
+  name,
+  avatarSrc,
+  avatarColor,
+  profileHref = '/me',
+  editable = true,
+  raised = false,
+}) {
+  const coverKey = coverUserId || userId
+  const [cover, setCover] = useState(() => loadMomentCover(coverKey))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const fileRef = useRef(null)
@@ -14,11 +24,11 @@ export default function MomentCover({ userId, name, avatarSrc, avatarColor, prof
 
   useEffect(() => {
     const onCoverUpdated = (event) => {
-      if (event?.detail?.userId === userId) setCover(loadMomentCover(userId))
+      if (event?.detail?.userId === coverKey) setCover(loadMomentCover(coverKey))
     }
     globalThis.addEventListener?.('moment-cover-updated', onCoverUpdated)
     return () => globalThis.removeEventListener?.('moment-cover-updated', onCoverUpdated)
-  }, [userId])
+  }, [coverKey])
 
   const flashError = (text) => {
     setError(text)
@@ -31,7 +41,7 @@ export default function MomentCover({ userId, name, avatarSrc, avatarColor, prof
     if (e.target) e.target.value = ''
     if (!file) return
     setBusy(true)
-    const res = await saveMomentCover(userId, file)
+    const res = await saveMomentCover(coverKey, file)
     setBusy(false)
     if (!res.ok) {
       flashError(res.error || '更换背景失败')

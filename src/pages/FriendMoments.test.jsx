@@ -4,12 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FriendMoments from './FriendMoments'
 import {
-  addMomentComment,
-  deleteMomentComment,
-  fetchMomentInteractions,
   fetchMoments,
-  likeMoment,
-  unlikeMoment,
 } from '../lib/moments'
 import { fetchProfilesByIds } from '../lib/profiles'
 
@@ -44,11 +39,6 @@ vi.mock('../lib/profiles', () => ({
 
 vi.mock('../lib/moments', () => ({
   fetchMoments: vi.fn(),
-  fetchMomentInteractions: vi.fn(),
-  addMomentComment: vi.fn(),
-  deleteMomentComment: vi.fn(),
-  likeMoment: vi.fn(),
-  unlikeMoment: vi.fn(),
 }))
 
 vi.mock('../components/Avatar', () => ({
@@ -60,14 +50,8 @@ beforeEach(() => {
   storeHolder.users = { [FRIEND]: { id: FRIEND, nickname: '李四', publicId: 'lisi', avatarUrl: '' } }
   storeHolder.momentsFeed = () => []
   fetchMoments.mockReset()
-  fetchMomentInteractions.mockReset()
-  addMomentComment.mockReset()
-  deleteMomentComment.mockReset()
-  likeMoment.mockReset()
-  unlikeMoment.mockReset()
   fetchProfilesByIds.mockReset()
   fetchProfilesByIds.mockResolvedValue({ ok: true, profiles: [] })
-  fetchMomentInteractions.mockResolvedValue({ ok: true, likes: [], comments: [] })
 })
 
 afterEach(cleanup)
@@ -116,22 +100,20 @@ describe('FriendMoments 好友朋友圈流', () => {
     expect(screen.queryByTestId('friend-moments-error')).toBeNull()
   })
 
-  it('点赞乐观更新并调用 likeMoment', async () => {
+  it('点赞为纯前端状态切换', async () => {
     fetchMoments.mockResolvedValue({ ok: true, moments: [momentRow('m1', 'hi')], hasMore: false, oldest: null })
-    likeMoment.mockResolvedValue({ ok: true })
     setup()
     const btn = await screen.findByTestId('fm-like-btn')
     fireEvent.click(btn)
-    await waitFor(() => expect(likeMoment).toHaveBeenCalledWith('m1', ME))
+    expect(screen.getByText('取消赞 1')).toBeTruthy()
     expect(screen.getByText('赞：我')).toBeTruthy()
+    fireEvent.click(btn)
+    expect(screen.getByText('赞')).toBeTruthy()
+    expect(screen.queryByText('赞：我')).toBeNull()
   })
 
-  it('评论提交后渲染并清空输入', async () => {
+  it('评论提交后本地渲染并清空输入', async () => {
     fetchMoments.mockResolvedValue({ ok: true, moments: [momentRow('m1', 'hi')], hasMore: false, oldest: null })
-    addMomentComment.mockResolvedValue({
-      ok: true,
-      comment: { id: 'c1', momentId: 'm1', userId: ME, content: '写得好', createdAt: Date.now() },
-    })
     setup()
     await screen.findByTestId('friend-moment-item')
     fireEvent.click(screen.getByTestId('fm-comment-btn'))
@@ -140,7 +122,7 @@ describe('FriendMoments 好友朋友圈流', () => {
     fireEvent.submit(input.closest('form'))
     await waitFor(() => expect(screen.getByTestId('fm-comment')).toBeTruthy())
     expect(screen.getByText('写得好')).toBeTruthy()
-    expect(addMomentComment).toHaveBeenCalledWith({ momentId: 'm1', userId: ME, content: '写得好' })
+    expect(input.value).toBe('')
   })
 
   it('hasMore 时展示加载更多并 append 分页', async () => {
