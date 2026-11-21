@@ -53,12 +53,34 @@ export default function CallOverlay({
 
   useEffect(() => {
     const el = audioRef.current
-    if (!el || !remoteStream) return
+    if (!el || !remoteStream) return undefined
     el.srcObject = remoteStream
     el.muted = false
     el.volume = 1
+
+    let armed = false
+    function removeGestureRetry() {
+      armed = false
+      document.removeEventListener('pointerdown', retryPlay)
+      document.removeEventListener('touchstart', retryPlay)
+      document.removeEventListener('click', retryPlay)
+    }
+    function retryPlay() {
+      removeGestureRetry()
+      const attempt = el.play()
+      if (attempt && typeof attempt.catch === 'function') attempt.catch(() => {})
+    }
+    function armGestureRetry() {
+      if (armed) return
+      armed = true
+      document.addEventListener('pointerdown', retryPlay, { passive: true })
+      document.addEventListener('touchstart', retryPlay, { passive: true })
+      document.addEventListener('click', retryPlay, { passive: true })
+    }
+
     const played = el.play()
-    if (played && typeof played.catch === 'function') played.catch(() => {})
+    if (played && typeof played.catch === 'function') played.catch(armGestureRetry)
+    return removeGestureRetry
   }, [remoteStream])
 
   useEffect(() => {
@@ -82,7 +104,7 @@ export default function CallOverlay({
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-eink-ink/95 text-eink-paper">
-      <audio ref={audioRef} data-testid="remote-audio" autoPlay playsInline className="hidden" />
+      <audio ref={audioRef} data-testid="remote-audio" autoPlay playsInline className="sr-only" />
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8">
         <div className="ring-1 ring-eink-paper/40">
           <Avatar name={peer?.nickname || '用户'} color={color || '#4A4A4A'} size={88} src={peer?.avatarUrl || ''} />

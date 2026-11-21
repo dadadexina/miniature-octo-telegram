@@ -93,6 +93,27 @@ describe('CallOverlay', () => {
     expect(audio.getAttribute('playsinline')).not.toBeNull()
   })
 
+  it('自动播放被拦截时在用户手势后重试播放远端音频', async () => {
+    const originalPlay = Object.getOwnPropertyDescriptor(globalThis.HTMLMediaElement.prototype, 'play')
+    const play = vi.fn().mockRejectedValueOnce(new Error('NotAllowedError')).mockResolvedValue(undefined)
+    Object.defineProperty(globalThis.HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: play,
+    })
+    const track = { kind: 'audio', enabled: true, stop: () => {} }
+    const stream = { getTracks: () => [track], getAudioTracks: () => [track] }
+    try {
+      render(<CallOverlay state="connected" remoteStream={stream} peer={{ nickname: '小明' }} onHangup={() => {}} />)
+      await waitFor(() => expect(play).toHaveBeenCalledTimes(1))
+      fireEvent.click(document.body)
+      await waitFor(() => expect(play).toHaveBeenCalledTimes(2))
+      expect(play.mock.results[1].value).toBeInstanceOf(Promise)
+    } finally {
+      if (originalPlay) Object.defineProperty(globalThis.HTMLMediaElement.prototype, 'play', originalPlay)
+      else delete globalThis.HTMLMediaElement.prototype.play
+    }
+  })
+
   describe('免提切换', () => {
     beforeEach(() => {
       vi.restoreAllMocks()
