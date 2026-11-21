@@ -12,6 +12,14 @@ export default function MomentCover({ userId, name, avatarSrc, avatarColor, prof
 
   useEffect(() => () => clearTimeout(errorTimer.current), [])
 
+  useEffect(() => {
+    const onCoverUpdated = (event) => {
+      if (event?.detail?.userId === userId) setCover(loadMomentCover(userId))
+    }
+    globalThis.addEventListener?.('moment-cover-updated', onCoverUpdated)
+    return () => globalThis.removeEventListener?.('moment-cover-updated', onCoverUpdated)
+  }, [userId])
+
   const flashError = (text) => {
     setError(text)
     clearTimeout(errorTimer.current)

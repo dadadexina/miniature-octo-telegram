@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import Settings from './Settings'
+
+vi.mock('../store', () => ({
+  useStore: () => ({ currentUser: { id: 'u1', nickname: '我' } }),
+}))
 
 afterEach(cleanup)
 
@@ -23,6 +27,8 @@ describe('Settings 设置页', () => {
     expect(screen.getByText('深色模式、字体大小调整')).toBeTruthy()
     expect(screen.getByText('账号安全')).toBeTruthy()
     expect(screen.getByText('修改密码、注销账号')).toBeTruthy()
+    expect(screen.getByText('更换朋友圈背景')).toBeTruthy()
+    expect(screen.getByText('自定义发现页顶部背景图')).toBeTruthy()
   })
 
   it('点击选项弹出开发中提示，确认后留在设置页', () => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Avatar from '../components/Avatar'
 import MomentCover from '../components/MomentCover'
+import { CommentIcon, ThumbIcon } from '../components/MomentIcons'
 import { isUuid } from '../lib/messages'
 import { downscaleMomentImage } from '../lib/momentImage'
 import {
@@ -297,19 +298,23 @@ function CloudDiscover() {
                     <button
                       type="button"
                       data-testid="like-btn"
-                      className={`font-medium ${liked ? 'text-eink-ink underline underline-offset-2' : 'text-eink-sub'}`}
+                      className={`flex items-center gap-1 font-medium ${liked ? 'text-eink-ink' : 'text-eink-sub'}`}
                       onClick={() => toggleLike(moment)}
                     >
-                      {liked ? '取消赞' : '赞'}
-                      {momentLikes.length ? ` ${momentLikes.length}` : ''}
+                      <ThumbIcon filled={liked} />
+                      <span>
+                        {liked ? '取消赞' : '赞'}
+                        {momentLikes.length ? ` ${momentLikes.length}` : ''}
+                      </span>
                     </button>
                     <button
                       type="button"
                       data-testid="comment-btn"
-                      className="font-medium text-eink-sub"
+                      className="flex items-center gap-1 font-medium text-eink-sub"
                       onClick={() => setExpanded((prev) => ({ ...prev, [moment.id]: !prev[moment.id] }))}
                     >
-                      评论{momentComments.length ? ` ${momentComments.length}` : ''}
+                      <CommentIcon />
+                      <span>评论{momentComments.length ? ` ${momentComments.length}` : ''}</span>
                     </button>
                     {moment.authorId === meId ? (
                       <button

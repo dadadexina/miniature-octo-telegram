@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
+import { saveMomentCover } from '../lib/momentCover'
+import { useStore } from '../store'
 
 const ITEMS = [
   { title: '通知', desc: '新消息提醒、声音与震动设置' },
@@ -8,9 +10,29 @@ const ITEMS = [
   { title: '账号安全', desc: '修改密码、注销账号' },
 ]
 
+const DEV_NOTICE = '该功能正在开发中，敬请期待'
+
 export default function Settings() {
   const navigate = useNavigate()
-  const [notice, setNotice] = useState(false)
+  const { currentUser } = useStore()
+  const [notice, setNotice] = useState('')
+  const [coverBusy, setCoverBusy] = useState(false)
+  const fileRef = useRef(null)
+
+  const onChangeCover = async (e) => {
+    const file = e.target.files?.[0]
+    if (e.target) e.target.value = ''
+    if (!file) return
+    const userId = currentUser?.id
+    if (!userId) {
+      setNotice('请先登录后再设置背景')
+      return
+    }
+    setCoverBusy(true)
+    const res = await saveMomentCover(userId, file)
+    setCoverBusy(false)
+    setNotice(res.ok ? '朋友圈背景已更新' : res.error || '更换背景失败')
+  }
 
   return (
     <div className="flex h-full flex-col bg-eink-paper">
@@ -37,7 +59,7 @@ export default function Settings() {
               <button
                 type="button"
                 className="flex w-full items-center justify-between px-4 py-3.5 text-left active:bg-[#E7E5DD]"
-                onClick={() => setNotice(true)}
+                onClick={() => setNotice(DEV_NOTICE)}
                 data-testid={`settings-item-${index}`}
               >
                 <span className="min-w-0">
@@ -48,7 +70,32 @@ export default function Settings() {
               </button>
             </li>
           ))}
+          <li className="border-t border-eink-divider">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between px-4 py-3.5 text-left active:bg-[#E7E5DD]"
+              onClick={() => fileRef.current?.click()}
+              disabled={coverBusy}
+              data-testid="settings-change-cover"
+            >
+              <span className="min-w-0">
+                <span className="block text-[16px] text-eink-text">更换朋友圈背景</span>
+                <span className="mt-0.5 block text-[12px] text-eink-sub">
+                  {coverBusy ? '正在保存...' : '自定义发现页顶部背景图'}
+                </span>
+              </span>
+              <span className="ml-3 shrink-0 text-[18px] text-eink-faint">›</span>
+            </button>
+          </li>
         </ul>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={onChangeCover}
+          data-testid="settings-cover-input"
+        />
       </div>
 
       {notice ? (
@@ -56,18 +103,18 @@ export default function Settings() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8"
           role="dialog"
           aria-modal="true"
-          onClick={() => setNotice(false)}
+          onClick={() => setNotice('')}
         >
           <div
             className="w-full max-w-[280px] border border-eink-divider bg-eink-paper px-5 pb-4 pt-5 text-center"
             data-testid="settings-notice"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-[14px] leading-6 text-eink-text">该功能正在开发中，敬请期待</p>
+            <p className="text-[14px] leading-6 text-eink-text">{notice}</p>
             <button
               type="button"
               className="mt-4 h-10 w-full bg-eink-ink text-[14px] text-eink-paper active:bg-eink-pressed"
-              onClick={() => setNotice(false)}
+              onClick={() => setNotice('')}
             >
               确认
             </button>

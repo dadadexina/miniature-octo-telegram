@@ -49,6 +49,13 @@ export async function saveMomentCover(userId, file) {
     const dataUrl = await toDataUrl(scaled.blob)
     if (!dataUrl) return { ok: false, error: '读取图片失败' }
     globalThis.localStorage?.setItem(coverStorageKey(userId), dataUrl)
+    try {
+      if (typeof CustomEvent === 'function') {
+        globalThis.dispatchEvent?.(new CustomEvent('moment-cover-updated', { detail: { userId } }))
+      }
+    } catch {
+      // 事件通知失败不影响已保存的背景
+    }
     return { ok: true, url: dataUrl }
   } catch (err) {
     const quota = err?.name === 'QuotaExceededError' || /quota/i.test(err?.message || '')
