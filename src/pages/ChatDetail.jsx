@@ -729,7 +729,7 @@ export default function ChatDetail() {
                             src={item.image}
                             alt=""
                             className="mb-1 max-w-full border border-eink-divider object-cover opacity-80"
-                            style={{ width: 160, filter: 'grayscale(1) contrast(1.05)' }}
+                            style={{ width: 160 }}
                           />
                         ) : null}
                         <LongTextBody text={item.text} />
@@ -780,7 +780,6 @@ export default function ChatDetail() {
                 src={attach.url}
                 alt="附件预览"
                 className="h-14 w-14 border border-eink-divider object-cover"
-                style={{ filter: 'grayscale(1) contrast(1.05)' }}
               />
             ) : null}
             <button
@@ -872,7 +871,6 @@ export default function ChatDetail() {
             src={viewerUrl}
             alt="图片大图"
             className="max-h-full max-w-full object-contain"
-            style={{ filter: 'grayscale(1) contrast(1.05)' }}
           />
         </div>
       ) : null}
@@ -921,8 +919,8 @@ function Bubble({ mine, children }) {
 function SearchIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-      <circle cx="8" cy="8" r="5.2" stroke="#191919" strokeWidth="1.6" />
-      <path d="m12.2 12.2 3.3 3.3" stroke="#191919" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="8" cy="8" r="5.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="m12.2 12.2 3.3 3.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   )
 }
@@ -940,9 +938,9 @@ function TimeDivider({ time }) {
 function MoreIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-      <circle cx="5.5" cy="12" r="1.6" fill="#191919" />
-      <circle cx="12" cy="12" r="1.6" fill="#191919" />
-      <circle cx="18.5" cy="12" r="1.6" fill="#191919" />
+      <circle cx="5.5" cy="12" r="1.6" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+      <circle cx="18.5" cy="12" r="1.6" fill="currentColor" />
     </svg>
   )
 }
@@ -950,7 +948,7 @@ function MoreIcon() {
 function PhoneIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-      <path d="M6.6 3.8c.4-.4 1-.5 1.5-.3l2.1.8c.5.2.8.7.8 1.2v2.2c0 .4-.2.8-.5 1L9.2 10c.8 1.7 2.1 3 3.8 3.8l1.3-1.3c.3-.3.7-.5 1.1-.5h2.2c.5 0 1 .3 1.2.8l.8 2.1c.2.5.1 1.1-.3 1.5l-1.3 1.3c-.4.4-1 .6-1.6.5C11.2 18.5 5.5 12.8 4.8 7.7c-.1-.6.1-1.2.5-1.6L6.6 3.8Z" stroke="#191919" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M6.6 3.8c.4-.4 1-.5 1.5-.3l2.1.8c.5.2.8.7.8 1.2v2.2c0 .4-.2.8-.5 1L9.2 10c.8 1.7 2.1 3 3.8 3.8l1.3-1.3c.3-.3.7-.5 1.1-.5h2.2c.5 0 1 .3 1.2.8l.8 2.1c.2.5.1 1.1-.3 1.5l-1.3 1.3c-.4.4-1 .6-1.6.5C11.2 18.5 5.5 12.8 4.8 7.7c-.1-.6.1-1.2.5-1.6L6.6 3.8Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -960,7 +958,7 @@ function Back({ onClick }) {
   return (
     <button type="button" onClick={onClick} className="-ml-1 flex h-9 w-9 items-center justify-start" aria-label="返回">
       <svg width="10" height="18" viewBox="0 0 10 18" fill="none">
-        <path d="M9 1 1 9l8 8" stroke="#191919" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M9 1 1 9l8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
   )

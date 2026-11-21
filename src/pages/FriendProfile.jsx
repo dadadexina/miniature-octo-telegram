@@ -105,7 +105,7 @@ function Back({ onClick }) {
   return (
     <button type="button" onClick={onClick} className="-ml-1 flex h-9 w-9 items-center justify-start" aria-label="返回">
       <svg width="10" height="18" viewBox="0 0 10 18" fill="none">
-        <path d="M9 1 1 9l8 8" stroke="#191919" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M9 1 1 9l8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
   )

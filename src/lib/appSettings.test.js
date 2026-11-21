@@ -10,6 +10,7 @@ import {
   saveSettings,
   vibrateNow,
 } from './appSettings'
+import { THEMES } from './themes'
 
 describe('appSettings', () => {
   beforeEach(() => {
@@ -33,6 +34,20 @@ describe('appSettings', () => {
     expect(JSON.parse(localStorage.getItem(SETTINGS_KEY))).toMatchObject({ theme: 'dark', fontScale: 'large' })
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(document.documentElement.dataset.fontScale).toBe('large')
+  })
+
+  it('accepts every built-in theme and updates the theme-color meta', () => {
+    const meta = document.createElement('meta')
+    meta.setAttribute('name', 'theme-color')
+    document.head.appendChild(meta)
+
+    THEMES.forEach((theme) => {
+      saveSettings({ theme: theme.id })
+      expect(document.documentElement.dataset.theme).toBe(theme.id)
+      expect(meta.getAttribute('content')).toBe(theme.themeColor)
+    })
+
+    meta.remove()
   })
 
   it('sanitizes invalid theme and font values', () => {

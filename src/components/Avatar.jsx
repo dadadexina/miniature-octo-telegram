@@ -16,7 +16,6 @@ export default function Avatar({ name = '', color = '#191919', size = 40, badge 
             src={src}
             alt={name || '头像'}
             className="h-full w-full object-cover"
-            style={{ filter: 'grayscale(1) contrast(1.05)' }}
             onError={() => setBrokenSrc(src)}
           />
         ) : (
@@ -26,7 +25,7 @@ export default function Avatar({ name = '', color = '#191919', size = 40, badge 
       {badge ? (
         <span
           data-testid="unread-badge"
-          className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#191919] px-1 text-[11px] leading-none text-white"
+          className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-eink-ink px-1 text-[11px] leading-none text-eink-paper"
         >
           {badge > 99 ? '99+' : badge}
         </span>

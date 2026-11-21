@@ -32,6 +32,7 @@ import {
   normalizeSignature,
   saveLocalSignature,
 } from '../lib/signature'
+import { THEMES } from '../lib/themes'
 import { useStore } from '../store'
 
 const MAIN_ITEMS = [
@@ -598,19 +599,43 @@ export default function Settings() {
 
         {view === 'display' ? (
           <div data-testid="settings-display">
-            <ul className="mt-3 border-y border-eink-divider bg-eink-bar">
-              <li className="flex items-center justify-between px-4 py-3.5">
-                <span className="min-w-0">
-                  <span className="block text-[16px] text-eink-text">深色模式</span>
-                  <span className="mt-0.5 block text-[12px] text-eink-sub">夜间使用更护眼</span>
-                </span>
-                <Switch
-                  checked={settings.theme === 'dark'}
-                  onChange={(value) => update({ theme: value ? 'dark' : 'light' })}
-                  label="深色模式"
-                />
-              </li>
-            </ul>
+            <div className="mt-6 px-4" data-testid="settings-theme-list">
+              <p className="text-[16px] text-eink-text">主题</p>
+              <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                从纸墨、羊皮纸、青苔、雾蓝、墨夜中选择，保存后立即应用。
+              </p>
+              <ul className="mt-3 border border-eink-divider bg-eink-bar">
+                {THEMES.map((theme, index) => {
+                  const active = settings.theme === theme.id
+                  return (
+                    <li key={theme.id} className={index ? 'border-t border-eink-divider' : ''}>
+                      <button
+                        type="button"
+                        data-testid={`settings-theme-${theme.id}`}
+                        aria-pressed={active}
+                        className="flex w-full items-center justify-between px-3 py-2.5 text-left active:bg-[#E7E5DD]"
+                        onClick={() => update({ theme: theme.id })}
+                      >
+                        <span className="flex min-w-0 items-center gap-3">
+                          <span className="flex shrink-0 border border-eink-divider" aria-hidden="true">
+                            {theme.swatches.map((color) => (
+                              <span key={color} className="h-6 w-4" style={{ backgroundColor: color }} />
+                            ))}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-[15px] text-eink-text">{theme.name}</span>
+                            <span className="mt-0.5 block text-[12px] text-eink-sub">{theme.desc}</span>
+                          </span>
+                        </span>
+                        <span className="ml-3 shrink-0 text-[12px] text-eink-sub">
+                          {active ? '使用中' : '选择'}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
 
             <div className="mt-6 px-4">
               <p className="text-[16px] text-eink-text">字体大小</p>

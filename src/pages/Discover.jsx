@@ -270,7 +270,6 @@ function CloudDiscover() {
                       alt="动态图片"
                       loading="lazy"
                       className="mt-2 max-h-[320px] w-auto max-w-[240px] border border-eink-divider object-cover"
-                      style={{ filter: 'grayscale(1) contrast(1.05)' }}
                     />
                   ) : null}
                   <div className="mt-2.5 flex items-center gap-3 text-[12px] text-eink-faint">
@@ -428,7 +427,6 @@ function CloudDiscover() {
                 src={imagePreview}
                 alt="待发布图片预览"
                 className="mt-2 max-h-[160px] w-auto max-w-[160px] border border-eink-divider object-cover"
-                style={{ filter: 'grayscale(1) contrast(1.05)' }}
               />
             ) : null}
             {error ? <p className="mt-2 text-[13px] font-medium text-eink-ink">{error}</p> : null}
@@ -625,8 +623,8 @@ function LocalDiscover() {
 function CameraIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <path d="M9 7.2 10.1 5.5h3.8L15 7.2h2.2A2.3 2.3 0 0 1 19.5 9.5v7.2A2.3 2.3 0 0 1 17.2 19H6.8A2.3 2.3 0 0 1 4.5 16.7V9.5A2.3 2.3 0 0 1 6.8 7.2H9Z" stroke="#191919" strokeWidth="1.6" />
-      <circle cx="12" cy="13" r="3.1" stroke="#191919" strokeWidth="1.6" />
+      <path d="M9 7.2 10.1 5.5h3.8L15 7.2h2.2A2.3 2.3 0 0 1 19.5 9.5v7.2A2.3 2.3 0 0 1 17.2 19H6.8A2.3 2.3 0 0 1 4.5 16.7V9.5A2.3 2.3 0 0 1 6.8 7.2H9Z" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="12" cy="13" r="3.1" stroke="currentColor" strokeWidth="1.6" />
     </svg>
   )
 }

@@ -1,5 +1,6 @@
 import { DEFAULT_SOUND_ID, NOTIFICATION_SOUNDS, playNotificationSound } from './notificationSounds'
 import { CUSTOM_RINGTONE_ID, DEFAULT_RINGTONE_ID, RINGTONES } from './ringtones'
+import { DEFAULT_THEME_ID, THEME_IDS, themeById } from './themes'
 
 const SETTINGS_KEY = 'eink:app-settings:v1'
 
@@ -10,7 +11,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   notifySoundId: DEFAULT_SOUND_ID,
   callRingtoneId: DEFAULT_RINGTONE_ID,
   customRingtoneName: '',
-  theme: 'light',
+  theme: DEFAULT_THEME_ID,
   fontScale: 'standard',
 })
 
@@ -34,7 +35,7 @@ function normalize(parsed) {
       : DEFAULT_SOUND_ID,
     callRingtoneId: validRingtoneId(parsed.callRingtoneId) ? parsed.callRingtoneId : DEFAULT_RINGTONE_ID,
     customRingtoneName: typeof parsed.customRingtoneName === 'string' ? parsed.customRingtoneName : '',
-    theme: parsed.theme === 'dark' ? 'dark' : 'light',
+    theme: THEME_IDS.includes(parsed.theme) ? parsed.theme : DEFAULT_THEME_ID,
     fontScale: FONT_SCALES.includes(parsed.fontScale) ? parsed.fontScale : 'standard',
   }
 }
@@ -62,8 +63,10 @@ export function saveSettings(patch, storage = globalThis.localStorage) {
 export function applySettings(settings) {
   const root = globalThis.document?.documentElement
   if (!root) return
-  root.dataset.theme = settings.theme === 'dark' ? 'dark' : 'light'
+  root.dataset.theme = THEME_IDS.includes(settings.theme) ? settings.theme : DEFAULT_THEME_ID
   root.dataset.fontScale = FONT_SCALES.includes(settings.fontScale) ? settings.fontScale : 'standard'
+  const meta = globalThis.document?.querySelector?.('meta[name="theme-color"]')
+  if (meta) meta.setAttribute('content', themeById(root.dataset.theme).themeColor)
 }
 
 export function initSettings() {

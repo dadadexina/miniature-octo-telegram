@@ -196,7 +196,6 @@ function CloudFriendMoments() {
                       alt="动态图片"
                       loading="lazy"
                       className="mt-2 max-h-[320px] w-auto max-w-[240px] border border-eink-divider object-cover"
-                      style={{ filter: 'grayscale(1) contrast(1.05)' }}
                     />
                   ) : null}
                   <div className="mt-2.5 flex items-center gap-3 text-[12px] text-eink-faint">

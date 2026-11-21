@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Settings from './Settings'
 import { SETTINGS_KEY } from '../lib/appSettings'
+import { THEMES } from '../lib/themes'
 
 const storeState = vi.hoisted(() => ({
   currentUser: { id: 'u1', nickname: '我' },
@@ -266,14 +267,27 @@ describe('Settings 设置页', () => {
     expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)).callRingtoneId).toBe('marimba-ringtone')
   })
 
-  it('界面显示面板可切换深色模式与字体大小并立即生效', () => {
+  it('界面显示面板可选择五种主题并立即生效', () => {
     setup()
     openView(1)
     expect(screen.getByTestId('settings-display')).toBeTruthy()
+    expect(screen.getByTestId('settings-theme-light').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('settings-theme-list').querySelectorAll('button')).toHaveLength(THEMES.length)
 
-    fireEvent.click(screen.getByRole('switch', { name: '深色模式' }))
-    expect(document.documentElement.dataset.theme).toBe('dark')
-    expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)).theme).toBe('dark')
+    fireEvent.click(screen.getByTestId('settings-theme-blue'))
+    expect(screen.getByTestId('settings-theme-blue').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('settings-theme-light').getAttribute('aria-pressed')).toBe('false')
+    expect(document.documentElement.dataset.theme).toBe('blue')
+    expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)).theme).toBe('blue')
+
+    fireEvent.click(screen.getByTestId('settings-theme-sepia'))
+    expect(document.documentElement.dataset.theme).toBe('sepia')
+    expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)).theme).toBe('sepia')
+  })
+
+  it('界面显示面板可切换字体大小并立即生效', () => {
+    setup()
+    openView(1)
 
     fireEvent.click(screen.getByTestId('settings-font-large'))
     expect(document.documentElement.dataset.fontScale).toBe('large')

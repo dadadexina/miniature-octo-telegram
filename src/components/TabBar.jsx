@@ -10,12 +10,12 @@ const tabs = [
 
 function ChatIcon({ active }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className={active ? 'text-eink-ink' : 'text-eink-faint'}>
       <path
         d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7A2.5 2.5 0 0 1 17.5 16H9l-4 3.2V6.5Z"
-        stroke={active ? '#191919' : '#8A8A85'}
+        stroke="currentColor"
         strokeWidth="1.7"
-        fill={active ? '#191919' : 'none'}
+        fill={active ? 'currentColor' : 'none'}
       />
     </svg>
   )
@@ -23,11 +23,11 @@ function ChatIcon({ active }) {
 
 function ContactIcon({ active }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="8" r="3.2" stroke={active ? '#191919' : '#8A8A85'} strokeWidth="1.7" fill={active ? '#191919' : 'none'} />
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className={active ? 'text-eink-ink' : 'text-eink-faint'}>
+      <circle cx="12" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.7" fill={active ? 'currentColor' : 'none'} />
       <path
         d="M5.5 18.5c.8-3 3.3-4.6 6.5-4.6s5.7 1.6 6.5 4.6"
-        stroke={active ? '#191919' : '#8A8A85'}
+        stroke="currentColor"
         strokeWidth="1.7"
         strokeLinecap="round"
       />
@@ -37,11 +37,11 @@ function ContactIcon({ active }) {
 
 function MeIcon({ active }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="8.2" r="3" stroke={active ? '#191919' : '#8A8A85'} strokeWidth="1.7" fill={active ? '#191919' : 'none'} />
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className={active ? 'text-eink-ink' : 'text-eink-faint'}>
+      <circle cx="12" cy="8.2" r="3" stroke="currentColor" strokeWidth="1.7" fill={active ? 'currentColor' : 'none'} />
       <path
         d="M6 18.2c.7-2.8 3-4.3 6-4.3s5.3 1.5 6 4.3"
-        stroke={active ? '#191919' : '#8A8A85'}
+        stroke="currentColor"
         strokeWidth="1.7"
         strokeLinecap="round"
       />
@@ -51,11 +51,11 @@ function MeIcon({ active }) {
 
 function DiscoverIcon({ active }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="8" stroke={active ? '#191919' : '#8A8A85'} strokeWidth="1.7" />
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className={active ? 'text-eink-ink' : 'text-eink-faint'}>
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.7" />
       <path
         d="M9.2 14.8 10.6 10.6 14.8 9.2 13.4 13.4 9.2 14.8Z"
-        fill={active ? '#191919' : '#8A8A85'}
+        fill="currentColor"
       />
     </svg>
   )

@@ -57,7 +57,7 @@ export default function SignedImage({ attachment, onView }) {
       loading="lazy"
       width={size.width}
       height={size.height}
-      style={{ width: size.width, height: size.height, filter: 'grayscale(1) contrast(1.05)' }}
+      style={{ width: size.width, height: size.height }}
       className="mt-1 cursor-zoom-in border border-eink-divider object-cover"
       onClick={() => onView?.(url)}
     />
