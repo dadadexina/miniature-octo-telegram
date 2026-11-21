@@ -6,10 +6,24 @@ import {
   notifyIncoming,
   requestNotificationPermission,
   saveSettings,
+  vibrateNow,
 } from '../lib/appSettings'
 import { isUuid } from '../lib/messages'
 import { saveMomentCover } from '../lib/momentCover'
 import { NOTIFICATION_SOUNDS, playNotificationSound } from '../lib/notificationSounds'
+import {
+  CUSTOM_RINGTONE_ID,
+  DEFAULT_RINGTONE_ID,
+  RINGTONES,
+  playRingtone,
+  stopRingtone,
+} from '../lib/ringtones'
+import {
+  formatRingtoneSize,
+  loadCustomRingtone,
+  removeCustomRingtone,
+  saveCustomRingtone,
+} from '../lib/ringtoneStore'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../store'
 
@@ -38,6 +52,19 @@ const FONT_OPTIONS = [
   { value: 'large', label: '大' },
 ]
 
+const PERMISSION_TEXT = {
+  granted: '已开启，可在系统通知栏收到新消息',
+  denied: '已被浏览器拒绝，请在站点设置中手动允许',
+  default: '尚未授权，开启后才能收到系统通知',
+  unsupported: '当前浏览器不支持系统通知',
+}
+
+function readNotificationPermission() {
+  const NotificationApi = globalThis.Notification
+  if (!NotificationApi) return 'unsupported'
+  return NotificationApi.permission || 'default'
+}
+
 export default function Settings() {
   const navigate = useNavigate()
   const { currentUser, authUser, purgeAccount, logout } = useStore()
@@ -45,16 +72,26 @@ export default function Settings() {
   const [settings, setSettings] = useState(() => loadSettings())
   const [notice, setNotice] = useState('')
   const [coverBusy, setCoverBusy] = useState(false)
+  const [oldPwd, setOldPwd] = useState('')
   const [pwd, setPwd] = useState('')
   const [pwd2, setPwd2] = useState('')
+  const [code, setCode] = useState('')
+  const [codeSent, setCodeSent] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
   const [pwdBusy, setPwdBusy] = useState(false)
+  const [customRingtone, setCustomRingtone] = useState(null)
+  const [ringtoneBusy, setRingtoneBusy] = useState(false)
+  const [notificationPermission, setNotificationPermission] = useState(readNotificationPermission)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const fileRef = useRef(null)
+  const ringtoneFileRef = useRef(null)
   const previewRef = useRef(null)
+  const ringtonePreviewRef = useRef(null)
 
   const cloudAccount = isUuid(currentUser?.id)
   const email = authUser?.email || currentUser?.email || ''
+  const phone = authUser?.phone || ''
 
   const update = (patch) => setSettings(saveSettings(patch))
 
@@ -65,8 +102,32 @@ export default function Settings() {
       } catch {
         // 页面卸载时停止试听
       }
+      stopRingtone(ringtonePreviewRef.current)
+      ringtonePreviewRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    let alive = true
+    loadCustomRingtone().then((record) => {
+      if (!alive) return
+      setCustomRingtone(record)
+      if (!record && settings.callRingtoneId === CUSTOM_RINGTONE_ID) {
+        setSettings(saveSettings({ callRingtoneId: DEFAULT_RINGTONE_ID, customRingtoneName: '' }))
+      }
+    })
+    return () => {
+      alive = false
+    }
+    // 仅在进入设置页时检查一次本地自定义铃声
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!cooldown) return undefined
+    const timer = setTimeout(() => setCooldown(cooldown - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [cooldown])
 
   const previewSound = (id) => {
     try {
@@ -77,6 +138,50 @@ export default function Settings() {
     previewRef.current = playNotificationSound(id)
   }
 
+  const stopRingtonePreview = () => {
+    stopRingtone(ringtonePreviewRef.current)
+    ringtonePreviewRef.current = null
+  }
+
+  const previewCallRingtone = async (id) => {
+    stopRingtonePreview()
+    ringtonePreviewRef.current = await playRingtone(id)
+    if (!ringtonePreviewRef.current) {
+      setNotice(id === CUSTOM_RINGTONE_ID ? '自定义铃声不可用，请重新上传' : '当前环境无法播放铃声')
+    }
+  }
+
+  const onSelectRingtone = (id) => {
+    update({ callRingtoneId: id })
+    previewCallRingtone(id)
+  }
+
+  const onUploadRingtone = async (e) => {
+    const file = e.target.files?.[0]
+    if (e.target) e.target.value = ''
+    if (!file) return
+    setRingtoneBusy(true)
+    try {
+      const saved = await saveCustomRingtone(file)
+      setCustomRingtone(saved)
+      update({ callRingtoneId: CUSTOM_RINGTONE_ID, customRingtoneName: saved.name })
+      setNotice('自定义来电铃声已保存')
+      previewCallRingtone(CUSTOM_RINGTONE_ID)
+    } catch (err) {
+      setNotice(err?.message || '上传铃声失败')
+    } finally {
+      setRingtoneBusy(false)
+    }
+  }
+
+  const onRemoveCustomRingtone = async () => {
+    stopRingtonePreview()
+    await removeCustomRingtone()
+    setCustomRingtone(null)
+    update({ callRingtoneId: DEFAULT_RINGTONE_ID, customRingtoneName: '' })
+    setNotice('已移除自定义铃声')
+  }
+
   const sendTestNotification = () => {
     if (!settings.notifyMessages) {
       setNotice('请先开启新消息提醒')
@@ -84,6 +189,28 @@ export default function Settings() {
     }
     notifyIncoming({ title: '新通知', body: '这是一条测试通知' })
     setNotice('测试通知已发送')
+  }
+
+  const testVibration = () => {
+    if (!vibrateNow()) {
+      setNotice('当前设备不支持震动，请使用手机浏览器并保持页面前台')
+      return
+    }
+    setNotice('已触发震动')
+  }
+
+  const enableNotifications = async () => {
+    const result = await requestNotificationPermission()
+    setNotificationPermission(result)
+    if (result === 'granted') {
+      setNotice('通知权限已开启')
+      return
+    }
+    if (result === 'denied') {
+      setNotice('通知权限被拒绝，请在浏览器站点设置中允许通知')
+      return
+    }
+    setNotice('当前浏览器不支持通知权限')
   }
 
   const goBack = () => {
@@ -109,29 +236,76 @@ export default function Settings() {
     setNotice(res.ok ? '朋友圈背景已更新' : res.error || '更换背景失败')
   }
 
-  const onChangePassword = async (e) => {
-    e.preventDefault()
+  const validateNewPassword = () => {
     if (!cloudAccount) {
       setNotice('演示账号不支持修改密码，请登录云端账号后使用')
-      return
+      return false
+    }
+    if (!oldPwd) {
+      setNotice('请输入当前密码')
+      return false
     }
     if (pwd.length < 6) {
       setNotice('新密码至少 6 位')
-      return
+      return false
     }
     if (pwd !== pwd2) {
       setNotice('两次输入的密码不一致')
+      return false
+    }
+    return true
+  }
+
+  const onRequestCode = async () => {
+    if (!validateNewPassword()) return
+    if (cooldown > 0) return
+    if (!email && !phone) {
+      setNotice('当前账号未绑定邮箱或手机号，无法发送验证码')
       return
     }
     setPwdBusy(true)
-    const { error } = await supabase.auth.updateUser({ password: pwd })
+    const credentials = email ? { email, password: oldPwd } : { phone, password: oldPwd }
+    const { error: verifyError } = await supabase.auth.signInWithPassword(credentials)
+    if (verifyError) {
+      setPwdBusy(false)
+      setNotice('当前密码不正确')
+      return
+    }
+    const { error: sendError } = await supabase.auth.reauthenticate()
+    setPwdBusy(false)
+    if (sendError) {
+      setNotice(sendError.message || '验证码发送失败，请稍后重试')
+      return
+    }
+    setCodeSent(true)
+    setCooldown(60)
+    setNotice(`验证码已发送至${email ? `邮箱 ${maskEmail(email)}` : `手机 ${maskPhone(phone)}`}`)
+  }
+
+  const onChangePassword = async (e) => {
+    e.preventDefault()
+    if (!validateNewPassword()) return
+    if (!codeSent) {
+      setNotice('请先验证当前密码并获取验证码')
+      return
+    }
+    if (!/^\d{6}$/.test(code.trim())) {
+      setNotice('请输入 6 位验证码')
+      return
+    }
+    setPwdBusy(true)
+    const { error } = await supabase.auth.updateUser({ password: pwd, nonce: code.trim() })
     setPwdBusy(false)
     if (error) {
       setNotice(error.message || '修改密码失败')
       return
     }
+    setOldPwd('')
     setPwd('')
     setPwd2('')
+    setCode('')
+    setCodeSent(false)
+    setCooldown(0)
     setNotice('密码已更新')
   }
 
@@ -179,7 +353,9 @@ export default function Settings() {
                       checked={settings[item.key]}
                       onChange={(value) => {
                         update({ [item.key]: value })
-                        if (item.key === 'notifyMessages' && value) requestNotificationPermission()
+                        if (item.key === 'notifyMessages' && value) {
+                          requestNotificationPermission().then(setNotificationPermission)
+                        }
                       }}
                       label={item.title}
                     />
@@ -196,6 +372,27 @@ export default function Settings() {
               <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
                 发送一条测试通知，确认提示音、震动与通知权限是否正常。
               </p>
+              <div
+                data-testid="settings-notification-permission"
+                className="mt-3 flex items-center justify-between border border-eink-divider bg-eink-bar px-3 py-2.5"
+              >
+                <span className="min-w-0">
+                  <span className="block text-[14px] text-eink-text">通知权限</span>
+                  <span className="mt-0.5 block text-[12px] text-eink-sub">
+                    {PERMISSION_TEXT[notificationPermission] || PERMISSION_TEXT.default}
+                  </span>
+                </span>
+                {notificationPermission === 'default' ? (
+                  <button
+                    type="button"
+                    data-testid="settings-enable-notifications"
+                    className="ml-3 h-8 shrink-0 border border-eink-ink px-3 text-[12px] text-eink-ink active:bg-[#E7E5DD]"
+                    onClick={enableNotifications}
+                  >
+                    开启
+                  </button>
+                ) : null}
+              </div>
               <button
                 type="button"
                 data-testid="settings-test-notification"
@@ -204,6 +401,17 @@ export default function Settings() {
               >
                 发送测试通知
               </button>
+              <button
+                type="button"
+                data-testid="settings-test-vibration"
+                className="mt-2 h-10 w-full border border-eink-divider text-[14px] text-eink-sub active:bg-[#E7E5DD]"
+                onClick={testVibration}
+              >
+                测试震动
+              </button>
+              <p className="mt-2 text-[12px] leading-5 text-eink-sub">
+                震动需要手机浏览器支持，且页面保持在前台。
+              </p>
             </div>
 
             <div className="mt-6 px-4 pb-8" data-testid="settings-sound-list">
@@ -242,6 +450,90 @@ export default function Settings() {
                   )
                 })}
               </ul>
+            </div>
+
+            <div className="mt-6 px-4 pb-8" data-testid="settings-ringtone-list">
+              <p className="text-[16px] text-eink-text">来电铃声</p>
+              <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                默认提供 10 条来电铃声，点击即可试听；也可以上传自己的音频。
+              </p>
+              <ul className="mt-3 border border-eink-divider bg-eink-bar">
+                {RINGTONES.map((ringtone, index) => {
+                  const active = settings.callRingtoneId === ringtone.id
+                  return (
+                    <li key={ringtone.id} className={index ? 'border-t border-eink-divider' : ''}>
+                      <button
+                        type="button"
+                        data-testid={`settings-ringtone-${ringtone.id}`}
+                        aria-pressed={active}
+                        className="flex w-full items-center justify-between px-3 py-2.5 text-left active:bg-[#E7E5DD]"
+                        onClick={() => onSelectRingtone(ringtone.id)}
+                      >
+                        <span className="flex min-w-0 items-center gap-2 text-[15px] text-eink-text">
+                          <span
+                            className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                              active ? 'bg-eink-ink' : 'bg-eink-disabled'
+                            }`}
+                          />
+                          <span className="truncate">{ringtone.name}</span>
+                        </span>
+                        <span className="ml-3 shrink-0 text-[12px] text-eink-sub">
+                          {active ? '使用中 · 试听' : '试听'}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+                {customRingtone ? (
+                  <li className="border-t border-eink-divider">
+                    <button
+                      type="button"
+                      data-testid="settings-ringtone-custom"
+                      aria-pressed={settings.callRingtoneId === CUSTOM_RINGTONE_ID}
+                      className="flex w-full items-center justify-between px-3 py-2.5 text-left active:bg-[#E7E5DD]"
+                      onClick={() => onSelectRingtone(CUSTOM_RINGTONE_ID)}
+                    >
+                      <span className="flex min-w-0 items-center gap-2 text-[15px] text-eink-text">
+                        <span
+                          className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                            settings.callRingtoneId === CUSTOM_RINGTONE_ID ? 'bg-eink-ink' : 'bg-eink-disabled'
+                          }`}
+                        />
+                        <span className="truncate">自定义：{customRingtone.name}</span>
+                      </span>
+                      <span className="ml-3 shrink-0 text-[12px] text-eink-sub">
+                        {settings.callRingtoneId === CUSTOM_RINGTONE_ID ? '使用中 · 试听' : '试听'}
+                      </span>
+                    </button>
+                  </li>
+                ) : null}
+              </ul>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  data-testid="settings-upload-ringtone"
+                  className="h-10 flex-1 border border-eink-ink text-[14px] text-eink-ink active:bg-[#E7E5DD] disabled:opacity-60"
+                  onClick={() => ringtoneFileRef.current?.click()}
+                  disabled={ringtoneBusy}
+                >
+                  {ringtoneBusy ? '正在保存...' : customRingtone ? '更换自定义铃声' : '上传自定义铃声'}
+                </button>
+                {customRingtone ? (
+                  <button
+                    type="button"
+                    data-testid="settings-remove-ringtone"
+                    className="h-10 border border-eink-divider px-4 text-[14px] text-eink-sub active:bg-[#E7E5DD]"
+                    onClick={onRemoveCustomRingtone}
+                  >
+                    移除
+                  </button>
+                ) : null}
+              </div>
+              {customRingtone ? (
+                <p className="mt-2 text-[12px] text-eink-sub">
+                  文件大小 {formatRingtoneSize(customRingtone.size)}，保存在本机。
+                </p>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -318,6 +610,9 @@ export default function Settings() {
         {view === 'security' ? (
           <div data-testid="settings-security">
             <p className="px-4 pt-4 text-[12px] text-eink-sub">当前账号：{email || '未绑定邮箱'}</p>
+            <p data-testid="settings-phone" className="px-4 pt-1 text-[12px] text-eink-sub">
+              绑定手机：{phone ? maskPhone(phone) : '未绑定'}
+            </p>
             {!cloudAccount ? (
               <p data-testid="settings-demo-security" className="mx-4 mt-2 border border-eink-divider bg-eink-bar px-3 py-2 text-[12px] leading-5 text-eink-sub">
                 演示账号不支持修改密码与注销，请登录云端账号后使用。
@@ -326,17 +621,29 @@ export default function Settings() {
 
             <form className="mt-4 border-y border-eink-divider bg-eink-bar" onSubmit={onChangePassword}>
               <div className="px-4 py-3">
-                <label className="block text-[16px] text-eink-text" htmlFor="new-password">
+                <label className="block text-[16px] text-eink-text" htmlFor="old-password">
                   修改密码
                 </label>
-                <p className="mt-0.5 text-[12px] text-eink-sub">输入新密码，至少 6 位。</p>
+                <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                  需要先验证当前密码，再输入邮箱或手机验证码，无法直接修改。
+                </p>
+                <input
+                  id="old-password"
+                  data-testid="settings-old-password"
+                  type="password"
+                  autoComplete="current-password"
+                  className="mt-3 h-10 w-full border border-eink-line/30 bg-eink-paper px-3 text-[15px] outline-none"
+                  placeholder="当前密码"
+                  value={oldPwd}
+                  onChange={(e) => setOldPwd(e.target.value)}
+                />
                 <input
                   id="new-password"
                   data-testid="settings-new-password"
                   type="password"
                   autoComplete="new-password"
-                  className="mt-3 h-10 w-full border border-eink-line/30 bg-eink-paper px-3 text-[15px] outline-none"
-                  placeholder="新密码"
+                  className="mt-2 h-10 w-full border border-eink-line/30 bg-eink-paper px-3 text-[15px] outline-none"
+                  placeholder="新密码，至少 6 位"
                   value={pwd}
                   onChange={(e) => setPwd(e.target.value)}
                 />
@@ -349,13 +656,42 @@ export default function Settings() {
                   value={pwd2}
                   onChange={(e) => setPwd2(e.target.value)}
                 />
+
+                <div className="mt-2 flex gap-2">
+                  <input
+                    data-testid="settings-code"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    className="h-10 min-w-0 flex-1 border border-eink-line/30 bg-eink-paper px-3 text-[15px] outline-none"
+                    placeholder="6 位邮箱/手机验证码"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  />
+                  <button
+                    type="button"
+                    data-testid="settings-send-code"
+                    className="h-10 shrink-0 border border-eink-ink px-3 text-[13px] text-eink-ink active:bg-[#E7E5DD] disabled:opacity-60"
+                    onClick={onRequestCode}
+                    disabled={pwdBusy || cooldown > 0}
+                  >
+                    {cooldown > 0 ? `${cooldown}s 后重发` : codeSent ? '重新发送' : '获取验证码'}
+                  </button>
+                </div>
+                {codeSent ? (
+                  <p className="mt-2 text-[12px] leading-5 text-eink-sub">
+                    验证码已发送，请查收绑定邮箱或手机短信。
+                  </p>
+                ) : null}
+
                 <button
                   type="submit"
                   data-testid="settings-save-password"
                   className="mt-3 h-10 w-full bg-eink-ink text-[15px] text-eink-paper active:bg-eink-pressed disabled:opacity-60"
                   disabled={pwdBusy}
                 >
-                  {pwdBusy ? '正在保存...' : '保存新密码'}
+                  {pwdBusy ? '正在保存...' : '确认修改密码'}
                 </button>
               </div>
             </form>
@@ -382,6 +718,15 @@ export default function Settings() {
         className="hidden"
         onChange={onChangeCover}
         data-testid="settings-cover-input"
+      />
+
+      <input
+        ref={ringtoneFileRef}
+        type="file"
+        accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac"
+        className="hidden"
+        onChange={onUploadRingtone}
+        data-testid="settings-ringtone-input"
       />
 
       {notice ? (
@@ -486,6 +831,19 @@ function Switch({ checked, onChange, label }) {
       />
     </button>
   )
+}
+
+function maskEmail(value) {
+  const [name, domain] = String(value || '').split('@')
+  if (!name || !domain) return value || ''
+  const head = name.slice(0, 2)
+  return `${head}${name.length > 2 ? '***' : '*'}@${domain}`
+}
+
+function maskPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (digits.length < 7) return value || ''
+  return `${digits.slice(0, 3)}****${digits.slice(-4)}`
 }
 
 function BackButton({ onClick }) {

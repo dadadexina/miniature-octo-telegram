@@ -1,4 +1,5 @@
 import { DEFAULT_SOUND_ID, NOTIFICATION_SOUNDS, playNotificationSound } from './notificationSounds'
+import { CUSTOM_RINGTONE_ID, DEFAULT_RINGTONE_ID, RINGTONES } from './ringtones'
 
 const SETTINGS_KEY = 'eink:app-settings:v1'
 
@@ -7,11 +8,18 @@ export const DEFAULT_SETTINGS = Object.freeze({
   notifySound: true,
   notifyVibrate: true,
   notifySoundId: DEFAULT_SOUND_ID,
+  callRingtoneId: DEFAULT_RINGTONE_ID,
+  customRingtoneName: '',
   theme: 'light',
   fontScale: 'standard',
 })
 
 const FONT_SCALES = ['small', 'standard', 'large']
+const VIBRATE_PATTERN = [120, 60, 120]
+
+function validRingtoneId(id) {
+  return id === CUSTOM_RINGTONE_ID || RINGTONES.some((ringtone) => ringtone.id === id)
+}
 
 function normalize(parsed) {
   if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_SETTINGS }
@@ -24,6 +32,8 @@ function normalize(parsed) {
     notifySoundId: NOTIFICATION_SOUNDS.some((sound) => sound.id === parsed.notifySoundId)
       ? parsed.notifySoundId
       : DEFAULT_SOUND_ID,
+    callRingtoneId: validRingtoneId(parsed.callRingtoneId) ? parsed.callRingtoneId : DEFAULT_RINGTONE_ID,
+    customRingtoneName: typeof parsed.customRingtoneName === 'string' ? parsed.customRingtoneName : '',
     theme: parsed.theme === 'dark' ? 'dark' : 'light',
     fontScale: FONT_SCALES.includes(parsed.fontScale) ? parsed.fontScale : 'standard',
   }
@@ -97,16 +107,20 @@ function playBeep() {
   }
 }
 
+export function vibrateNow(pattern = VIBRATE_PATTERN) {
+  const vibrate = globalThis.navigator?.vibrate
+  if (typeof vibrate !== 'function') return false
+  try {
+    return vibrate.call(globalThis.navigator, pattern) !== false
+  } catch {
+    return false
+  }
+}
+
 export function notifyIncoming({ title = '新消息', body = '' } = {}) {
   const settings = loadSettings()
   if (!settings.notifyMessages) return
-  if (settings.notifyVibrate) {
-    try {
-      globalThis.navigator?.vibrate?.(30)
-    } catch {
-      // 设备不支持震动时忽略
-    }
-  }
+  if (settings.notifyVibrate) vibrateNow()
   if (settings.notifySound) {
     const audio = playNotificationSound(settings.notifySoundId)
     if (!audio) playBeep()

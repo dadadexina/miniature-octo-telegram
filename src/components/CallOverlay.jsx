@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { loadSettings } from '../lib/appSettings'
 import { SPEAKER_STORAGE_KEY, formatCallDuration } from '../lib/call'
+import { playRingtone, stopRingtone } from '../lib/ringtones'
 import Avatar from './Avatar'
 
 const STATUS_TEXT = {
@@ -86,6 +88,25 @@ export default function CallOverlay({
   useEffect(() => {
     applySink()
   }, [applySink])
+
+  useEffect(() => {
+    if (state !== 'ringing') return undefined
+    let cancelled = false
+    let handle = null
+    playRingtone(loadSettings().callRingtoneId)
+      .then((next) => {
+        if (cancelled) {
+          stopRingtone(next)
+          return
+        }
+        handle = next
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+      stopRingtone(handle)
+    }
+  }, [state])
 
   const toggleSpeaker = () => {
     const next = !speaker

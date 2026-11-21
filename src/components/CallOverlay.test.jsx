@@ -3,7 +3,33 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CallOverlay from './CallOverlay'
 
-afterEach(cleanup)
+let createdAudio = []
+
+beforeEach(() => {
+  createdAudio = []
+  class FakeAudio {
+    constructor(src) {
+      this.src = src
+      this.loop = false
+      this.paused = false
+      createdAudio.push(this)
+    }
+
+    play() {
+      return Promise.resolve()
+    }
+
+    pause() {
+      this.paused = true
+    }
+  }
+  vi.stubGlobal('Audio', FakeAudio)
+})
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 describe('CallOverlay', () => {
   it('语音呼叫中展示对方昵称与状态', () => {
@@ -53,6 +79,18 @@ describe('CallOverlay', () => {
     fireEvent.click(screen.getByRole('button', { name: '拒绝' }))
     expect(answered).toBe(1)
     expect(declined).toBe(1)
+  })
+
+  it('来电时循环播放铃声，接通后停止', async () => {
+    const { rerender } = render(
+      <CallOverlay state="ringing" peer={{ nickname: '小明' }} onAnswer={() => {}} onDecline={() => {}} />
+    )
+
+    await waitFor(() => expect(createdAudio.length).toBeGreaterThan(0))
+    expect(createdAudio[0].loop).toBe(true)
+
+    rerender(<CallOverlay state="connected" peer={{ nickname: '小明' }} onHangup={() => {}} />)
+    expect(createdAudio[0].paused).toBe(true)
   })
 
   it('接通后展示通话计时', () => {

@@ -8,6 +8,7 @@ import {
   notifyIncoming,
   requestNotificationPermission,
   saveSettings,
+  vibrateNow,
 } from './appSettings'
 
 describe('appSettings', () => {
@@ -47,6 +48,15 @@ describe('appSettings', () => {
     expect(settings.notifyMessages).toBe(true)
   })
 
+  it('sanitizes invalid call ringtone ids and keeps custom selection', () => {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ callRingtoneId: 'missing' }))
+    expect(loadSettings().callRingtoneId).toBe(DEFAULT_SETTINGS.callRingtoneId)
+
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ callRingtoneId: 'custom', customRingtoneName: 'my.mp3' }))
+    expect(loadSettings().callRingtoneId).toBe('custom')
+    expect(loadSettings().customRingtoneName).toBe('my.mp3')
+  })
+
   it('falls back to defaults for broken json', () => {
     localStorage.setItem(SETTINGS_KEY, '{{{bad')
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS)
@@ -69,7 +79,20 @@ describe('appSettings', () => {
 
     saveSettings({ notifyMessages: true, notifySound: false })
     notifyIncoming({ body: '打开提醒' })
-    expect(vibrate).toHaveBeenCalledWith(30)
+    expect(vibrate).toHaveBeenCalledWith([120, 60, 120])
+  })
+
+  it('vibrateNow reports whether the device supports vibration', () => {
+    vi.stubGlobal('navigator', {})
+    expect(vibrateNow()).toBe(false)
+
+    const vibrate = vi.fn(() => true)
+    vi.stubGlobal('navigator', { vibrate })
+    expect(vibrateNow([200])).toBe(true)
+    expect(vibrate).toHaveBeenCalledWith([200])
+
+    vibrate.mockReturnValue(false)
+    expect(vibrateNow()).toBe(false)
   })
 
   it('notifyIncoming shows a browser notification when permission is granted', () => {
