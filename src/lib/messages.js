@@ -174,6 +174,21 @@ export async function fetchInbox(meId, limit = INBOX_LIMIT) {
   return { ok: true, messages: (data || []).map(mapMessage).sort((a, b) => a.time - b.time) }
 }
 
+export async function fetchReceivedSince(meId, sinceIso, limit = 100) {
+  if (!meId || !sinceIso) return { ok: true, messages: [] }
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('receiver_id', meId)
+    .gt('created_at', sinceIso)
+    .order('created_at', { ascending: true })
+    .limit(limit)
+  if (error) {
+    return { ok: false, error: error.message, messages: [], permission: isPermissionError(error) }
+  }
+  return { ok: true, messages: (data || []).map(mapMessage) }
+}
+
 export function involvesUser(msg, userId) {
   return Boolean(msg && userId && (msg.fromId === userId || msg.toId === userId))
 }

@@ -62,8 +62,14 @@ function DiscoverIcon({ active }) {
 }
 
 export default function TabBar() {
-  const { unreadTotal } = useStore()
+  const { unreadTotal, requests } = useStore()
   const total = unreadTotal()
+  const requestTotal = (requests?.incoming || []).length
+  const badgeOf = (to) => {
+    if (to === '/chats') return total
+    if (to === '/contacts') return requestTotal
+    return 0
+  }
   return (
     <nav className="safe-bottom shrink-0 border-t border-eink-divider bg-eink-bar">
       <div className="grid h-[52px] grid-cols-4">
@@ -77,9 +83,12 @@ export default function TabBar() {
               <>
                 <span className="relative">
                   <tab.icon active={isActive} />
-                  {tab.to === '/chats' && total ? (
-                    <span className="absolute -right-2 -top-1 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-eink-ink px-1 text-[10px] leading-none text-eink-paper">
-                      {total > 99 ? '99+' : total}
+                  {badgeOf(tab.to) ? (
+                    <span
+                      data-testid={tab.to === '/chats' ? 'nav-badge-chats' : tab.to === '/contacts' ? 'nav-badge-contacts' : undefined}
+                      className="absolute -right-2 -top-1 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-eink-ink px-1 text-[10px] leading-none text-eink-paper"
+                    >
+                      {badgeOf(tab.to) > 99 ? '99+' : badgeOf(tab.to)}
                     </span>
                   ) : null}
                 </span>

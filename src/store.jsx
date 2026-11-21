@@ -11,7 +11,7 @@ import {
 } from './lib/friendRequests'
 import { applyDraft, loadDrafts, saveDrafts } from './lib/drafts'
 import { fetchConversationPrefs, upsertConversationPref } from './lib/conversationPrefs'
-import { deletePairMessages, fetchHiddenIds, fetchInbox, hideMessage, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
+import { deletePairMessages, fetchHiddenIds, fetchInbox, fetchReceivedSince, hideMessage, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
 import { findAuthIdentity } from './lib/identity'
 import { mapProfile, fetchProfilesByIds } from './lib/profiles'
 import { applyProfileRow, withMappedAvatar } from './lib/profileMerge'
@@ -217,6 +217,7 @@ export function StoreProvider({ children }) {
   const readAtRef = useRef({})
   const peerReadAtRef = useRef({})
   const inboxIdsRef = useRef(new Set())
+  const inboxRef = useRef([])
   const hiddenIdsRef = useRef(new Set())
   const stateRef = useRef(state)
   const resyncRef = useRef(null)
@@ -229,6 +230,10 @@ export function StoreProvider({ children }) {
   useEffect(() => {
     stateRef.current = state
   }, [state])
+
+  useEffect(() => {
+    inboxRef.current = inbox
+  }, [inbox])
 
   useEffect(() => {
     profileSyncedRef.current = profileSynced
@@ -668,13 +673,46 @@ export function StoreProvider({ children }) {
       resyncRef.current?.()
     }
     const goOffline = () => setOffline(true)
+    // 移动端切到后台会挂起长连接,回到前台先补拉,避免未读数等到手动切页才出现
+    const refreshWhenVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      setOffline(false)
+      resyncRef.current?.()
+    }
     window.addEventListener('online', goOnline)
     window.addEventListener('offline', goOffline)
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
     return () => {
       window.removeEventListener('online', goOnline)
       window.removeEventListener('offline', goOffline)
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [])
+
+  // 实时订阅可能短暂断连或漏帧:每 15 秒做一次增量补拉,只取比本地最新消息更新的收件
+  useEffect(() => {
+    const me = authUser?.id
+    if (!me || !isUuid(me)) return undefined
+    let alive = true
+    const catchUp = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+      const latest = inboxRef.current.reduce((max, msg) => Math.max(max, msg.time || 0), 0)
+      if (!latest) return
+      const since = new Date(latest - 2000).toISOString()
+      const res = await fetchReceivedSince(me, since)
+      if (!alive || !res.ok) return
+      res.messages.forEach((msg) => ingestCloudMessage(msg))
+      await refreshRequestsRef.current?.()
+    }
+    const timer = setInterval(catchUp, 15000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [authUser?.id, ingestCloudMessage])
 
   useEffect(() => {
     const me = authUser?.id
