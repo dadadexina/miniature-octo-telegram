@@ -14,6 +14,7 @@ const EditProfile = lazy(() => import('./pages/EditProfile'))
 const FriendProfile = lazy(() => import('./pages/FriendProfile'))
 const FriendMoments = lazy(() => import('./pages/FriendMoments'))
 const Profile = lazy(() => import('./pages/Profile'))
+const Settings = lazy(() => import('./pages/Settings'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const Legal = lazy(() => import('./pages/Legal'))
 
@@ -87,6 +88,14 @@ export default function App() {
               element={
                 <Guard>
                   <EditProfile />
+                </Guard>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <Guard>
+                  <Settings />
                 </Guard>
               }
             />

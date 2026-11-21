@@ -90,6 +90,13 @@ export default function Profile() {
           <span className="text-[16px]">编辑资料</span>
           <span className="text-eink-faint">›</span>
         </Link>
+        <Link
+          to="/settings"
+          className="flex items-center justify-between border-t border-eink-divider px-4 py-4 active:bg-[#E7E5DD]"
+        >
+          <span className="text-[16px]">设置</span>
+          <span className="text-eink-faint">›</span>
+        </Link>
       </div>
       {!profileSynced ? (
         <p className="px-4 py-3 text-[12px] leading-5 text-eink-sub">资料暂存在本地。跑完下面 SQL 后再保存一次就会同步到云端。</p>

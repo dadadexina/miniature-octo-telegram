@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import Avatar from '../components/Avatar'
+import MomentCover from '../components/MomentCover'
 import { isUuid } from '../lib/messages'
 import { downscaleMomentImage } from '../lib/momentImage'
 import {
@@ -247,24 +247,14 @@ function CloudDiscover() {
       </header>
 
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
-        <div className="relative h-[220px] overflow-hidden">
-          <div
-            className="absolute inset-0"
-            style={{
-              background: 'linear-gradient(180deg, #2A2A2A 0%, #55554F 42%, #8B8B84 70%, #1F1F1F 100%)',
-            }}
-          />
-          <div className="absolute inset-0 opacity-40" style={{ backgroundImage: coverPattern() }} />
-          <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/35 to-transparent" />
-          <div className="absolute -bottom-5 right-3 flex items-end gap-2.5">
-            <span className="mb-2 text-[16px] font-medium text-white drop-shadow">{meName}</span>
-            <Link to="/me" className="rounded-none ring-2 ring-white/80">
-              <Avatar name={meName} color={avatarColor(meId)} size={70} src={currentUser.avatarUrl || ''} />
-            </Link>
-          </div>
-        </div>
+        <MomentCover
+          userId={meId}
+          name={meName}
+          avatarSrc={profile?.avatarUrl || currentUser.avatarUrl || ''}
+          avatarColor={avatarColor(meId)}
+        />
 
-        <div className="h-8" />
+        <div className="h-20" />
 
         {error ? <p className="px-4 py-2 text-[12px] text-eink-sub">{error}</p> : null}
 
@@ -554,25 +544,14 @@ function LocalDiscover() {
       </header>
 
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
-        <div className="relative h-[220px] overflow-hidden">
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                'linear-gradient(180deg, #2A2A2A 0%, #55554F 42%, #8B8B84 70%, #1F1F1F 100%)',
-            }}
-          />
-          <div className="absolute inset-0 opacity-40" style={{ backgroundImage: coverPattern() }} />
-          <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/35 to-transparent" />
-          <div className="absolute -bottom-5 right-3 flex items-end gap-2.5">
-            <span className="mb-2 text-[16px] font-medium text-white drop-shadow">{meName}</span>
-            <Link to="/me" className="rounded-none ring-2 ring-white/80">
-              <Avatar name={meName} color={avatarColor(currentUser.id)} size={70} src={currentUser.avatarUrl || ''} />
-            </Link>
-          </div>
-        </div>
+        <MomentCover
+          userId={currentUser.id}
+          name={meName}
+          avatarSrc={profile?.avatarUrl || currentUser.avatarUrl || ''}
+          avatarColor={avatarColor(currentUser.id)}
+        />
 
-        <div className="h-8" />
+        <div className="h-20" />
 
         <p className="mx-3 mb-2 border border-eink-divider bg-eink-bar px-3 py-1.5 text-center text-[12px] text-eink-sub">
           演示数据 · 登录云端账号后同步真实朋友圈
@@ -661,14 +640,4 @@ function CameraIcon() {
       <circle cx="12" cy="13" r="3.1" stroke="#191919" strokeWidth="1.6" />
     </svg>
   )
-}
-
-function coverPattern() {
-  return `url("data:image/svg+xml,${encodeURIComponent(
-    `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'>
-      <rect width='120' height='120' fill='none'/>
-      <path d='M0 80 Q30 40 60 70 T120 50' stroke='white' stroke-width='6' fill='none' opacity='0.25'/>
-      <circle cx='90' cy='28' r='14' fill='white' opacity='0.18'/>
-    </svg>`
-  )}")`
 }
