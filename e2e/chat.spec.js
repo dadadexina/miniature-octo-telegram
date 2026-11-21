@@ -198,6 +198,12 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
 
     await openChatByUsername(pageA, B.username)
     await pageA.getByTestId('chat-menu').click()
+    // 上一次失败可能已留下「已拉黑」状态,先归零,保证重试幂等
+    if ((await pageA.getByTestId('block-toggle').innerText()).includes('取消拉黑')) {
+      await pageA.getByTestId('block-toggle').click()
+      await expect(pageA.getByText('已取消拉黑').first()).toBeVisible({ timeout: 15000 })
+      await pageA.getByTestId('chat-menu').click()
+    }
     await pageA.getByTestId('block-toggle').click()
     await expect(pageA.getByText('已拉黑，对方无法再给你发消息').first()).toBeVisible({ timeout: 15000 })
 
