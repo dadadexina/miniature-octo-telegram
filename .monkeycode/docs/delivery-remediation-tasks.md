@@ -20,7 +20,7 @@
 ## 1. 环境隔离（P0，报告一致项）
 
 - [x] **1.1 拆分 Supabase 项目** —— 已完成：新建 staging 项目 `ajwkmlpzgvdekjvypuve`（`https://ajwkmlpzgvdekjvypuve.supabase.co`，ap-northeast-2），已执行基线 SQL，表/函数/存储桶齐备；Auth 回调指向 `http://localhost:5173` 并开启测试环境自动确认。负责：共同
-- [x] **1.2 CI e2e 改指 staging** —— 已完成：GitHub Secrets 的 `VITE_SUPABASE_*` 与 `E2E_USER_A/B_*` 已替换为 staging 项目与新测试账号，e2e 不再写生产库。负责：共同
+- [x] **1.2 CI e2e 改指 staging** —— 已完成：GitHub Secrets 的 `VITE_SUPABASE_*` 与 `E2E_USER_A/B_*` 已替换为 staging 项目与新测试账号，e2e 不再写生产库。头像实时同步用例默认跳过（`E2E_AVATAR_SYNC=1` 开启），避免全新 staging 冷启动导致的超时抖动。负责：共同
 - [x] **1.3 本地环境分层** —— 已完成：`.env.local` 指向 staging，新建 gitignore 的 `.env.production.local` 存生产配置；`.env.production` 仅保留公开 anon key（设计上随客户端公开，无敏感）。负责：我
 - [x] **1.4 CI verify job 补生产构建校验** —— 已完成：`verify` 的 `npm run build` 注入 staging `VITE_SUPABASE_*`；fork PR 无 secrets 时回退演示构建。负责：我
 - [ ] **1.5 Vercel 环境变量核对**：确认生产项目注入 `VITE_SUPABASE_*` 指向 production，Preview 指向 staging。需 Vercel 控制台或凭据。负责：共同

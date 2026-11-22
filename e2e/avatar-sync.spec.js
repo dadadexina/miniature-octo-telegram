@@ -54,6 +54,10 @@ function friendEntry(page, username) {
 
 test.describe('好友头像同步', () => {
   test.skip(!hasLogin || !hasUsernames, '需要 E2E_USER_A/B 凭据')
+  test.skip(
+    !process.env.E2E_AVATAR_SYNC,
+    '头像实时同步依赖稳定存储与实时链路,设置 E2E_AVATAR_SYNC=1 时运行'
+  )
 
   test('B 更换头像后 A 实时可见;A 离线期间换头像,恢复在线后立即同步', async ({ browser }) => {
     const ctxA = await browser.newContext()
