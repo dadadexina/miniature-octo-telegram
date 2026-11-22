@@ -25,6 +25,13 @@ import { saveMomentCover } from '../lib/momentCover'
 import { NOTIFICATION_SOUNDS, playNotificationSound } from '../lib/notificationSounds'
 import { updateProfileSignature } from '../lib/profiles'
 import {
+  currentPushSubscription,
+  disablePush,
+  enablePush,
+  isPushConfigured,
+  isPushSupported,
+} from '../lib/push'
+import {
   CUSTOM_RINGTONE_ID,
   DEFAULT_RINGTONE_ID,
   RINGTONES,
@@ -112,6 +119,8 @@ export default function Settings() {
   const [deleting, setDeleting] = useState(false)
   const [confirmSignOutAll, setConfirmSignOutAll] = useState(false)
   const [signingOutAll, setSigningOutAll] = useState(false)
+  const [pushOn, setPushOn] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
   const [archiveBusy, setArchiveBusy] = useState(false)
   const fileRef = useRef(null)
@@ -452,6 +461,32 @@ export default function Settings() {
     }
   }
 
+  useEffect(() => {
+    if (!isPushSupported() || !isPushConfigured()) return undefined
+    let alive = true
+    currentPushSubscription()
+      .then((subscription) => {
+        if (alive) setPushOn(Boolean(subscription))
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const onTogglePush = async () => {
+    if (!currentUser?.id || pushBusy) return
+    setPushBusy(true)
+    const result = pushOn ? await disablePush(currentUser.id) : await enablePush(currentUser.id)
+    setPushBusy(false)
+    if (!result.ok) {
+      setNotice(result.error || '操作失败，请稍后重试')
+      return
+    }
+    setPushOn(!pushOn)
+    setNotice(pushOn ? '已关闭后台推送' : '已开启后台推送')
+  }
+
   const onSignOutAll = async () => {
     setSigningOutAll(true)
     try {
@@ -523,6 +558,24 @@ export default function Settings() {
                 提醒偏好保存在本机，重新登录后仍会保留。
               </li>
             </ul>
+
+            {isPushSupported() && isPushConfigured() ? (
+              <div className="mt-6 px-4" data-testid="settings-push">
+                <p className="text-[16px] text-eink-text">后台推送</p>
+                <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                  应用退到后台或关闭后，通过系统通知接收新消息。iOS 需先将应用添加到主屏幕。
+                </p>
+                <button
+                  type="button"
+                  data-testid="settings-push-toggle"
+                  className="mt-3 h-10 w-full border border-eink-ink text-[15px] text-eink-ink active:bg-[#E7E5DD] disabled:opacity-60"
+                  onClick={onTogglePush}
+                  disabled={pushBusy}
+                >
+                  {pushBusy ? '处理中...' : pushOn ? '关闭后台推送' : '开启后台推送'}
+                </button>
+              </div>
+            ) : null}
 
             <div className="mt-6 px-4" data-testid="settings-dnd">
               <p className="text-[16px] text-eink-text">免打扰</p>

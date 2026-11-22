@@ -43,7 +43,8 @@ async function loadWorker() {
       listeners[type] = fn
     },
     skipWaiting: vi.fn(),
-    clients: { claim: vi.fn() },
+    clients: { claim: vi.fn(), matchAll: vi.fn(async () => []), openWindow: vi.fn() },
+    registration: { showNotification: vi.fn(async () => {}) },
   }
   vi.resetModules()
   await import('../../public/sw.js')
@@ -82,6 +83,19 @@ describe('service worker 缓存策略', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
     const res = await dispatch({ method: 'GET', url: 'https://app.test/chats', mode: 'navigate' })
     expect(await res.text()).toBe('offline-shell')
+  })
+
+  it('push 事件展示系统通知', async () => {
+    let waited
+    listeners.push({
+      data: { json: () => ({ title: '甲', body: '你好', url: '/chat/u2' }) },
+      waitUntil: (value) => { waited = value },
+    })
+    await waited
+    expect(self.registration.showNotification).toHaveBeenCalledWith(
+      '甲',
+      expect.objectContaining({ body: '你好', data: { url: '/chat/u2' } }),
+    )
   })
 
   it('激活时清理旧版本缓存', async () => {

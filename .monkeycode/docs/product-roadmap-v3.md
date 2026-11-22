@@ -35,7 +35,7 @@
 
 ### M3 通知与触达(1~2 天,产品价值高)
 
-- [ ] 3.1 **Web Push 通知**:Supabase Edge Function 监听 messages INSERT → Web Push 推送;PWA 已有 sw.js,补 push 事件处理与通知权限引导页
+- [x] 3.1 **Web Push 通知**:Supabase Edge Function 监听 messages INSERT → Web Push 推送;PWA 已有 sw.js,补 push 事件处理与通知权限引导页——已实现 `push_subscriptions` 表、`send-push` 函数、SW push/notificationclick 与设置页开关;上线需配置 VAPID 与 Database Webhook
 - [x] 3.2 **通知设置页**(`/me/settings/notifications`):全局开关、免打扰时段、按会话静音联动 1.3——已在现有设置页“通知”面板落地免打扰开关、起止时间(支持跨午夜、起止相同为全天)与收件摘要开关,设置本机持久化
 - [x] 3.3 **收件摘要**(差异化):免打扰期间不逐条打扰,汇总为一条"你有 N 条未读,来自 X 人"——`notificationDigest` 按账号隔离排队(上限 100 条),免打扰结束或回到前台时合并提示一次,静音会话不进入摘要
 

@@ -83,3 +83,39 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting()
 })
+
+self.addEventListener('push', (event) => {
+  let payload = {}
+  try {
+    payload = event.data ? event.data.json() : {}
+  } catch {
+    payload = { body: event.data ? event.data.text() : '' }
+  }
+  const title = payload.title || '纸墨信笺'
+  const options = {
+    body: payload.body || '你有一条新消息',
+    tag: payload.tag || 'message',
+    data: { url: payload.url || '/' },
+    icon: '/icon.svg',
+    badge: '/icon.svg',
+  }
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = event.notification.data?.url || '/'
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      for (const client of windows) {
+        if ('focus' in client) {
+          if ('navigate' in client) await client.navigate(url).catch(() => {})
+          return client.focus()
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(url)
+      return undefined
+    })(),
+  )
+})
