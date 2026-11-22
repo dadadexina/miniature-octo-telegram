@@ -55,6 +55,16 @@ function pointFor(id) {
   }
 }
 
+function citySpread(id, lat, lng) {
+  const hash = hashString(id)
+  const angle = ((hash % 3600) / 3600) * Math.PI * 2
+  const degrees = 0.006 + ((hash >>> 12) % 5) * 0.004
+  return {
+    lat: lat + Math.sin(angle) * degrees,
+    lng: lng + (Math.cos(angle) * degrees) / Math.max(0.25, Math.cos(lat * RAD)),
+  }
+}
+
 function toVec(lat, lng, radius = R) {
   const phi = (90 - lat) * RAD
   const theta = (lng + 180) * RAD
@@ -157,6 +167,7 @@ export default function DiscoverGlobe({
   links = [],
   meId,
   meName = '你',
+  meCoords = null,
   routes = [],
   loading,
   error,
@@ -171,6 +182,8 @@ export default function DiscoverGlobe({
   const labelElsRef = useRef(new Map())
   const threeRef = useRef(null)
   const meNameRef = useRef(meName)
+  const meCoordsRef = useRef(meCoords)
+  const centeredOnMeRef = useRef(false)
   const copyTimerRef = useRef(null)
   const [selectedId, setSelectedId] = useState(null)
   const [viewerUrl, setViewerUrl] = useState('')
@@ -280,7 +293,8 @@ export default function DiscoverGlobe({
 
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500)
-    camera.position.copy(toVec(ME_COORDS.lat, ME_COORDS.lng, 10))
+    const initialMe = meCoordsRef.current || ME_COORDS
+    camera.position.copy(toVec(initialMe.lat, initialMe.lng, 10))
 
     let renderer
     try {
@@ -631,8 +645,8 @@ export default function DiscoverGlobe({
       clearNetwork()
       const nodeGeometry = new THREE.SphereGeometry(0.034, 16, 16)
 
-      const addNode = (id, name, isMe) => {
-        const { lat, lng } = isMe ? ME_COORDS : pointFor(id)
+      const addNode = (id, name, isMe, coords = null) => {
+        const { lat, lng } = coords || (isMe ? ME_COORDS : pointFor(id))
         const position = toVec(lat, lng, R * 1.02)
         const color = isMe ? ME_COLOR : PALETTE[hashString(id) % PALETTE.length]
         const material = new THREE.MeshBasicMaterial({ color, transparent: true })
@@ -653,9 +667,14 @@ export default function DiscoverGlobe({
         state.meshList.push(mesh)
       }
 
-      addNode(nextMeId, meNameRef.current, true)
+      addNode(nextMeId, meNameRef.current, true, meCoordsRef.current)
       nextPeople.forEach((person) => {
-        if (person.id !== nextMeId) addNode(person.id, person.name, false)
+        if (person.id === nextMeId) return
+        const shared =
+          Number.isFinite(person.lat) && Number.isFinite(person.lng)
+            ? citySpread(person.id, person.lat, person.lng)
+            : null
+        addNode(person.id, person.name, false, shared)
       })
 
       nextLinks.forEach(([a, b]) => {
@@ -1121,9 +1140,16 @@ export default function DiscoverGlobe({
   }, [fallback])
 
   useEffect(() => {
+    meCoordsRef.current = meCoords
     if (fallback) return
     threeRef.current?.rebuild(people, links, meId)
-  }, [fallback, people, links, meId])
+  }, [fallback, people, links, meId, meCoords])
+
+  useEffect(() => {
+    if (fallback || !meCoords || centeredOnMeRef.current) return
+    centeredOnMeRef.current = true
+    threeRef.current?.focusAt(meCoords.lat, meCoords.lng, 10)
+  }, [fallback, meCoords])
 
   useEffect(() => {
     threeRef.current?.setSelected(selectedId)
@@ -1406,6 +1432,11 @@ export default function DiscoverGlobe({
                 </span>
               ) : null}
             </div>
+            {selectedPerson.place ? (
+              <p data-testid="globe-person-place" className="mt-2 text-[12px] tracking-[0.04em] text-[#3d6f96]">
+                {selectedPerson.place} · 城市级位置
+              </p>
+            ) : null}
             {selectedId === meId ? (
               <p className="mt-4 text-[13px] leading-6 text-[#7fc4f0]">
                 这是你的坐标。本周航线都从这里出发。

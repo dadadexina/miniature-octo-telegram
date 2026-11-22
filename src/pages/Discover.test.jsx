@@ -44,6 +44,10 @@ vi.mock('../lib/profiles', () => ({
   fetchProfilesByIds: vi.fn(),
 }))
 
+vi.mock('../lib/locations', () => ({
+  fetchLocations: vi.fn(() => Promise.resolve({ ok: true, locations: [] })),
+}))
+
 vi.mock('../components/Avatar', () => ({
   default: ({ name }) => <div data-testid="avatar">{(name || '?').slice(0, 1)}</div>,
 }))

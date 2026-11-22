@@ -26,7 +26,7 @@
 - 好友系统：好友请求 → 对方验证的双向流程（`friend_requests`，realtime 实时通知）、云端好友边存储（friends 表）、公开 ID 精确搜索添加（RPC 防用户名枚举）
 - 拉黑防护：单向拒收（被拉黑方消息被 RLS 拒绝并收到明确提示）、「设置 → 账号安全」黑名单管理；陌生人（非好友）无法发起私聊
 - 个人资料：头像（本地图片上传，自动降采样 256px、灰度显示；未上传时回退灰阶色板首字块）、昵称编辑（云端 + 本地降级）
-- 发现（地球关系网，云端）：深色 3D 真实地球（NASA Blue Marble 昼面、城市灯光夜面），拖动旋转，滚轮/双指无级缩放；按真实太阳位置呈现晨昏线，全球云量由 Open-Meteo 实时采样；放大后显示 49 座真实城市的地名与实时气温，继续放大平滑切换为 OpenStreetMap 街道图，可读到 5 位小数经纬度、镇村地名和道路；支持城市/经纬度跳转、复制当前坐标、近距离点选居中，缩放与云层/关系网/大气同步淡入淡出，瓦片请求限流、失败重试并持久缓存，低端设备自动降低分辨率与帧率；好友为发光节点、关系为弧线；点击节点查看本周信笺并直接回信（进入单聊）。天气或地图瓦片失败时静默降级。发布文字/图片（自动降采样），动态仅好友可见（RLS）。通讯录含好友请求列表
+- 发现（地球关系网，云端）：深色 3D 真实地球（NASA Blue Marble 昼面、城市灯光夜面），拖动旋转，滚轮/双指无级缩放；按真实太阳位置呈现晨昏线，全球云量由 Open-Meteo 实时采样；放大后显示 49 座真实城市的地名与实时气温，继续放大平滑切换为 OpenStreetMap 街道图，可读到 5 位小数经纬度、镇村地名和道路；支持城市/经纬度跳转、复制当前坐标、近距离点选居中，缩放与云层/关系网/大气同步淡入淡出，瓦片请求限流、失败重试并持久缓存，低端设备自动降低分辨率与帧率；好友为发光节点、关系为弧线；点击节点查看本周信笺并直接回信（进入单聊）。好友可在「设置 → 其他设置」共享城市级位置（默认关闭，仅好友可见），未共享时按稳定哈希分布。天气或地图瓦片失败时静默降级。发布文字/图片（自动降采样），动态仅好友可见（RLS）。通讯录含好友请求列表
 - 语音通话基于 WebRTC（PeerJS 云信令，`peerjs`）：仅云端登录账号可用，双方需各自停留在与对方的聊天页；首次呼叫需授权麦克风，来电页支持接听/拒绝，通话中可静音与查看计时
 - 未执行云端 SQL 时自动降级为本地演示模式（演示账号仍可完整体验）
 - PWA 离线支持：`vite-plugin-pwa` 生成 service worker 预缓存静态资源，断网时可打开应用并读取本地缓存会话（`registerType: autoUpdate` 自动更新）
@@ -64,6 +64,7 @@ npm run test
    - `messages` 表（含 RLS：仅收发双方可读写、陌生人拒收、2 分钟撤回窗口校验）、realtime publication、复合索引、外键与 4000 字符长度约束、`recalled_at` 撤回列
    - `friends` / `friend_requests` 表（好友边与请求验证流，pending 幂等唯一约束，双向策略）
    - `blocks`（单向拒收）、`read_cursors`（已读水位）、`message_hides`（单方删除）表
+   - `profile_locations` 表（好友城市位置：默认关闭，仅 `visible = true` 且互为好友时可读，本人可写）
    - `moments` / `moment_likes` / `moment_comments` 表与 `moments` Storage bucket（公开读、本人目录写）
    - `client_errors` 表（前端错误监控上报，登录用户仅可写入，触发器限流 5 分钟 30 条）
    - `profiles.avatar_url` 列与 `avatars` Storage bucket（公开只读，每人仅能写自己 `<uid>/` 目录）
@@ -108,6 +109,7 @@ src/
     messages.js          消息读写、分页、排序合并、会话分组（纯函数为主）
     profiles.js          资料读写、昵称更新（含列名回退）
     friends.js           好友表 SQL、fetchFriends、upsertFriend
+    locations.js         好友城市位置读写、城市坐标映射
     authErrors.js        认证错误码翻译
   components/            Avatar、NavBar、TabBar、AuthBar、CallOverlay、CopySql、ErrorBoundary
   pages/                 各路由页面（含 ResetPassword 重置密码、Legal 协议/隐私）

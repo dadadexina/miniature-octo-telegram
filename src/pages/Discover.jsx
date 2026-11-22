@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import DiscoverGlobe from '../components/DiscoverGlobe'
+import { fetchLocations } from '../lib/locations'
 import { isUuid } from '../lib/messages'
 import { downscaleMomentImage } from '../lib/momentImage'
 import { createMoment, fetchMoments, uploadMomentImage } from '../lib/moments'
@@ -190,6 +191,38 @@ function CloudDiscover({ onReply }) {
     () => buildRoutes({ meId, feed, getUser, displayNameOf, avatarColor }),
     [meId, feed, getUser, displayNameOf, avatarColor]
   )
+  const peopleKey = useMemo(() => {
+    const ids = new Set(people.map((person) => person.id))
+    ids.add(meId)
+    return [...ids].sort().join(',')
+  }, [people, meId])
+  const [locations, setLocations] = useState(() => new Map())
+  useEffect(() => {
+    if (!isUuid(meId)) return undefined
+    let alive = true
+    fetchLocations(peopleKey.split(',').filter(Boolean)).then((res) => {
+      if (!alive || !res.ok) return
+      const next = new Map()
+      ;(res.locations || []).forEach((location) => {
+        if (location.visible || location.userId === meId) next.set(location.userId, location)
+      })
+      setLocations(next)
+    })
+    return () => {
+      alive = false
+    }
+  }, [peopleKey, meId])
+  const locatedPeople = useMemo(
+    () =>
+      people.map((person) => {
+        const location = locations.get(person.id)
+        return location
+          ? { ...person, lat: location.lat, lng: location.lng, place: location.label }
+          : person
+      }),
+    [people, locations]
+  )
+  const meLocation = locations.get(meId)
   const links = useMemo(() => {
     const ids = new Set(people.map((person) => person.id))
     const pairs = new Map()
@@ -259,11 +292,12 @@ function CloudDiscover({ onReply }) {
       />
       <div className="min-h-0 flex-1">
         <DiscoverGlobe
-          people={people}
+          people={locatedPeople}
           links={links}
           routes={routes}
           meId={meId}
           meName={meName}
+          meCoords={meLocation}
           loading={loading}
           error={loadError}
           emptyText="本周还没有朋友写信。你可以先写一页。"

@@ -21,9 +21,11 @@ import {
   serializeExport,
   summarizeExport,
 } from '../lib/dataExport'
+import { cityLocation, fetchLocations, saveMyLocation } from '../lib/locations'
 import { goBackOr } from '../lib/navigation'
 import { inputValue } from '../lib/input'
 import { isUuid } from '../lib/messages'
+import { PLACES } from '../lib/places'
 import { saveMomentCover } from '../lib/momentCover'
 import { NOTIFICATION_SOUNDS, playNotificationSound } from '../lib/notificationSounds'
 import { fetchProfilesByIds, updateProfileSignature } from '../lib/profiles'
@@ -139,6 +141,10 @@ export default function Settings() {
     normalizeSignature(profile?.signature || loadLocalSignature(currentUser?.id) || '')
   )
   const [signatureBusy, setSignatureBusy] = useState(false)
+  const [locationCity, setLocationCity] = useState('xian')
+  const [locationVisible, setLocationVisible] = useState(false)
+  const [locationBusy, setLocationBusy] = useState(false)
+  const [locationError, setLocationError] = useState('')
   const [notificationPermission, setNotificationPermission] = useState(readNotificationPermission)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -175,6 +181,24 @@ export default function Settings() {
       clearTimeout(ringtoneTimerRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (!cloudAccount) return undefined
+    let alive = true
+    fetchLocations([currentUser?.id]).then((res) => {
+      if (!alive) return
+      const saved = res.locations?.[0]
+      if (saved) {
+        const place = PLACES.find((item) => item.name === saved.label)
+        if (place) setLocationCity(place.id)
+        setLocationVisible(saved.visible)
+      }
+      if (!res.ok && res.missing) setLocationError(res.error)
+    })
+    return () => {
+      alive = false
+    }
+  }, [cloudAccount, currentUser?.id])
 
   useEffect(() => {
     let alive = true
@@ -368,6 +392,28 @@ export default function Settings() {
     )
     setSignatureBusy(false)
     setNotice(remote.localOnly ? '云端资料表未升级，个性签名已保存到本机' : '个性签名已保存')
+  }
+
+  const onSaveLocation = async () => {
+    if (!cloudAccount) {
+      setNotice('登录云端账号后才能共享城市位置')
+      return
+    }
+    const city = cityLocation(locationCity)
+    if (!city) {
+      setNotice('请选择所在城市')
+      return
+    }
+    setLocationBusy(true)
+    setLocationError('')
+    const res = await saveMyLocation(currentUser.id, { ...city, visible: locationVisible })
+    setLocationBusy(false)
+    if (!res.ok) {
+      setLocationError(res.error || '保存位置失败')
+      setNotice(res.error || '保存位置失败')
+      return
+    }
+    setNotice(locationVisible ? '已共享城市位置，好友可在发现页看到' : '已停止共享位置')
   }
 
   const validateNewPassword = () => {
@@ -1222,6 +1268,54 @@ export default function Settings() {
             <p className="mt-3 px-4 text-[12px] leading-5 text-eink-sub">
               签名会保存在云端并同步到其他设备；云端未升级时会先保存在本机。
             </p>
+            <div className="mt-6 border-y border-eink-divider bg-eink-bar" data-testid="settings-location">
+              <div className="px-4 py-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="min-w-0">
+                    <span className="block text-[16px] text-eink-text">位置共享</span>
+                    <span className="mt-0.5 block text-[12px] text-eink-sub">城市级 · 默认关闭</span>
+                  </span>
+                  <Switch checked={locationVisible} onChange={setLocationVisible} label="位置共享" />
+                </div>
+                <p className="mt-2 text-[12px] leading-5 text-eink-sub">
+                  开启后，好友可在发现页看到你选择的城市，不会显示精确位置。关闭并保存后立即停止共享。
+                </p>
+                <label className="mt-3 block text-[13px] text-eink-text" htmlFor="settings-location-city">
+                  所在城市
+                </label>
+                <select
+                  id="settings-location-city"
+                  data-testid="settings-location-city"
+                  className="mt-1 h-10 w-full border border-eink-divider bg-eink-paper px-3 text-[15px] text-eink-text outline-none disabled:opacity-60"
+                  value={locationCity}
+                  onChange={(event) => setLocationCity(event.target.value)}
+                  disabled={!cloudAccount || locationBusy}
+                >
+                  {PLACES.map((place) => (
+                    <option key={place.id} value={place.id}>
+                      {place.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  data-testid="settings-save-location"
+                  className="mt-2 h-10 w-full border border-eink-ink text-[15px] text-eink-ink active:bg-[#E7E5DD] disabled:opacity-60"
+                  onClick={onSaveLocation}
+                  disabled={!cloudAccount || locationBusy}
+                >
+                  {locationBusy ? '正在保存...' : locationVisible ? '保存并共享城市' : '保存并停止共享'}
+                </button>
+                {locationError ? (
+                  <p data-testid="settings-location-error" className="mt-2 text-[12px] leading-5 text-[#a8432f]">
+                    {locationError}
+                  </p>
+                ) : null}
+                {!cloudAccount ? (
+                  <p className="mt-2 text-[12px] leading-5 text-eink-sub">登录云端账号后可共享城市位置。</p>
+                ) : null}
+              </div>
+            </div>
             <div className="mt-6 border-y border-eink-divider bg-eink-bar">
               <a href="mailto:4494507@qq.com" data-testid="settings-support" className="block px-4 py-3.5">
                 <span className="block text-[16px] text-eink-text">联系客服</span>

@@ -94,6 +94,15 @@ describe('UPGRADE_SQL 幂等性', () => {
     }
   })
 
+  it('位置共享表默认关闭且仅好友可见', () => {
+    expect(UPGRADE_SQL).toContain('create table if not exists public.profile_locations')
+    expect(UPGRADE_SQL).toContain('visible boolean not null default false')
+    const at = UPGRADE_SQL.indexOf('create policy "profile_locations_select_visible"')
+    const body = UPGRADE_SQL.slice(at, UPGRADE_SQL.indexOf(';', at))
+    expect(body).toContain('user_id = auth.uid()')
+    expect(body).toContain('visible = true and public.are_contacts(auth.uid(), user_id)')
+  })
+
   it('每个策略创建前都有同名删除语句', () => {
     const names = [...UPGRADE_SQL.matchAll(/create policy\s+"([^"]+)"/g)].map((m) => m[1])
     expect(names.length).toBeGreaterThan(0)
