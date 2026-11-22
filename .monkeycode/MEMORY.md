@@ -31,7 +31,7 @@ This file records user instructions, preferences, and teachings for reference in
 - Instructions:
   - 工作流：`ci.yml`（verify：npm ci+lint+test+build；e2e：Playwright 公开页用例）、`backup.yml`（每日 03:15 UTC pg_dump→AES-256 加密→artifact 30 天；需 Secrets：SUPABASE_DB_URL、BACKUP_ENCRYPTION_KEY）
   - 匿名 curl api.github.com 会触发 rate limit；查 runs 需认证：`TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git -c credential.helper= -c credential.helper=/root/gitcred-netrc.sh credential fill | sed -n 's/^password=//p')` 后带 `Authorization: Bearer`（勿回显 token）
-  - 推送命令固定：`git -c credential.helper= -c credential.helper=/root/gitcred-netrc.sh push origin main`
+  - 推送命令：直接 `git push origin main`。默认 helper `/app/agent/bin/agent git-credential-helper` 可用；旧路径 `/root/gitcred-netrc.sh` 已不存在，勿再用 `-c credential.helper` 覆盖；`gh` 已登录 dadadexina，必要时 `gh auth setup-git`
 
 [Supabase 配置来自 .env.local，代码零硬编码]
 - Date: 2026-11-20

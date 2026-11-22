@@ -39,17 +39,17 @@
 ## 3. 安全与合规（P0，代码可做）
 
 - [ ] **3.1 注销清理 Storage 媒体**：`supabase/functions/delete-account/index.ts` 在删用户前，用 service role 列出并删除 `avatars/<uid>/`、`moments/`、`message_media/` 中该用户对象（含配对目录）；补测试/说明。负责：我
-- [ ] **3.2 朋友圈拉黑隔离**：若 0.4 未排除拉黑，`can_view_moment` 加 `not exists (blocks)`。负责：我（依赖 0.4）
-- [ ] **3.3 好友自约束**：若 0.5 缺失，`friends` 加 `check (owner_id <> friend_id)`。负责：我（依赖 0.5）
+- [x] **3.2 朋友圈拉黑隔离** —— 已完成（commit `feb1970`）：`can_view_moment` 增加双向拉黑排除；需重跑 `CLOUD_SQL` 生效。
+- [x] **3.3 好友自约束** —— 已完成（commit `feb1970`）：`friends` 增加 `friends_no_self` 约束 + 幂等补丁；需重跑 `CLOUD_SQL` 生效。
 - [ ] **3.4 关系函数权限收紧**：若 0.7 显示 PUBLIC 可执行，`revoke execute ... from public` 后按需 `grant to authenticated`。负责：我（依赖 0.7）
-- [ ] **3.5 私有桶复核**：若 0.6 显示 `message_media` 公开，改为私有并确认前端全走 `createSignedUrl`。负责：我（依赖 0.6）
+- [x] **3.5 私有桶复核** —— 无需改：`message_media` 已是私有桶（`schema_v2.js:59`）。
 
 ## 4. 交付体验与合规文案（P0，代码可做）
 
-- [ ] **4.1 移除生产 SQL 入口**：`src/components/CopySql.jsx` 及相关入口仅开发模式（`import.meta.env.DEV`）可见。负责：我
-- [ ] **4.2 修正法律文案**：`src/pages/Legal.jsx:10,13` 去除“演示应用”口径，改为正式产品表述。负责：我
-- [ ] **4.3 非好友隐藏“发送信息”**：`src/pages/FriendProfile.jsx:206-215` 按关系状态（`can_message`/好友判定）条件渲染，避免点击后被 RLS 拒。负责：我
-- [ ] **4.4 朋友圈点赞/评论落库**（若 0.1 确认为纯前端）：补写入与实时更新。负责：我（依赖 0.1）
+- [x] **4.1 移除生产 SQL 入口** —— 已完成（commit `feb1970`）：`CopySql` 在 `!import.meta.env.DEV` 时返回 null。
+- [x] **4.2 修正法律文案** —— 已完成（commit `feb1970`）：去除“演示”口径，更新日期 2026-11-22。
+- [x] **4.3 非好友隐藏“发送信息”** —— 已完成（commit `feb1970`）：按 `friendMetaOf` 判定，非好友显示提示。
+- [x] **4.4 朋友圈点赞/评论落库** —— 无需改：0.1 复核确认已落库（`moments.js:105-151`）。
 
 ## 5. 部署健壮性（P1）
 
