@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { Navigate, Outlet, useNavigate } from 'react-router-dom'
 import AuthBar from '../components/AuthBar'
 import PendingDeletionGate from '../components/PendingDeletionGate'
@@ -28,7 +29,13 @@ export default function Layout() {
         </div>
       ) : null}
       <div className="min-h-0 flex-1 overflow-hidden">
-        <Outlet />
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center text-[13px] text-eink-sub">加载中...</div>
+          }
+        >
+          <Outlet />
+        </Suspense>
       </div>
       <TabBar />
     </div>

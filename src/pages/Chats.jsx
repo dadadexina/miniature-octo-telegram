@@ -15,8 +15,9 @@ export default function Chats() {
   const [swipedId, setSwipedId] = useState(null)
   const [hint, setHint] = useState('')
   const [needSql, setNeedSql] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [cloudOk, setCloudOk] = useState(false)
+  const cachedInbox = Boolean(currentUser?.id && isUuid(currentUser.id) && inbox.length)
+  const [loading, setLoading] = useState(() => Boolean(currentUser?.id && isUuid(currentUser.id) && !cachedInbox))
+  const [cloudOk, setCloudOk] = useState(cachedInbox)
   const localList = conversations()
 
   const visibleInbox = useMemo(() => {
@@ -69,7 +70,6 @@ export default function Chats() {
       setLoading(false)
       return undefined
     }
-    setLoading(true)
     fetchInbox(currentUser.id).then(async (result) => {
       if (!alive) return
       if (!result.ok) {

@@ -1,10 +1,11 @@
 import { lazy, Suspense } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { useStore } from './store'
 import CallProvider from './components/CallProvider'
 import Layout from './pages/Layout'
 import Chats from './pages/Chats'
 import ProfileGate from './pages/ProfileGate'
+import useRoutePreload from './hooks/useRoutePreload'
 
 const Login = lazy(() => import('./pages/Login'))
 const Contacts = lazy(() => import('./pages/Contacts'))
@@ -18,11 +19,17 @@ const Settings = lazy(() => import('./pages/Settings'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const Legal = lazy(() => import('./pages/Legal'))
 
-function Guard({ children }) {
+function Guard() {
   const { currentUser, authReady } = useStore()
   if (!authReady) return <BootScreen />
   if (!currentUser) return <Navigate to="/login" replace />
-  return <ProfileGate>{children}</ProfileGate>
+  return (
+    <ProfileGate>
+      <Suspense fallback={<PageScreen />}>
+        <Outlet />
+      </Suspense>
+    </ProfileGate>
+  )
 }
 
 function BootScreen() {
@@ -33,8 +40,17 @@ function BootScreen() {
   )
 }
 
+function PageScreen() {
+  return (
+    <div className="flex h-full items-center justify-center bg-eink-paper text-[14px] text-eink-sub">
+      加载中...
+    </div>
+  )
+}
+
 export default function App() {
   const { currentUser, authReady } = useStore()
+  useRoutePreload(Boolean(authReady && currentUser))
 
   return (
     <div className="mx-auto h-full max-w-md overflow-hidden border-x border-eink-divider bg-eink-paper">
@@ -45,60 +61,20 @@ export default function App() {
               path="/login"
               element={!authReady ? <BootScreen /> : currentUser ? <Navigate to="/chats" replace /> : <Login />}
             />
-            <Route
-              path="/"
-              element={
-                <Guard>
-                  <Layout />
-                </Guard>
-              }
-            >
-              <Route index element={<Navigate to="/chats" replace />} />
-              <Route path="chats" element={<Chats />} />
-              <Route path="contacts" element={<Contacts />} />
-              <Route path="discover" element={<Discover />} />
-              <Route path="me" element={<Profile />} />
+            <Route element={<Guard />}>
+              <Route element={<Layout />}>
+                <Route path="/" element={<Navigate to="/chats" replace />} />
+                <Route path="/chats" element={<Chats />} />
+                <Route path="/contacts" element={<Contacts />} />
+                <Route path="/discover" element={<Discover />} />
+                <Route path="/me" element={<Profile />} />
+              </Route>
+              <Route path="/chat/:peerId" element={<ChatDetail />} />
+              <Route path="/friend/:userId" element={<FriendProfile />} />
+              <Route path="/friend/:userId/moments" element={<FriendMoments />} />
+              <Route path="/profile/edit" element={<EditProfile />} />
+              <Route path="/settings" element={<Settings />} />
             </Route>
-            <Route
-              path="/chat/:peerId"
-              element={
-                <Guard>
-                  <ChatDetail />
-                </Guard>
-              }
-            />
-            <Route
-              path="/friend/:userId"
-              element={
-                <Guard>
-                  <FriendProfile />
-                </Guard>
-              }
-            />
-            <Route
-              path="/friend/:userId/moments"
-              element={
-                <Guard>
-                  <FriendMoments />
-                </Guard>
-              }
-            />
-            <Route
-              path="/profile/edit"
-              element={
-                <Guard>
-                  <EditProfile />
-                </Guard>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <Guard>
-                  <Settings />
-                </Guard>
-              }
-            />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/legal/terms" element={<Legal kind="terms" />} />
             <Route path="/legal/privacy" element={<Legal kind="privacy" />} />

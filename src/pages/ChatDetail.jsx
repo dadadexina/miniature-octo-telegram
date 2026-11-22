@@ -501,6 +501,8 @@ export default function ChatDetail() {
     })
   }
 
+  const showLoading = loading && messages.length === 0
+
   return (
     <div
       className="flex h-full flex-col bg-eink-paper"
@@ -634,10 +636,10 @@ export default function ChatDetail() {
           setMenuOpen(false)
         }}
       >
-        {loading ? (
+        {showLoading ? (
           <p className="py-10 text-center text-[12px] text-eink-faint">正在读取消息...</p>
         ) : null}
-        {!loading && useCloud && hasMore ? (
+        {!showLoading && useCloud && hasMore ? (
           <div className="mb-2 flex justify-center">
             <button
               type="button"
@@ -649,14 +651,14 @@ export default function ChatDetail() {
             </button>
           </div>
         ) : null}
-        {!loading && needSql ? <CopySql compact /> : null}
-        {!loading && hint && !needSql ? (
+        {!showLoading && needSql ? <CopySql compact /> : null}
+        {!showLoading && hint && !needSql ? (
           <p className="px-4 py-2 text-center text-[12px] leading-5 text-eink-sub">{hint}</p>
         ) : null}
-        {!loading && messages.length === 0 ? (
+        {!showLoading && messages.length === 0 ? (
           <p className="py-10 text-center text-[12px] text-eink-faint">暂无消息，发一条打个招呼吧</p>
         ) : null}
-        {!loading
+        {!showLoading
           ? messages.map((msg, index) => {
               const mine = msg.fromId === currentUser.id
               const showTime = index === 0 || msg.time - messages[index - 1].time > 5 * 60 * 1000

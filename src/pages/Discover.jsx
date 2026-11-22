@@ -31,6 +31,12 @@ function mergeByKey(prev, incoming, keyOf) {
   return [...prev, ...incoming.filter((item) => !seen.has(keyOf(item)))]
 }
 
+let feedCache = null
+
+function cacheFor(userId) {
+  return feedCache && feedCache.userId === userId ? feedCache : null
+}
+
 export default function Discover() {
   const { currentUser } = useStore()
   if (!currentUser) return null
@@ -42,12 +48,13 @@ function CloudDiscover() {
   const meName = profile?.nickname || currentUser.nickname
   const meId = currentUser.id
   const meSignature = profile?.signature || loadLocalSignature(meId)
-  const [feed, setFeed] = useState([])
-  const [likes, setLikes] = useState([])
-  const [comments, setComments] = useState([])
-  const [hasMore, setHasMore] = useState(false)
-  const [oldestAt, setOldestAt] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const initialCache = cacheFor(meId)
+  const [feed, setFeed] = useState(() => initialCache?.feed || [])
+  const [likes, setLikes] = useState(() => initialCache?.likes || [])
+  const [comments, setComments] = useState(() => initialCache?.comments || [])
+  const [hasMore, setHasMore] = useState(() => initialCache?.hasMore || false)
+  const [oldestAt, setOldestAt] = useState(() => initialCache?.oldestAt || null)
+  const [loading, setLoading] = useState(() => !initialCache)
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
@@ -130,7 +137,10 @@ function CloudDiscover() {
   const { scrollRef, pull, refreshing, threshold, handlers } = usePullToRefresh({ onRefresh: () => load() })
 
   useEffect(() => {
-    setLoading(true)
+    feedCache = { userId: meId, feed, likes, comments, hasMore, oldestAt }
+  }, [meId, feed, likes, comments, hasMore, oldestAt])
+
+  useEffect(() => {
     load()
   }, [meId, syncTick])
 

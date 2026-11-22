@@ -3,12 +3,17 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Chats from './Chats'
+import { fetchInbox, groupConversations } from '../lib/messages'
+
+const demoUser = { id: 'u_demo_me', nickname: '演示我', avatarUrl: '' }
 
 const storeHolder = {
   conversations: () => [],
   drafts: {},
   users: {},
   convPrefs: {},
+  currentUser: demoUser,
+  inbox: [],
   setConversationPref: () => Promise.resolve({ ok: true }),
   unreadOf: () => 0,
 }
@@ -17,10 +22,10 @@ vi.mock('../store', () => ({
   useStore: () => ({
     conversations: () => storeHolder.conversations(),
     avatarColor: () => '#191919',
-    currentUser: { id: 'u_demo_me', nickname: '演示我', avatarUrl: '' },
+    currentUser: storeHolder.currentUser,
     getUser: (id) => storeHolder.users[id] || null,
     upsertUsers: vi.fn(),
-    inbox: [],
+    inbox: storeHolder.inbox,
     mergeInbox: vi.fn(),
     unreadOf: (id) => storeHolder.unreadOf(id),
     convPrefs: storeHolder.convPrefs,
@@ -52,8 +57,12 @@ beforeEach(() => {
   storeHolder.drafts = {}
   storeHolder.users = {}
   storeHolder.convPrefs = {}
+  storeHolder.currentUser = demoUser
+  storeHolder.inbox = []
   storeHolder.setConversationPref = vi.fn(() => Promise.resolve({ ok: true }))
   storeHolder.unreadOf = () => 0
+  groupConversations.mockImplementation(() => [])
+  fetchInbox.mockReset()
 })
 
 afterEach(cleanup)
@@ -158,5 +167,23 @@ describe('Chats 置顶与免打扰', () => {
     await screen.findByTestId('row-actions')
     fireEvent.click(screen.getByTestId('action-delete'))
     await waitFor(() => expect(screen.queryByTestId('row-actions')).toBeNull())
+  })
+})
+
+describe('Chats 进入页面时无缓存闪烁', () => {
+  it('已有缓存会话时直接渲染列表，不显示加载占位', () => {
+    const meId = '11111111-1111-1111-1111-111111111111'
+    storeHolder.currentUser = { id: meId, nickname: '我', avatarUrl: '' }
+    storeHolder.users = { u1: friend('u1', '李四') }
+    storeHolder.inbox = [{ id: 'm1', fromId: 'u1', toId: meId, text: '缓存消息', time: 1000 }]
+    groupConversations.mockImplementation((uid, messages) =>
+      messages.map((m) => ({ peerId: m.fromId === uid ? m.toId : m.fromId, last: m }))
+    )
+    fetchInbox.mockReturnValue(new Promise(() => {}))
+
+    setup()
+
+    expect(screen.getByText('缓存消息')).toBeTruthy()
+    expect(screen.queryByText('正在读取会话...')).toBeNull()
   })
 })
