@@ -142,14 +142,7 @@ export default function Contacts() {
 
   return (
     <div className="flex h-full flex-col">
-      <NavBar
-        title="通讯录"
-        right={
-          <Link to="/me" className="text-[13px] font-medium text-eink-ink underline underline-offset-2">
-            我
-          </Link>
-        }
-      />
+      <NavBar title="通讯录" />
       <div className="min-h-0 flex-1 overflow-y-auto bg-eink-paper no-scrollbar">
         <form className="border-b border-eink-divider bg-eink-paper px-3 py-2" onSubmit={onSearch}>
           <div className="flex items-center gap-2">

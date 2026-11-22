@@ -166,6 +166,8 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
       await pageA.getByTestId('chat-menu').click()
     }
     await pageA.getByTestId('block-toggle').click()
+    await expect(pageA.getByTestId('block-confirm-dialog')).toBeVisible()
+    await pageA.getByTestId('block-confirm').click()
     await expect(pageA.getByText('已拉黑，对方无法再给你发消息').first()).toBeVisible({ timeout: 15000 })
 
     // 菜单文案切换为「取消拉黑」,点击恢复

@@ -111,6 +111,7 @@ describe('Chats 会话列表草稿前缀', () => {
     setup()
     expect(screen.getByText('消息')).toBeTruthy()
     expect(screen.queryByText('微信')).toBeNull()
+    expect(screen.queryByRole('link', { name: '我' })).toBeNull()
   })
 })
 

@@ -125,14 +125,7 @@ export default function Chats() {
 
   return (
     <div className="flex h-full flex-col">
-      <NavBar
-        title="消息"
-        right={
-          <Link to="/me" className="text-[13px] font-medium text-eink-ink underline underline-offset-2">
-            我
-          </Link>
-        }
-      />
+      <NavBar title="消息" />
       <div className="min-h-0 flex-1 overflow-y-auto bg-eink-bar no-scrollbar">
         {needSql ? <CopySql compact /> : hint ? <p className="px-4 py-2 text-[12px] leading-5 text-eink-sub">{hint}</p> : null}
         {loading ? (

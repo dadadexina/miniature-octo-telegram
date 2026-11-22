@@ -13,6 +13,7 @@ const PEER_USER = { id: PEER, nickname: '小红', publicId: '23456', avatarUrl: 
 const storeHolder = {
   inbox: [],
   drafts: {},
+  blockedIds: [],
 }
 
 const stableMocks = {
@@ -24,7 +25,7 @@ const stableMocks = {
   mergeInbox: vi.fn(),
   openPeer: vi.fn(),
   readReceiptOf: () => 0,
-  isBlocked: () => false,
+  isBlocked: (id) => storeHolder.blockedIds.includes(id),
   setBlockedFor: vi.fn(),
   setDraft: vi.fn(),
 }
@@ -110,6 +111,9 @@ function setup() {
 beforeEach(() => {
   storeHolder.inbox = []
   storeHolder.drafts = {}
+  storeHolder.blockedIds = []
+  stableMocks.setBlockedFor.mockReset()
+  stableMocks.setBlockedFor.mockResolvedValue({ ok: true })
   readImageFile.mockReset()
   uploadMessageBlob.mockReset()
   URL.createObjectURL = vi.fn(() => 'blob:preview-image')
@@ -182,5 +186,47 @@ describe('ChatDetail 图片消息不额外套气泡边框', () => {
     const bubble = screen.getByText('图片说明').closest('.chat-bubble-text')
     expect(bubble).toBeTruthy()
     expect(bubble.contains(pending)).toBe(false)
+  })
+})
+
+describe('ChatDetail 拉黑确认', () => {
+  it('点击拉黑先弹确认，取消后不执行拉黑', async () => {
+    setup()
+
+    fireEvent.click(await screen.findByTestId('chat-menu'))
+    fireEvent.click(screen.getByTestId('block-toggle'))
+
+    expect(screen.getByTestId('block-confirm-dialog')).toBeTruthy()
+    expect(screen.getByText(/将无法再给你发消息，聊天记录会保留/)).toBeTruthy()
+    expect(stableMocks.setBlockedFor).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('block-cancel'))
+    expect(screen.queryByTestId('block-confirm-dialog')).toBeNull()
+    expect(stableMocks.setBlockedFor).not.toHaveBeenCalled()
+  })
+
+  it('确认后执行拉黑并给出提示', async () => {
+    setup()
+
+    fireEvent.click(await screen.findByTestId('chat-menu'))
+    fireEvent.click(screen.getByTestId('block-toggle'))
+    fireEvent.click(screen.getByTestId('block-confirm'))
+
+    expect(stableMocks.setBlockedFor).toHaveBeenCalledWith(PEER, true)
+    await screen.findByText('已拉黑，对方无法再给你发消息')
+    expect(screen.queryByTestId('block-confirm-dialog')).toBeNull()
+  })
+
+  it('已拉黑时取消拉黑无需二次确认', async () => {
+    storeHolder.blockedIds = [PEER]
+    setup()
+
+    fireEvent.click(await screen.findByTestId('chat-menu'))
+    expect(screen.getByTestId('block-toggle').textContent).toBe('取消拉黑')
+    fireEvent.click(screen.getByTestId('block-toggle'))
+
+    expect(screen.queryByTestId('block-confirm-dialog')).toBeNull()
+    expect(stableMocks.setBlockedFor).toHaveBeenCalledWith(PEER, false)
+    await screen.findByText('已取消拉黑')
   })
 })

@@ -79,6 +79,7 @@ export default function ChatDetail() {
   const [viewerUrl, setViewerUrl] = useState(null)
   const fileInputRef = useRef(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [confirmBlock, setConfirmBlock] = useState(false)
   const listRef = useRef(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -194,6 +195,7 @@ export default function ChatDetail() {
     setFlashMsgId(null)
     setAttach(null)
     setViewerUrl(null)
+    setConfirmBlock(false)
   }, [peerId])
 
   useEffect(() => {
@@ -469,9 +471,19 @@ export default function ChatDetail() {
 
   const onToggleBlock = async () => {
     setMenuOpen(false)
+    setConfirmBlock(false)
     const blocked = isBlocked(peerId)
     const result = await setBlockedFor(peerId, !blocked)
     setHint(result.ok ? (blocked ? '已取消拉黑' : '已拉黑，对方无法再给你发消息') : result.error || '操作失败')
+  }
+
+  const onBlockAction = () => {
+    setMenuOpen(false)
+    if (isBlocked(peerId)) {
+      void onToggleBlock()
+      return
+    }
+    setConfirmBlock(true)
   }
 
   const onSignOut = async () => {
@@ -565,7 +577,7 @@ export default function ChatDetail() {
                   type="button"
                   data-testid="block-toggle"
                   className="block w-full px-3 py-2.5 text-left text-[14px] text-eink-ink active:bg-eink-pressed"
-                  onClick={onToggleBlock}
+                  onClick={onBlockAction}
                 >
                   {isBlocked(peerId) ? '取消拉黑' : '拉黑对方'}
                 </button>
@@ -963,6 +975,43 @@ export default function ChatDetail() {
         </button>
         </div>
       </form>
+
+      {confirmBlock ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8"
+          onClick={() => setConfirmBlock(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            data-testid="block-confirm-dialog"
+            className="w-full max-w-[300px] border border-eink-divider bg-eink-paper px-5 pb-4 pt-5 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-[14px] leading-6 text-eink-text">
+              拉黑后，{peerDisplayName} 将无法再给你发消息，聊天记录会保留。
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                data-testid="block-cancel"
+                className="h-10 flex-1 border border-eink-divider text-[14px] text-eink-sub active:bg-eink-pressed"
+                onClick={() => setConfirmBlock(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                data-testid="block-confirm"
+                className="h-10 flex-1 bg-eink-ink text-[14px] text-eink-paper active:bg-eink-pressed"
+                onClick={onToggleBlock}
+              >
+                拉黑
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {reportMsg ? (
         <ReportSheet
