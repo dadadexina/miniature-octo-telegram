@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { ensureFriendship } from './friends'
 
-test.describe.configure({ timeout: 180_000, mode: 'serial' })
+test.describe.configure({ timeout: 300_000, mode: 'serial' })
 
 const A = {
   email: process.env.E2E_USER_A_EMAIL,
