@@ -5,6 +5,7 @@ import {
   altitudeLabel,
   formatCoords,
   latLngFromUnit,
+  parseCoords,
   tileBlock,
   tileToLat,
   tileToLng,
@@ -63,8 +64,20 @@ describe('tiles', () => {
   it('formats coordinates and altitude', () => {
     expect(formatCoords(34.34, 108.94)).toBe('N 34.34°  E 108.94°')
     expect(formatCoords(-33.9, -70.6)).toBe('S 33.90°  W 70.60°')
+    expect(formatCoords(34.34162, 108.93984, 5)).toBe('N 34.34162°  E 108.93984°')
     expect(altitudeLabel(0.000005)).toBe('32 m')
     expect(altitudeLabel(0.05)).toBe('319 km')
+  })
+
+  it('parses decimal, paired and hemisphere coordinates', () => {
+    expect(parseCoords('34.34, 108.94')).toEqual({ lat: 34.34, lng: 108.94 })
+    expect(parseCoords('34.34 108.94')).toEqual({ lat: 34.34, lng: 108.94 })
+    expect(parseCoords('N 34.34° E 108.94°')).toEqual({ lat: 34.34, lng: 108.94 })
+    expect(parseCoords('S 33.9 W 70.6')).toEqual({ lat: -33.9, lng: -70.6 })
+    expect(parseCoords('34.34，108.94')).toEqual({ lat: 34.34, lng: 108.94 })
+    expect(parseCoords('上海')).toBeNull()
+    expect(parseCoords('91, 108')).toBeNull()
+    expect(parseCoords('34.34, 181')).toBeNull()
   })
 
   it('wraps tile x across the antimeridian', () => {

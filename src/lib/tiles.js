@@ -84,8 +84,33 @@ export function latLngFromUnit(unit) {
   }
 }
 
-export function formatCoords(lat, lng) {
+export function formatCoords(lat, lng, digits = 2) {
   const ns = lat >= 0 ? 'N' : 'S'
   const ew = lng >= 0 ? 'E' : 'W'
-  return `${ns} ${Math.abs(lat).toFixed(2)}°  ${ew} ${Math.abs(lng).toFixed(2)}°`
+  const precision = Math.min(6, Math.max(0, digits))
+  return `${ns} ${Math.abs(lat).toFixed(precision)}°  ${ew} ${Math.abs(lng).toFixed(precision)}°`
+}
+
+export function parseCoords(input) {
+  const text = String(input || '')
+    .trim()
+    .replace(/[，、;；]/g, ' ')
+    .replace(/°/g, ' ')
+  if (!text) return null
+  let lat
+  let lng
+  const ns = text.match(/([NS])\s*(-?\d+(?:\.\d+)?)/i)
+  const ew = text.match(/([EW])\s*(-?\d+(?:\.\d+)?)/i)
+  if (ns && ew) {
+    lat = Number(ns[2]) * (/^s$/i.test(ns[1]) ? -1 : 1)
+    lng = Number(ew[2]) * (/^w$/i.test(ew[1]) ? -1 : 1)
+  } else {
+    const numbers = text.match(/-?\d+(?:\.\d+)?/g)
+    if (!numbers || numbers.length < 2) return null
+    lat = Number(numbers[0])
+    lng = Number(numbers[1])
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null
+  return { lat, lng }
 }

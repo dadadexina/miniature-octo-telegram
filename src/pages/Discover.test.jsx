@@ -148,4 +148,22 @@ describe('Discover 地球页', () => {
     setup()
     expect((await screen.findByTestId('routes-error')).textContent).toBe('没有权限')
   })
+
+  it('支持按城市和经纬度跳转', async () => {
+    setup()
+    await screen.findByTestId('routes-empty')
+
+    fireEvent.click(screen.getByTestId('globe-jump'))
+    const input = screen.getByTestId('jump-input')
+    fireEvent.change(input, { target: { value: '西安' } })
+    expect(screen.getByTestId('jump-result').textContent).toContain('西安')
+    fireEvent.click(screen.getByTestId('jump-result'))
+    expect(screen.queryByTestId('jump-sheet')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('globe-jump'))
+    fireEvent.change(screen.getByTestId('jump-input'), { target: { value: '34.3416, 108.9398' } })
+    expect(screen.getByTestId('jump-coords').textContent).toContain('34.3416')
+    fireEvent.click(screen.getByTestId('jump-coords'))
+    expect(screen.queryByTestId('jump-sheet')).toBeNull()
+  })
 })

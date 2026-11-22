@@ -53,3 +53,20 @@ export const PLACES = [
 export function cityWeatherId(place) {
   return `city-${place.id}`
 }
+
+export function searchPlaces(query, limit = 6) {
+  const keyword = String(query || '').trim().toLowerCase()
+  if (!keyword) return []
+  const matches = []
+  PLACES.forEach((place) => {
+    const name = place.name.toLowerCase()
+    const id = place.id.toLowerCase()
+    let score = 0
+    if (name === keyword || id === keyword) score = 3
+    else if (name.startsWith(keyword) || id.startsWith(keyword)) score = 2
+    else if (name.includes(keyword) || id.includes(keyword)) score = 1
+    if (score) matches.push({ place, score })
+  })
+  matches.sort((a, b) => b.score - a.score || a.place.tier - b.place.tier || a.place.name.localeCompare(b.place.name))
+  return matches.slice(0, limit).map((match) => match.place)
+}
