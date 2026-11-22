@@ -34,8 +34,13 @@ Deno.serve(async (req) => {
     if (req.headers.get('x-webhook-secret') !== secret) return json({ error: 'unauthorized' }, 401)
 
     const body = await req.json().catch(() => null)
-    const record = body?.record || body
-    if (!record || !record.receiver_id || !record.sender_id) return json({ error: 'invalid payload' }, 400)
+    if (!body || typeof body !== 'object') return json({ error: 'invalid payload' }, 400)
+    // Supabase Database Webhook 会带上事件类型,只处理新消息插入
+    if (body.type && body.type !== 'INSERT') return json({ ok: true, skipped: 'not-insert' })
+    const record = body.record || body
+    if (!record || typeof record !== 'object' || !record.receiver_id || !record.sender_id) {
+      return json({ error: 'invalid payload' }, 400)
+    }
     if (record.recalled_at) return json({ ok: true, skipped: 'recalled' })
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')

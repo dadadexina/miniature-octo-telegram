@@ -25,8 +25,23 @@ describe('UPGRADE_SQL 幂等性', () => {
     expect(body).toContain('f.owner_id = a and f.friend_id = b')
   })
 
-  it('关系判定函数仅授权 authenticated', () => {
-    const signatures = [
+  it('can_view_profile 仅对已接受关系开放', () => {
+    const fn = UPGRADE_SQL.slice(UPGRADE_SQL.indexOf('create or replace function public.can_view_profile'))
+    const body = fn.slice(0, fn.indexOf('$fn$;'))
+    expect(body).toContain("r.status = 'accepted'")
+  })
+
+  it('friends_insert_reciprocal 要求存在已接受请求', () => {
+    const at = UPGRADE_SQL.indexOf('create policy "friends_insert_reciprocal"')
+    const body = UPGRADE_SQL.slice(at, at + 600)
+    expect(body).toContain("r.status = 'accepted'")
+  })
+
+  it('不提供消息硬删除策略，软删只走 RPC', () => {
+    expect(UPGRADE_SQL).not.toContain('create policy "messages_delete_pair"')
+  })
+
+  it('关系判定函数仅授权 authenticated', () => {    const signatures = [
       'public.are_contacts(uuid, uuid)',
       'public.can_view_profile(uuid, uuid)',
       'public.can_message(uuid, uuid)',

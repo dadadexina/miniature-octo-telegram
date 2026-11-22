@@ -17,6 +17,14 @@ class FakeCache {
   async match(req) {
     return this.map.get(this.keyOf(req))
   }
+
+  async keys() {
+    return [...this.map.keys()]
+  }
+
+  async delete(req) {
+    return this.map.delete(this.keyOf(req))
+  }
 }
 
 let stores
@@ -48,6 +56,7 @@ async function loadWorker() {
   }
   vi.resetModules()
   await import('../../public/sw.js')
+  await import('../../public/push-handler.js')
 }
 
 function dispatch(request) {

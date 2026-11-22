@@ -126,6 +126,7 @@ export async function searchThreadMessages({ userId, peerId, query, limit = 50 }
       .select('*')
       .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
       .or(`sender_id.eq.${peerId},receiver_id.eq.${peerId}`)
+      .not('deleted_for', 'cs', `{${userId}}`)
       .ilike('content', `%${escapeLikePattern(q)}%`)
       .order('created_at', { ascending: false })
       .limit(limit)

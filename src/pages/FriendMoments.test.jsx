@@ -4,7 +4,11 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FriendMoments from './FriendMoments'
 import {
+  addMomentComment,
+  fetchMomentInteractions,
   fetchMoments,
+  likeMoment,
+  unlikeMoment,
 } from '../lib/moments'
 import { fetchProfilesByIds } from '../lib/profiles'
 
@@ -40,6 +44,11 @@ vi.mock('../lib/profiles', () => ({
 
 vi.mock('../lib/moments', () => ({
   fetchMoments: vi.fn(),
+  fetchMomentInteractions: vi.fn(),
+  likeMoment: vi.fn(),
+  unlikeMoment: vi.fn(),
+  addMomentComment: vi.fn(),
+  deleteMomentComment: vi.fn(),
 }))
 
 vi.mock('../components/Avatar', () => ({
@@ -53,6 +62,16 @@ beforeEach(() => {
   fetchMoments.mockReset()
   fetchProfilesByIds.mockReset()
   fetchProfilesByIds.mockResolvedValue({ ok: true, profiles: [] })
+  fetchMomentInteractions.mockReset()
+  fetchMomentInteractions.mockResolvedValue({ ok: true, likes: [], comments: [] })
+  likeMoment.mockReset()
+  likeMoment.mockResolvedValue({ ok: true })
+  unlikeMoment.mockReset()
+  unlikeMoment.mockResolvedValue({ ok: true })
+  addMomentComment.mockReset()
+  addMomentComment.mockImplementation(({ momentId, userId, content }) =>
+    Promise.resolve({ ok: true, comment: { id: `srv-${Date.now()}`, momentId, userId, content, createdAt: Date.now() } })
+  )
 })
 
 afterEach(cleanup)

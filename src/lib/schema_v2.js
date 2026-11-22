@@ -166,8 +166,9 @@ returns boolean language sql stable security definer set search_path = public as
     or public.are_contacts(viewer, target)
     or exists (
       select 1 from public.friend_requests r
-      where (r.from_id = viewer and r.to_id = target)
-         or (r.from_id = target and r.to_id = viewer)
+      where r.status = 'accepted'
+        and ((r.from_id = viewer and r.to_id = target)
+          or (r.from_id = target and r.to_id = viewer))
     )
 $fn$;
 
@@ -344,11 +345,8 @@ using (auth.uid() = sender_id and recalled_at is null
        and created_at > now() - interval '2 minutes')
 with check (auth.uid() = sender_id and recalled_at is not null);
 
--- 删除好友时清空该会话记录:只允许消息两端删自己的会话
+-- 消息软删走 soft_delete_pair_messages(RPC)，客户端无硬删权限，避免误删对方数据
 drop policy if exists "messages_delete_pair" on public.messages;
-create policy "messages_delete_pair" on public.messages for delete
-to authenticated
-using (auth.uid() in (sender_id, receiver_id));
 
 drop policy if exists "profiles_select_authenticated" on public.profiles;
 create policy "profiles_select_authenticated" on public.profiles for select
@@ -468,8 +466,10 @@ to authenticated
 with check (
   auth.uid() = friend_id
   and exists (
-    select 1 from public.friends f2
-    where f2.owner_id = auth.uid() and f2.friend_id = public.friends.owner_id
+    select 1 from public.friend_requests r
+    where r.status = 'accepted'
+      and ((r.from_id = auth.uid() and r.to_id = public.friends.owner_id)
+        or (r.from_id = public.friends.owner_id and r.to_id = auth.uid()))
   )
 );
 

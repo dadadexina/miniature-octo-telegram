@@ -58,7 +58,7 @@ export async function enablePush(userId) {
     if (!json.endpoint || !keys.p256dh || !keys.auth) {
       return { ok: false, error: '订阅信息不完整，请重试' }
     }
-    await supabase.from('push_subscriptions').delete().eq('endpoint', json.endpoint).eq('user_id', userId)
+    await supabase.from('push_subscriptions').delete().eq('endpoint', json.endpoint)
     const { error } = await supabase.from('push_subscriptions').insert({
       user_id: userId,
       endpoint: json.endpoint,
@@ -78,7 +78,7 @@ export async function disablePush(userId) {
   try {
     if (subscription) {
       const endpoint = subscription.endpoint
-      await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint).eq('user_id', userId)
+      await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint)
       await subscription.unsubscribe()
     } else if (userId) {
       await supabase.from('push_subscriptions').delete().eq('user_id', userId)

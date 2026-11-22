@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Discover from './Discover'
-import { fetchMoments } from '../lib/moments'
+import { fetchMomentInteractions, fetchMoments } from '../lib/moments'
 import { fetchProfilesByIds } from '../lib/profiles'
 
 const ME = '11111111-1111-4111-8111-111111111111'
@@ -22,8 +22,13 @@ vi.mock('../store', () => ({
 
 vi.mock('../lib/moments', () => ({
   fetchMoments: vi.fn(),
+  fetchMomentInteractions: vi.fn(),
   createMoment: vi.fn(),
   deleteMoment: vi.fn(),
+  likeMoment: vi.fn(),
+  unlikeMoment: vi.fn(),
+  addMomentComment: vi.fn(),
+  deleteMomentComment: vi.fn(),
   momentStoragePath: () => '',
   removeMomentImage: vi.fn(),
   uploadMomentImage: vi.fn(),
@@ -43,6 +48,8 @@ beforeEach(() => {
   fetchProfilesByIds.mockReset()
   fetchProfilesByIds.mockResolvedValue({ ok: true, profiles: [] })
   fetchMoments.mockResolvedValue({ ok: true, moments: [], hasMore: false, oldest: null })
+  fetchMomentInteractions.mockReset()
+  fetchMomentInteractions.mockResolvedValue({ ok: true, likes: [], comments: [] })
 })
 
 afterEach(cleanup)

@@ -10,11 +10,21 @@ import { goBackOr } from '../lib/navigation'
 import { fetchProfilesByIds } from '../lib/profiles'
 import { isUuid } from '../lib/messages'
 import {
+  addMomentComment,
+  deleteMomentComment,
+  fetchMomentInteractions,
   fetchMoments,
+  likeMoment,
+  unlikeMoment,
 } from '../lib/moments'
 import { useStore } from '../store'
 import usePullToRefresh from '../lib/usePullToRefresh'
 import { formatRelativeTime } from '../utils'
+
+function mergeByKey(prev, incoming, keyOf) {
+  const seen = new Set(prev.map(keyOf))
+  return [...prev, ...incoming.filter((item) => !seen.has(keyOf(item)))]
+}
 
 export default function FriendMoments() {
   const { currentUser } = useStore()
@@ -66,6 +76,19 @@ function CloudFriendMoments() {
         setLikes([])
         setComments([])
       }
+      const ids = res.moments.map((m) => m.id).filter(Boolean)
+      if (ids.length) {
+        const inter = await fetchMomentInteractions(ids)
+        if (inter.ok) {
+          if (append) {
+            setLikes((prev) => mergeByKey(prev, inter.likes, (l) => `${l.momentId}:${l.userId}`))
+            setComments((prev) => mergeByKey(prev, inter.comments, (c) => c.id))
+          } else {
+            setLikes(inter.likes)
+            setComments(inter.comments)
+          }
+        }
+      }
       setBusy(false)
       setLoading(false)
       setError('')
@@ -100,34 +123,51 @@ function CloudFriendMoments() {
     return displayNameOf(id) || getUser(id)?.nickname || '用户'
   }
 
-  const toggleLike = (moment) => {
+  const toggleLike = async (moment) => {
     const liked = likes.some((l) => l.momentId === moment.id && l.userId === meId)
-    setLikes((prev) =>
+    const prevLikes = likes
+    setLikes(
       liked
-        ? prev.filter((l) => !(l.momentId === moment.id && l.userId === meId))
-        : [...prev, { momentId: moment.id, userId: meId }]
+        ? likes.filter((l) => !(l.momentId === moment.id && l.userId === meId))
+        : [...likes, { momentId: moment.id, userId: meId }]
     )
+    const res = liked ? await unlikeMoment(moment.id, meId) : await likeMoment(moment.id, meId)
+    if (!res.ok) {
+      setLikes(prevLikes)
+      setError(res.error || '操作失败')
+    }
   }
 
-  const submitComment = (momentId, e) => {
+  const submitComment = async (momentId, e) => {
     e.preventDefault()
     const content = (commentText[momentId] || '').trim()
     if (!content) return
+    const prevComments = comments
+    const tempId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setComments((prev) => [
       ...prev,
-      {
-        id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        momentId,
-        userId: meId,
-        content,
-        createdAt: Date.now(),
-      },
+      { id: tempId, momentId, userId: meId, content, createdAt: Date.now() },
     ])
     setCommentText((prev) => ({ ...prev, [momentId]: '' }))
+    const res = await addMomentComment({ momentId, userId: meId, content })
+    if (!res.ok) {
+      setComments(prevComments)
+      setCommentText((prev) => ({ ...prev, [momentId]: content }))
+      setError(res.error || '评论失败')
+      return
+    }
+    if (res.comment) setComments((prev) => prev.map((c) => (c.id === tempId ? res.comment : c)))
   }
 
-  const removeComment = (comment) => {
+  const removeComment = async (comment) => {
+    const prevComments = comments
     setComments((prev) => prev.filter((c) => c.id !== comment.id))
+    if (String(comment.id).startsWith('local-')) return
+    const res = await deleteMomentComment(comment.id)
+    if (!res.ok) {
+      setComments(prevComments)
+      setError(res.error || '删除失败')
+    }
   }
 
   return (

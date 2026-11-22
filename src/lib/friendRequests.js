@@ -78,6 +78,7 @@ export async function fetchFriendRequests(meId) {
     const { data, error } = await supabase
       .from('friend_requests')
       .select('*')
+      .eq('status', 'pending')
       .or(`from_id.eq.${meId},to_id.eq.${meId}`)
       .order('created_at', { ascending: false })
       .limit(100)

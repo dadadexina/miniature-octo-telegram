@@ -299,9 +299,9 @@ export function StoreProvider({ children }) {
   }, [])
 
   const mergeInbox = useCallback((list) => {
-    const incoming = list || []
+    const incoming = (list || []).filter((msg) => msg?.id && !hiddenIdsRef.current.has(msg.id))
     incoming.forEach((msg) => {
-      if (msg?.id) inboxIdsRef.current.add(msg.id)
+      inboxIdsRef.current.add(msg.id)
     })
     setInbox((prev) => mergeMessages(prev, incoming))
   }, [])
@@ -312,25 +312,23 @@ export function StoreProvider({ children }) {
     setInbox(next)
   }, [])
 
-  const removeThread = useCallback(
-    async (peerId) => {
-      const me = authUserRef.current?.id
-      if (!me || !peerId) return
-      console.log('准备删除与该用户的聊天', peerId)
-      const doomed = inbox.filter((m) => isPairMessage(m, me, peerId) && !hiddenIdsRef.current.has(m.id))
-      if (doomed.length) {
-        const ids = new Set(doomed.map((m) => m.id))
-        hiddenIdsRef.current = new Set([...hiddenIdsRef.current, ...ids])
-        setHiddenIds(hiddenIdsRef.current)
-        replaceInbox(inbox.filter((m) => !ids.has(m.id)))
-        if (isUuid(me)) await Promise.all(doomed.map((m) => hideMessage(m.id, me)))
-      }
-      readAtRef.current = { ...readAtRef.current, [peerId]: Date.now() }
-      setReadAt(readAtRef.current)
-      setUnread((prev) => ({ ...prev, [peerId]: 0 }))
-    },
-    [inbox, replaceInbox]
-  )
+  const removeThread = useCallback(async (peerId) => {
+    const me = authUserRef.current?.id
+    if (!me || !peerId) return
+    const current = inboxRef.current
+    const doomed = current.filter((m) => isPairMessage(m, me, peerId) && !hiddenIdsRef.current.has(m.id))
+    if (doomed.length) {
+      const ids = new Set(doomed.map((m) => m.id))
+      hiddenIdsRef.current = new Set([...hiddenIdsRef.current, ...ids])
+      setHiddenIds(hiddenIdsRef.current)
+      setInbox((prev) => prev.filter((m) => !ids.has(m.id)))
+      ids.forEach((id) => inboxIdsRef.current.delete(id))
+      if (isUuid(me)) await Promise.all(doomed.map((m) => hideMessage(m.id, me)))
+    }
+    readAtRef.current = { ...readAtRef.current, [peerId]: Date.now() }
+    setReadAt(readAtRef.current)
+    setUnread((prev) => ({ ...prev, [peerId]: 0 }))
+  }, [])
 
   const openPeer = useCallback((peerId) => {
     setActivePeerId(peerId || null)
@@ -389,6 +387,8 @@ export function StoreProvider({ children }) {
       if (!unique.length) return
       const result = await fetchProfilesByIds(unique)
       if (!result.ok) return
+      // 等待期间账号可能已切换,防止把上一个账号的资料写进新会话
+      if (authUserRef.current?.id !== me) return
       const others = []
       ;(result.profiles || []).forEach((prof) => {
         if (!prof?.id) return
@@ -579,12 +579,14 @@ export function StoreProvider({ children }) {
       fetchHiddenIds(me),
       fetchConversationPrefs(me),
     ])
-    if (inboxRes.ok) mergeInbox(inboxRes.messages)
-    if (prefsRes.ok) setConvPrefs(prefsToMap(prefsRes.prefs))
     if (hiddenRes.ok) {
       hiddenIdsRef.current = new Set(hiddenRes.ids)
       setHiddenIds(hiddenIdsRef.current)
     }
+    if (inboxRes.ok) {
+      mergeInbox(inboxRes.messages.filter((m) => !hiddenIdsRef.current.has(m.id)))
+    }
+    if (prefsRes.ok) setConvPrefs(prefsToMap(prefsRes.prefs))
     applyCursors(cursorsRes)
     await refreshFriendRequests()
     const friendIds = stateRef.current.friendships
@@ -1007,23 +1009,23 @@ export function StoreProvider({ children }) {
   const setConversationPref = useCallback(async (peerId, patch) => {
     const me = authUserRef.current?.id
     if (!me || !peerId) return { ok: false, error: '参数错误' }
-    let snapshot = null
-    let next = null
-    setConvPrefs((prev) => {
-      snapshot = prev
-      const cur = prev[peerId] || { pinned: false, muted: false }
-      next = { ...cur, ...patch }
-      if (!next.pinned && !next.muted) {
-        const copy = { ...prev }
-        delete copy[peerId]
-        return copy
-      }
-      return { ...prev, [peerId]: next }
-    })
+    const prev = convPrefsRef.current
+    const cur = prev[peerId] || { pinned: false, muted: false }
+    const next = { ...cur, ...patch }
+    let nextMap
+    if (!next.pinned && !next.muted) {
+      nextMap = { ...prev }
+      delete nextMap[peerId]
+    } else {
+      nextMap = { ...prev, [peerId]: next }
+    }
+    convPrefsRef.current = nextMap
+    setConvPrefs(nextMap)
     if (isUuid(me)) {
       const res = await upsertConversationPref({ userId: me, peerId, pinned: next.pinned, muted: next.muted })
       if (!res.ok) {
-        setConvPrefs(snapshot)
+        convPrefsRef.current = prev
+        setConvPrefs(prev)
         return res
       }
     }
@@ -1361,6 +1363,10 @@ export function StoreProvider({ children }) {
       async removeFriend(friendId) {
         const me = state.currentUserId
         if (!me || !friendId) return { ok: false, error: '参数错误' }
+        const prevState = stateRef.current
+        const prevInbox = inboxRef.current
+        const prevUnread = unread
+        const prevDrafts = drafts
         patch((prev) => ({
           ...prev,
           friendships: prev.friendships.filter(
@@ -1390,6 +1396,13 @@ export function StoreProvider({ children }) {
           deletePairMessages(me, friendId),
         ])
         if (!edge.ok || !history.ok) {
+          setState(prevState)
+          setInbox(prevInbox)
+          setUnread(prevUnread)
+          setDrafts(prevDrafts)
+          stateRef.current = prevState
+          inboxRef.current = prevInbox
+          inboxIdsRef.current = new Set(prevInbox.map((m) => m.id))
           friendResyncRef.current?.()
           return { ok: false, error: edge.error || history.error || '删除失败' }
         }

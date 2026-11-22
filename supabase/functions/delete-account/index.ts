@@ -84,6 +84,19 @@ Deno.serve(async (req) => {
     }
     const uid = userData.user.id
 
+    // 7 天冷静期:必须先经 scheduleAccountDeletion 写入 deleted_at,逾期后才能执行最终删除
+    const { data: profileRow, error: profileError } = await admin
+      .from('profiles')
+      .select('deleted_at')
+      .eq('id', uid)
+      .maybeSingle()
+    if (profileError) return json({ error: profileError.message }, 500)
+    const deletedAt = Date.parse(profileRow?.deleted_at || '')
+    const graceMs = 7 * 24 * 60 * 60 * 1000
+    if (!Number.isFinite(deletedAt) || Date.now() < deletedAt + graceMs) {
+      return json({ error: '账号仍在注销冷静期内', code: 'DELETION_NOT_DUE' }, 409)
+    }
+
     // messages 未设 auth.users 外键（历史原因），需显式清空双方会话，避免注销后消息残留
     const mediaPaths = await collectUserMediaPaths(admin, uid)
     const { count: messagesRemoved, error: messageError } = await admin

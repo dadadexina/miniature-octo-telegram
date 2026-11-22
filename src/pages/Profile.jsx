@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import AuthBar from '../components/AuthBar'
 import Avatar from '../components/Avatar'
 import CopySql from '../components/CopySql'
@@ -31,8 +31,7 @@ export default function Profile() {
   }, [blockedIds])
 
   if (!currentUser) {
-    navigate('/login', { replace: true })
-    return null
+    return <Navigate to="/login" replace />
   }
 
   const onSignOut = async () => {
