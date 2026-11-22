@@ -145,12 +145,12 @@ create table if not exists public.friends (
 alter table public.friends add column if not exists remark text;
 alter table public.friends add column if not exists source text;
 
-do $ begin
+do $$ begin
   alter table public.friends add constraint friends_no_self
     check (owner_id <> friend_id);
 exception when duplicate_object then null; when others then
   raise notice '跳过 friends_no_self: %', sqlerrm;
-end $;
+end $$;
 
 grant usage on schema public to anon, authenticated;
 grant select, insert, delete on table public.friends to authenticated;
@@ -189,19 +189,19 @@ using (auth.uid() in (owner_id, friend_id));
 create index if not exists friends_owner_idx on public.friends (owner_id);
 create index if not exists friends_friend_idx on public.friends (friend_id);
 
-do $ begin
+do $$ begin
   alter table public.friends add constraint friends_owner_fk
     foreign key (owner_id) references auth.users (id) on delete cascade;
 exception when duplicate_object then null; when others then
   raise notice '跳过 friends_owner_fk: %', sqlerrm;
-end $;
+end $$;
 
-do $ begin
+do $$ begin
   alter table public.friends add constraint friends_friend_fk
     foreign key (friend_id) references auth.users (id) on delete cascade;
 exception when duplicate_object then null; when others then
   raise notice '跳过 friends_friend_fk: %', sqlerrm;
-end $;
+end $$;
 
 create table if not exists public.client_errors (
   id uuid primary key default gen_random_uuid(),
@@ -668,12 +668,12 @@ to authenticated
 using (auth.uid() = owner_id)
 with check (auth.uid() = owner_id);
 
-do $ begin
+do $$ begin
   alter table public.friends add constraint friends_remark_len
     check (remark is null or char_length(remark) <= 20);
 exception when duplicate_object then null; when others then
   raise notice '跳过 friends_remark_len: %', sqlerrm;
-end $;
+end $$;
 
 -- ============ friends 对等边回写(接受方替请求方建边 / 双方互备) ============
 -- permissive 策略与 friends_insert_own 叠加(OR):本人边始终可插;
@@ -698,34 +698,34 @@ alter table public.friend_requests replica identity full;
 alter table public.friends replica identity full;
 alter table public.profiles replica identity full;
 
-do $
+do $$
 begin
   alter publication supabase_realtime add table public.read_cursors;
 exception
   when duplicate_object then null;
-end $;
+end $$;
 
-do $
+do $$
 begin
   alter publication supabase_realtime add table public.friend_requests;
 exception
   when duplicate_object then null;
-end $;
+end $$;
 
-do $
+do $$
 begin
   alter publication supabase_realtime add table public.friends;
 exception
   when duplicate_object then null;
-end $;
+end $$;
 
 -- 好友更换头像/昵称后立即推送给在线好友
-do $
+do $$
 begin
   alter publication supabase_realtime add table public.profiles;
 exception
   when duplicate_object then null;
-end $;
+end $$;
 
 -- ============ 唯一 ID / 搜索方式 / 手机号 ============
 
@@ -741,26 +741,26 @@ alter table public.profiles add column if not exists signature text;
 -- 性别:male / female / secret,默认保密
 alter table public.profiles add column if not exists gender text not null default 'secret';
 
-do $ begin
+do $$ begin
   alter table public.profiles add constraint profiles_gender_valid
     check (gender in ('male', 'female', 'secret'));
 exception when duplicate_object then null; when others then
   raise notice '跳过 profiles_gender_valid: %', sqlerrm;
-end $;
+end $$;
 
-do $ begin
+do $$ begin
   alter table public.profiles add constraint profiles_signature_len
     check (signature is null or char_length(signature) <= 30);
 exception when duplicate_object then null; when others then
   raise notice '跳过 profiles_signature_len: %', sqlerrm;
-end $;
+end $$;
 
-do $ begin
+do $$ begin
   alter table public.profiles add constraint profiles_phone_format
-    check (phone is null or phone = '' or phone ~ '^[0-9]{6,20});
+    check (phone is null or phone = '' or phone ~ '^[0-9]{6,20}$');
 exception when duplicate_object then null; when others then
   raise notice '跳过 profiles_phone_format: %', sqlerrm;
-end $;
+end $$;
 
 -- 一个手机号只能绑定一个账号
 create unique index if not exists profiles_phone_key
@@ -810,7 +810,7 @@ begin
     return query select false, '登录后才能修改 ID', null::text, 0, null::timestamptz;
     return;
   end if;
-  if new_id is null or new_id !~ '^[A-Za-z0-9]{8,15}
+  if new_id is null or new_id !~ '^[A-Za-z0-9]{8,15}$'
      or new_id !~ '[A-Za-z]' or new_id !~ '[0-9]' then
     return query select false, 'ID 需为 8-15 位,且同时包含字母和数字', null::text, 0, null::timestamptz;
     return;
@@ -862,8 +862,8 @@ language sql stable security definer set search_path = public as $fn$
     and char_length(btrim(q)) between 1 and 64
     and (
       lower(p.username) = lower(btrim(q))
-      or (btrim(q) ~ '^[^@[:space:]]+@[^@[:space:]]+ and lower(u.email) = lower(btrim(q)) and p.allow_email_search)
-      or (btrim(q) ~ '^[0-9]{6,20} and p.phone = btrim(q) and p.allow_phone_search)
+      or (btrim(q) ~ '^[^@[:space:]]+@[^@[:space:]]+$' and lower(u.email) = lower(btrim(q)) and p.allow_email_search)
+      or (btrim(q) ~ '^[0-9]{6,20}$' and p.phone = btrim(q) and p.allow_phone_search)
     )
   order by (lower(p.username) = lower(btrim(q))) desc
   limit 5
@@ -873,7 +873,7 @@ $fn$;
 create or replace function public.profiles_fill_public_id()
 returns trigger language plpgsql security definer set search_path = public as $fn$
 begin
-  if new.username is null or new.username !~ '^[A-Za-z0-9]{8,15}
+  if new.username is null or new.username !~ '^[A-Za-z0-9]{8,15}$'
      or new.username !~ '[A-Za-z]' or new.username !~ '[0-9]' then
     new.username := public.random_public_id();
   end if;

@@ -38,9 +38,9 @@ const clientErrors = readTemplate('src/lib/telemetry.js', 'CLIENT_ERRORS_SQL')
 const upgrade = readTemplate('src/lib/schema_v2.js', 'UPGRADE_SQL')
 
 const sql = cloud
-  .replaceAll('${FRIENDS_SQL}', friends)
-  .replaceAll('${CLIENT_ERRORS_SQL}', clientErrors)
-  .replaceAll('${UPGRADE_SQL}', upgrade)
+  .replaceAll('${FRIENDS_SQL}', () => friends)
+  .replaceAll('${CLIENT_ERRORS_SQL}', () => clientErrors)
+  .replaceAll('${UPGRADE_SQL}', () => upgrade)
 
 if (/\$\{/.test(sql)) throw new Error('导出结果仍残留未解析插值')
 
