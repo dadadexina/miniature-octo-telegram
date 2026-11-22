@@ -10,6 +10,13 @@ describe('UPGRADE_SQL 幂等性', () => {
     expect(UPGRADE_SQL.match(/create or replace function public\.search_profile/g)).toHaveLength(1)
   })
 
+  it('can_view_moment 排除双向拉黑', () => {
+    expect(UPGRADE_SQL).toContain('create or replace function public.can_view_moment(mid uuid)')
+    expect(UPGRADE_SQL).toContain('from public.blocks bl')
+    expect(UPGRADE_SQL).toContain('bl.blocker_id = auth.uid() and bl.blocked_id = m.author_id')
+    expect(UPGRADE_SQL).toContain('bl.blocker_id = m.author_id and bl.blocked_id = auth.uid()')
+  })
+
   it('每个策略创建前都有同名删除语句', () => {
     const names = [...UPGRADE_SQL.matchAll(/create policy\s+"([^"]+)"/g)].map((m) => m[1])
     expect(names.length).toBeGreaterThan(0)

@@ -204,15 +204,21 @@ export default function FriendProfile() {
       )}
 
       <div className="shrink-0 border-t border-eink-divider bg-eink-bar p-4 safe-bottom">
-        <button
-          type="button"
-          data-testid="send-message-btn"
-          disabled={!userId}
-          className="h-12 w-full rounded-none bg-eink-ink text-[16px] font-medium text-eink-paper active:bg-eink-pressed disabled:bg-eink-disabled"
-          onClick={() => navigate(`/chat/${userId}`)}
-        >
-          发送信息
-        </button>
+        {meta ? (
+          <button
+            type="button"
+            data-testid="send-message-btn"
+            disabled={!userId}
+            className="h-12 w-full rounded-none bg-eink-ink text-[16px] font-medium text-eink-paper active:bg-eink-pressed disabled:bg-eink-disabled"
+            onClick={() => navigate(`/chat/${userId}`)}
+          >
+            发送信息
+          </button>
+        ) : info ? (
+          <p data-testid="not-friend-hint" className="text-center text-[13px] leading-5 text-eink-sub">
+            你们还不是好友，无法发送消息
+          </p>
+        ) : null}
       </div>
     </div>
   )

@@ -49,4 +49,9 @@ describe('FRIENDS_SQL', () => {
     expect(FRIENDS_SQL).toContain('for delete')
     expect(FRIENDS_SQL).toContain('using (auth.uid() in (owner_id, friend_id))')
   })
+
+  it('禁止自己加自己为好友', () => {
+    expect(FRIENDS_SQL).toContain('constraint friends_no_self check (owner_id <> friend_id)')
+    expect(FRIENDS_SQL).toContain('alter table public.friends add constraint friends_no_self')
+  })
 })

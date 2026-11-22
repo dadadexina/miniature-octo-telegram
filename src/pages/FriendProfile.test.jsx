@@ -81,11 +81,19 @@ describe('FriendProfile 好友资料页', () => {
   })
 
   it('点击发送信息跳转到聊天详情页并携带 userId', async () => {
+    storeHolder.meta = { remark: '', createdAt: '' }
     fetchProfileById.mockResolvedValue({ ok: true, profile: { id: 'u1', nickname: '李四', username: 'lisi', avatarUrl: '' } })
     setup()
     await waitFor(() => expect(screen.getByTestId('send-message-btn')).toBeTruthy())
     fireEvent.click(screen.getByTestId('send-message-btn'))
     expect(screen.getByTestId('chat-page')).toBeTruthy()
+  })
+
+  it('非好友资料页隐藏发送信息并给出提示', async () => {
+    fetchProfileById.mockResolvedValue({ ok: true, profile: { id: 'u1', nickname: '李四', username: 'lisi', avatarUrl: '' } })
+    setup()
+    await waitFor(() => expect(screen.getByTestId('not-friend-hint')).toBeTruthy())
+    expect(screen.queryByTestId('send-message-btn')).toBeNull()
   })
 
   it('点击朋友圈入口跳转到带 userId 的占位页', async () => {

@@ -4,6 +4,9 @@ import { CLOUD_SQL, SQL_EDITOR_URL } from '../lib/sql'
 export default function CopySql({ compact = false }) {
   const [copied, setCopied] = useState(false)
 
+  // 生产构建不暴露数据库脚本入口；仅开发/预览环境显示
+  if (!import.meta.env.DEV) return null
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(CLOUD_SQL)

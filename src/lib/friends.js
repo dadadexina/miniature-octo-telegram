@@ -10,11 +10,19 @@ export const FRIENDS_SQL = `create table if not exists public.friends (
   created_at timestamptz default now(),
   remark text,
   source text,
+  constraint friends_no_self check (owner_id <> friend_id),
   unique (owner_id, friend_id)
 );
 
 alter table public.friends add column if not exists remark text;
 alter table public.friends add column if not exists source text;
+
+do $$ begin
+  alter table public.friends add constraint friends_no_self
+    check (owner_id <> friend_id);
+exception when duplicate_object then null; when others then
+  raise notice '跳过 friends_no_self: %', sqlerrm;
+end $$;
 
 grant usage on schema public to anon, authenticated;
 grant select, insert, delete on table public.friends to authenticated;

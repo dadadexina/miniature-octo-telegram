@@ -184,6 +184,11 @@ returns boolean language sql stable security definer set search_path = public as
     select 1 from public.moments m
     where m.id = mid
       and (m.author_id = auth.uid() or public.are_contacts(auth.uid(), m.author_id))
+      and not exists (
+        select 1 from public.blocks bl
+        where (bl.blocker_id = auth.uid() and bl.blocked_id = m.author_id)
+           or (bl.blocker_id = m.author_id and bl.blocked_id = auth.uid())
+      )
   )
 $fn$;
 
