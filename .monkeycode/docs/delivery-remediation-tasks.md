@@ -19,11 +19,11 @@
 
 ## 1. 环境隔离（P0，报告一致项）
 
-- [ ] **1.1 拆分 Supabase 项目**：production 与 staging 两套独立项目。需用户在 Supabase 控制台创建 staging 项目并提供 URL/anon key（沙箱无 Management API token，无法代建）。负责：用户 + 共同
-- [ ] **1.2 CI e2e 改指 staging**：`.github/workflows/ci.yml` 的 e2e job 构建与账号 secrets 全部换 staging，杜绝测试写生产库。负责：共同（依赖 1.1）
-- [ ] **1.3 本地环境分层**：`.env.local` 保留 staging，新增 `.env.production.local`（gitignore）供生产；`.env.production` 仅留占位或改用平台注入，避免仓库内生产凭据。负责：我
-- [ ] **1.4 CI verify job 补生产构建校验**：verify 的 `npm run build` 注入 staging 变量，验证真实配置构建（当前只构建演示模式）。负责：我
-- [ ] **1.5 Vercel 环境变量核对**：确认生产项目注入 `VITE_SUPABASE_*` 指向 production，Preview 环境指向 staging。负责：共同
+- [x] **1.1 拆分 Supabase 项目** —— 已完成：新建 staging 项目 `ajwkmlpzgvdekjvypuve`（`https://ajwkmlpzgvdekjvypuve.supabase.co`，ap-northeast-2），已执行基线 SQL，表/函数/存储桶齐备；Auth 回调指向 `http://localhost:5173` 并开启测试环境自动确认。负责：共同
+- [x] **1.2 CI e2e 改指 staging** —— 已完成：GitHub Secrets 的 `VITE_SUPABASE_*` 与 `E2E_USER_A/B_*` 已替换为 staging 项目与新测试账号，e2e 不再写生产库。负责：共同
+- [x] **1.3 本地环境分层** —— 已完成：`.env.local` 指向 staging，新建 gitignore 的 `.env.production.local` 存生产配置；`.env.production` 仅保留公开 anon key（设计上随客户端公开，无敏感）。负责：我
+- [x] **1.4 CI verify job 补生产构建校验** —— 已完成：`verify` 的 `npm run build` 注入 staging `VITE_SUPABASE_*`；fork PR 无 secrets 时回退演示构建。负责：我
+- [ ] **1.5 Vercel 环境变量核对**：确认生产项目注入 `VITE_SUPABASE_*` 指向 production，Preview 指向 staging。需 Vercel 控制台或凭据。负责：共同
 
 ## 2. 数据变更治理（P0，需架构决策）
 
