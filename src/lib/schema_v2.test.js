@@ -24,15 +24,46 @@ describe('UPGRADE_SQL 幂等性', () => {
     expect(body).toContain("r.status = 'accepted'")
   })
 
-  it('unfriend 成对删边并作废 accepted 请求', () => {
+  it('can_message 双向拉黑都禁止发消息', () => {
+    const fn = UPGRADE_SQL.slice(UPGRADE_SQL.indexOf('create or replace function public.can_message'))
+    const body = fn.slice(0, fn.indexOf('$fn$;'))
+    expect(body).toContain('bl.blocker_id = a and bl.blocked_id = b')
+    expect(body).toContain('bl.blocker_id = b and bl.blocked_id = a')
+  })
+
+  it('unfriend 成对删边并清除双方全部好友请求', () => {
     const at = UPGRADE_SQL.indexOf('create or replace function public.unfriend(peer uuid)')
     expect(at).toBeGreaterThan(-1)
     const fn = UPGRADE_SQL.slice(at)
     const body = fn.slice(0, fn.indexOf('$fn$;'))
     expect(body).toContain('delete from public.friends')
     expect(body).toContain('delete from public.friend_requests')
-    expect(body).toContain("status = 'accepted'")
+    expect(body).toContain('from_id = auth.uid() and to_id = peer')
+    expect(body).toContain('from_id = peer and to_id = auth.uid()')
+    expect(body).not.toContain("status = 'accepted'")
     expect(UPGRADE_SQL).toContain('grant execute on function public.unfriend(uuid) to authenticated')
+  })
+
+  it('heal_friend_pair 仅在 accepted 且未拉黑时补齐两侧好友边', () => {
+    const at = UPGRADE_SQL.indexOf('create or replace function public.heal_friend_pair(peer uuid)')
+    expect(at).toBeGreaterThan(-1)
+    const body = UPGRADE_SQL.slice(at, UPGRADE_SQL.indexOf('$fn$;', at))
+    expect(body).toContain("r.status = 'accepted'")
+    expect(body).toContain('from public.blocks bl')
+    expect(body).toContain('insert into public.friends (owner_id, friend_id) values (auth.uid(), peer)')
+    expect(body).toContain('insert into public.friends (owner_id, friend_id) values (peer, auth.uid())')
+    expect(UPGRADE_SQL).toContain('grant execute on function public.heal_friend_pair(uuid) to authenticated')
+  })
+
+  it('accept_friend_request 原子改状态并双写好友边', () => {
+    const at = UPGRADE_SQL.indexOf('create or replace function public.accept_friend_request(request_id uuid)')
+    expect(at).toBeGreaterThan(-1)
+    const body = UPGRADE_SQL.slice(at, UPGRADE_SQL.indexOf('$fn$;', at))
+    expect(body).toContain("to_id = auth.uid() and status = 'pending'")
+    expect(body).toContain("set status = 'accepted'")
+    expect(body).toContain('values (r.to_id, r.from_id)')
+    expect(body).toContain('values (r.from_id, r.to_id)')
+    expect(UPGRADE_SQL).toContain('grant execute on function public.accept_friend_request(uuid) to authenticated')
   })
 
   it('can_view_profile 仅对已接受关系开放', () => {

@@ -1,4 +1,4 @@
-import { upsertFriend } from './friends'
+import { healFriendPair } from './friends'
 import { isPermissionError } from './profiles'
 import { supabase } from './supabase'
 
@@ -97,11 +97,12 @@ export async function insertMessage({ senderId, receiverId, content, replyToId =
   return { ok: true, message: mapMessage(data) }
 }
 
-// 互加好友依赖双方各一行 friends。旧数据里可能只有接受方那一行,
-// 导致 can_message 判定为陌生人。发送被权限拒绝时补写自己这一行再重试一次。
+// 互加好友依赖双方各一行 friends。旧数据里可能缺一侧好友边,
+// 导致 can_message 判定为陌生人。发送被权限拒绝时由服务端补齐两侧边再重试一次。
+// 补边要求存在 accepted 请求且双方未拉黑,删除好友会作废请求,不会借补边恢复关系。
 export async function insertMessageWithFriendHeal(payload, deps = {}) {
   const insert = deps.insert || insertMessage
-  const ensure = deps.ensure || upsertFriend
+  const ensure = deps.ensure || healFriendPair
   const first = await insert(payload)
   if (first?.ok || !first?.permission) return first
   try {

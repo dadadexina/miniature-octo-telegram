@@ -7,7 +7,7 @@ const from = vi.fn(() => ({ delete: del }))
 
 vi.mock('./supabase', () => ({ supabase: { rpc, from } }))
 
-const { deleteFriend } = await import('./friends')
+const { deleteFriend, healFriendPair } = await import('./friends')
 
 beforeEach(() => {
   rpc.mockReset()
@@ -50,5 +50,28 @@ describe('deleteFriend', () => {
     const res = await deleteFriend('me', 'peer')
     expect(res.ok).toBe(true)
     expect(or).toHaveBeenCalled()
+  })
+})
+
+describe('healFriendPair', () => {
+  it('调用 heal_friend_pair RPC 由服务端补齐两侧好友边', async () => {
+    rpc.mockResolvedValue({ error: null })
+    const res = await healFriendPair('me', 'peer')
+    expect(res.ok).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('heal_friend_pair', { peer: 'peer' })
+  })
+
+  it('RPC 权限错误直接返回,不做本地补边', async () => {
+    rpc.mockResolvedValue({ error: { code: '42501', message: 'row-level security' } })
+    const res = await healFriendPair('me', 'peer')
+    expect(res.ok).toBe(false)
+    expect(res.permission).toBe(true)
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('参数非法时直接失败', async () => {
+    const res = await healFriendPair('me', 'me')
+    expect(res.ok).toBe(false)
+    expect(rpc).not.toHaveBeenCalled()
   })
 })

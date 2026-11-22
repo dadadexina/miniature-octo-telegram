@@ -1395,7 +1395,9 @@ export function StoreProvider({ children }) {
           deleteFriend(me, friendId),
           deletePairMessages(me, friendId),
         ])
-        if (!edge.ok || !history.ok) {
+        // 好友边删除是主操作:失败才回滚。历史消息清理失败不回滚,
+        // 否则会出现“提示删除失败但关系已断”的不一致状态。
+        if (!edge.ok) {
           setState(prevState)
           setInbox(prevInbox)
           setUnread(prevUnread)
@@ -1404,7 +1406,10 @@ export function StoreProvider({ children }) {
           inboxRef.current = prevInbox
           inboxIdsRef.current = new Set(prevInbox.map((m) => m.id))
           friendResyncRef.current?.()
-          return { ok: false, error: edge.error || history.error || '删除失败' }
+          return { ok: false, error: edge.error || '删除失败' }
+        }
+        if (!history.ok) {
+          return { ok: true, warning: '好友已删除，但聊天记录清理失败，请稍后重试' }
         }
         return { ok: true }
       },

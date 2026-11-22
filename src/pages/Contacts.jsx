@@ -130,6 +130,10 @@ export default function Contacts() {
       showToast(result?.error || '删除失败')
       return
     }
+    if (result.warning) {
+      showToast(result.warning)
+      return
+    }
     showToast('已删除好友，聊天记录已清空')
   }
 

@@ -106,6 +106,25 @@ async function updateStatus(requestId, status) {
 }
 
 export async function acceptFriendRequest(request) {
+  if (!request?.id) return { ok: false, error: '参数错误' }
+  try {
+    const rpc = await supabase.rpc('accept_friend_request', { request_id: request.id })
+    if (rpc && !rpc.error && rpc.data) {
+      return { ok: true, request: mapRequest(rpc.data) }
+    }
+    if (rpc?.error) {
+      const message = String(rpc.error.message || '').toLowerCase()
+      const missing =
+        rpc.error.code === 'PGRST202' ||
+        message.includes('could not find the function') ||
+        message.includes('does not exist')
+      if (!missing) {
+        return { ok: false, error: rpc.error.message, permission: isPermissionError(rpc.error) }
+      }
+    }
+  } catch {
+    // 旧库无 RPC 时退回客户端多步写入
+  }
   const result = await updateStatus(request.id, 'accepted')
   if (!result.ok) return result
   await upsertFriend(request.toId, request.fromId, { source: request.source })

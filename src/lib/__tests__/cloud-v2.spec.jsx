@@ -318,6 +318,18 @@ describe('friendRequests 好友请求', () => {
     supabase.from.mockReset()
   })
 
+  it('acceptFriendRequest 优先走原子 RPC,成功后不再逐条写入', async () => {
+    const acceptedRow = { id: 'r1', from_id: 'alice', to_id: 'me', status: 'accepted', source: 'phone', created_at: new Date(NOW).toISOString() }
+    supabase.rpc.mockResolvedValueOnce({ data: acceptedRow, error: null })
+    supabase.from.mockClear()
+    const res = await acceptFriendRequest(mapRequest({ id: 'r1', from_id: 'alice', to_id: 'me', source: 'phone' }))
+    expect(res.ok).toBe(true)
+    expect(res.request.status).toBe('accepted')
+    expect(supabase.rpc).toHaveBeenCalledWith('accept_friend_request', { request_id: 'r1' })
+    expect(supabase.from).not.toHaveBeenCalled()
+    supabase.rpc.mockReset()
+  })
+
   it('declineFriendRequest 命中 0 行提示已被处理', async () => {
     supabase.from.mockImplementationOnce(() => okChain({ data: null, error: null }))
     const res = await declineFriendRequest('r1')

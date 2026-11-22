@@ -75,8 +75,8 @@ exception when duplicate_object then null; when others then
   raise notice '跳过 friends_friend_fk: %', sqlerrm;
 end $$;
 
--- 删除好友:成对删除两侧好友边,并作废 accepted 请求。
--- 作废请求后双方都无法再发消息,也无法借残留请求补边恢复关系,重新聊天需重新加好友。
+-- 删除好友:成对删除两侧好友边,并清除该对之间的全部好友请求。
+-- 清空请求后双方都无法再发消息,也无法借残留请求补边恢复关系,重新聊天需重新加好友。
 create or replace function public.unfriend(peer uuid)
 returns void language plpgsql security definer set search_path = public as $fn$
 begin
@@ -87,14 +87,40 @@ begin
     where (owner_id = auth.uid() and friend_id = peer)
        or (owner_id = peer and friend_id = auth.uid());
   delete from public.friend_requests
-    where status = 'accepted'
-      and ((from_id = auth.uid() and to_id = peer)
-        or (from_id = peer and to_id = auth.uid()));
+    where (from_id = auth.uid() and to_id = peer)
+       or (from_id = peer and to_id = auth.uid());
 end
 $fn$;
 
 revoke execute on function public.unfriend(uuid) from public, anon;
-grant execute on function public.unfriend(uuid) to authenticated;`
+grant execute on function public.unfriend(uuid) to authenticated;
+
+-- 补好友边:仅在同一对存在 accepted 请求且双方未拉黑时,由服务端补齐两侧好友边。
+-- 删除好友会作废请求,因此不会借补边逻辑恢复已解除的关系。
+create or replace function public.heal_friend_pair(peer uuid)
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null or peer is null or peer = auth.uid() then return; end if;
+  if not exists (
+    select 1 from public.friend_requests r
+    where r.status = 'accepted'
+      and ((r.from_id = auth.uid() and r.to_id = peer)
+        or (r.from_id = peer and r.to_id = auth.uid()))
+  ) then return; end if;
+  if exists (
+    select 1 from public.blocks bl
+    where (bl.blocker_id = auth.uid() and bl.blocked_id = peer)
+       or (bl.blocker_id = peer and bl.blocked_id = auth.uid())
+  ) then return; end if;
+  insert into public.friends (owner_id, friend_id) values (auth.uid(), peer)
+    on conflict (owner_id, friend_id) do nothing;
+  insert into public.friends (owner_id, friend_id) values (peer, auth.uid())
+    on conflict (owner_id, friend_id) do nothing;
+end
+$fn$;
+
+revoke execute on function public.heal_friend_pair(uuid) from public, anon;
+grant execute on function public.heal_friend_pair(uuid) to authenticated;`
 
 export function normalizeRemark(value) {
   return String(value || '').trim().slice(0, REMARK_MAX)
@@ -191,8 +217,32 @@ export async function deleteFriend(meId, friendId) {
   return { ok: true }
 }
 
+// 补好友边:仅当同一对存在 accepted 请求且双方未拉黑时,由服务端补齐两侧好友边。
+// 删除好友会作废请求,因此不会借补边逻辑恢复已解除的关系。
+export async function healFriendPair(meId, peerId) {
+  if (!meId || !peerId || meId === peerId) return { ok: false, error: '参数错误' }
+  try {
+    const rpc = await supabase.rpc('heal_friend_pair', { peer: peerId })
+    if (rpc && !rpc.error) return { ok: true }
+    if (rpc?.error) {
+      const message = String(rpc.error.message || '').toLowerCase()
+      const missing =
+        rpc.error.code === 'PGRST202' ||
+        message.includes('could not find the function') ||
+        message.includes('does not exist')
+      if (!missing) {
+        return { ok: false, error: rpc.error.message, permission: isPermissionError(rpc.error) }
+      }
+    }
+  } catch {
+    // 旧库无 RPC 时退回只补自己这一行
+  }
+  const result = await upsertFriend(meId, peerId)
+  return { ok: result.ok, error: result.error, permission: result.permission }
+}
+
 // 收到陌生人消息时,如果双方存在 accepted 请求,说明只是好友边缺了一侧,
-// 补写自己这一行,让好友列表与消息保持一致。
+// 补写好友边让好友列表与消息保持一致。
 export async function repairFriendEdgeFromAccepted(meId, peerId, deps = {}) {
   if (!meId || !peerId || meId === peerId) return { ok: false }
   const findAccepted =
@@ -208,7 +258,7 @@ export async function repairFriendEdgeFromAccepted(meId, peerId, deps = {}) {
       if (error) return { ok: false, found: false }
       return { ok: true, found: (data || []).length > 0 }
     })
-  const ensure = deps.ensure || upsertFriend
+  const ensure = deps.ensure || healFriendPair
   const accepted = await findAccepted(meId, peerId)
   if (!accepted?.ok || !accepted.found) return { ok: false }
   return ensure(meId, peerId)
