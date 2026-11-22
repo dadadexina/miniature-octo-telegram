@@ -6,11 +6,13 @@ import { latLngToVector3 } from './geometry';
 import {
   atmosphereFragment,
   atmosphereVertex,
+  cloudFragment,
+  cloudVertex,
   earthFragment,
   earthVertex,
 } from './shaders';
 
-const SUN_DIRECTION = new THREE.Vector3(1, 0.35, 0.6).normalize();
+const SUN_DIRECTION = new THREE.Vector3(0.35, 0.9, 0.25).normalize();
 
 function Stars({ count = 800, radius = 9 }) {
   const geometry = useMemo(() => {
@@ -27,11 +29,11 @@ function Stars({ count = 800, radius = 9 }) {
   return (
     <points geometry={geometry}>
       <pointsMaterial
-        color="#cfdfff"
-        size={0.025}
+        color="#dfe9f6"
+        size={0.02}
         sizeAttenuation
         transparent
-        opacity={0.7}
+        opacity={0.5}
         depthWrite={false}
       />
     </points>
@@ -95,17 +97,27 @@ export default function GlobeScene({ friends = [], home, controls, onReady }) {
   const earthUniforms = useMemo(
     () => ({
       uSunDirection: { value: SUN_DIRECTION.clone() },
-      uOceanColor: { value: new THREE.Color('#0a2a4a') },
-      uLandColor: { value: new THREE.Color('#1d4d3a') },
-      uNightLightColor: { value: new THREE.Color('#ffb74d') },
-      uNoiseScale: { value: 1.6 },
+      uWaterDeep: { value: new THREE.Color('#4f8fc4') },
+      uWaterShallow: { value: new THREE.Color('#a8cfe0') },
+      uLandLow: { value: new THREE.Color('#9db87e') },
+      uLandHigh: { value: new THREE.Color('#d8c896') },
+      uSnow: { value: new THREE.Color('#eef4f6') },
+      uNoiseScale: { value: 1.5 },
     }),
     [],
   );
 
   const atmosphereUniforms = useMemo(
     () => ({
-      uAtmosphereColor: { value: new THREE.Color('#3aa8ff') },
+      uAtmosphereColor: { value: new THREE.Color('#a8ceff') },
+    }),
+    [],
+  );
+
+  const cloudUniforms = useMemo(
+    () => ({
+      uNoiseScale: { value: 2.2 },
+      uTime: { value: 0 },
     }),
     [],
   );
@@ -132,6 +144,7 @@ export default function GlobeScene({ friends = [], home, controls, onReady }) {
     c.lon += (c.targetLon - c.lon) * t;
     c.lat += (c.targetLat - c.lat) * t;
     c.zoom += (c.targetZoom - c.zoom) * t;
+    cloudUniforms.uTime.value += delta;
 
     if (globeRef.current) {
       globeRef.current.rotation.y = c.lon;
@@ -152,6 +165,16 @@ export default function GlobeScene({ friends = [], home, controls, onReady }) {
             vertexShader={earthVertex}
             fragmentShader={earthFragment}
             uniforms={earthUniforms}
+          />
+        </mesh>
+        <mesh scale={1.015}>
+          <sphereGeometry args={[1, 48, 48]} />
+          <shaderMaterial
+            vertexShader={cloudVertex}
+            fragmentShader={cloudFragment}
+            uniforms={cloudUniforms}
+            transparent
+            depthWrite={false}
           />
         </mesh>
         <mesh scale={1.025}>

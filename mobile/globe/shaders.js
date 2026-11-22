@@ -1,28 +1,4 @@
-export const earthVertex = /* glsl */ `
-  varying vec3 vNormal;
-  varying vec3 vWorldPosition;
-  varying vec2 vUv;
-
-  void main() {
-    vUv = uv;
-    vNormal = normalize(mat3(modelMatrix) * normal);
-    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-    vWorldPosition = worldPosition.xyz;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-export const earthFragment = /* glsl */ `
-  uniform vec3 uSunDirection;
-  uniform vec3 uOceanColor;
-  uniform vec3 uLandColor;
-  uniform vec3 uNightLightColor;
-  uniform float uNoiseScale;
-
-  varying vec3 vNormal;
-  varying vec3 vWorldPosition;
-  varying vec2 vUv;
-
+const NOISE_GLSL = /* glsl */ `
   float hash(vec3 p) {
     p = fract(p * 0.3183099 + 0.1);
     p *= 17.0;
@@ -58,35 +34,75 @@ export const earthFragment = /* glsl */ `
     }
     return value;
   }
+`;
+
+export const earthVertex = /* glsl */ `
+  varying vec3 vNormal;
+  varying vec3 vWorldPosition;
+
+  void main() {
+    vNormal = normalize(mat3(modelMatrix) * normal);
+    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPosition.xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+// Apple Maps-style natural-color earth: bright water, soft vegetation/desert
+// land, polar ice and a gentle, low-contrast daylight terminator.
+export const earthFragment = /* glsl */ `
+  uniform vec3 uSunDirection;
+  uniform vec3 uWaterDeep;
+  uniform vec3 uWaterShallow;
+  uniform vec3 uLandLow;
+  uniform vec3 uLandHigh;
+  uniform vec3 uSnow;
+  uniform float uNoiseScale;
+
+  varying vec3 vNormal;
+  varying vec3 vWorldPosition;
+
+  ${NOISE_GLSL}
 
   void main() {
     vec3 n = normalize(vNormal);
-    vec3 sun = normalize(uSunDirection);
-    float dayFactor = dot(n, sun);
-
     vec3 dir = normalize(vWorldPosition);
-    float land = fbm(dir * uNoiseScale);
-    float landMask = smoothstep(0.46, 0.62, land);
 
-    vec3 surface = mix(uOceanColor, uLandColor, landMask);
+    float continent = fbm(dir * uNoiseScale);
+    float landMask = smoothstep(0.47, 0.60, continent);
 
-    // Ocean gets a subtle specular sheen on the day side.
-    float oceanSpecular = pow(max(dot(reflect(-sun, n), normalize(-vWorldPosition)), 0.0), 24.0);
-    surface += (1.0 - landMask) * oceanSpecular * 0.4;
+    float detail = fbm(dir * uNoiseScale * 3.0 + vec3(4.2, 7.3, 1.9));
 
-    // Night side: dim the surface and add warm city lights on land.
-    float night = smoothstep(-0.15, 0.25, -dayFactor);
-    float cityMask = landMask * smoothstep(0.5, 0.7, land) * (0.4 + 0.6 * noise(dir * 6.0));
-    vec3 nightColor = surface * 0.06 + uNightLightColor * cityMask * 1.6;
+    float lat = dir.y;
+    float polar = smoothstep(0.60, 0.85, abs(lat));
 
-    float mixFactor = clamp(dayFactor * 0.5 + 0.5, 0.0, 1.0);
-    vec3 color = mix(nightColor, surface, mixFactor);
+    // Water: shallow turquoise near the equator -> deeper blue near the poles.
+    vec3 water = mix(uWaterDeep, uWaterShallow, 1.0 - abs(lat) * 0.85);
 
-    // Soft terminator band tint.
-    float terminator = 1.0 - smoothstep(0.0, 0.3, abs(dayFactor));
-    color += vec3(0.9, 0.55, 0.3) * terminator * 0.15;
+    // Land: lowland vegetation -> highland sand/rock.
+    float elevation = smoothstep(0.28, 0.72, detail);
+    vec3 land = mix(uLandLow, uLandHigh, elevation);
 
-    gl_FragColor = vec4(color, 1.0);
+    // Snow on high mountains and polar ice caps.
+    float mountainSnow = smoothstep(0.68, 0.90, detail);
+    float snow = clamp(polar * 0.9 + mountainSnow * 0.7, 0.0, 1.0);
+    land = mix(land, uSnow, snow);
+    water = mix(water, uSnow, polar * 0.85);
+
+    vec3 surface = mix(water, land, landMask);
+
+    // Gentle, mostly-ambient lighting with a soft half-lambert falloff.
+    vec3 sun = normalize(uSunDirection);
+    float ndl = dot(n, sun);
+    float light = ndl * 0.30 + 0.70;
+    surface *= light;
+
+    // Subtle sun glint on water.
+    vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+    float spec = pow(max(dot(reflect(-sun, n), viewDir), 0.0), 48.0);
+    surface += (1.0 - landMask) * spec * 0.35;
+
+    gl_FragColor = vec4(surface, 1.0);
   }
 `;
 
@@ -109,7 +125,36 @@ export const atmosphereFragment = /* glsl */ `
 
   void main() {
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-    float fresnel = pow(1.0 - abs(dot(viewDirection, normalize(vNormal))), 2.0);
-    gl_FragColor = vec4(uAtmosphereColor, fresnel);
+    float fresnel = pow(1.0 - abs(dot(viewDirection, normalize(vNormal))), 3.0);
+    gl_FragColor = vec4(uAtmosphereColor, fresnel * 0.65);
+  }
+`;
+
+export const cloudVertex = /* glsl */ `
+  varying vec3 vWorldPosition;
+
+  void main() {
+    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPosition.xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+export const cloudFragment = /* glsl */ `
+  uniform float uNoiseScale;
+  uniform float uTime;
+
+  varying vec3 vWorldPosition;
+
+  ${NOISE_GLSL}
+
+  void main() {
+    vec3 dir = normalize(vWorldPosition);
+    float t = uTime * 0.015;
+    float c = fbm(dir * uNoiseScale + vec3(t, t * 0.6, 0.0));
+    float clouds = smoothstep(0.58, 0.74, c);
+    float polar = smoothstep(0.6, 0.92, abs(dir.y));
+    clouds *= 1.0 - polar * 0.85;
+    gl_FragColor = vec4(vec3(1.0), clouds * 0.9);
   }
 `;
