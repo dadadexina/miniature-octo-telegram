@@ -88,7 +88,7 @@ This file records user instructions, preferences, and teachings for reference in
   - `*-<scope>.vercel.app` 形式域名返回 302 → vercel.com/sso-api 属 Deployment Protection 行为，与生产主域无关
   - Vercel 官方 agent 接入手册在 https://vercel.com/get-started.md（CLI + vercel/vercel-plugin + MCP https://mcp.vercel.com），已中止安装（域名问题解决后无必要），需要时可按手册继续
   - 待办：Supabase Auth → URL Configuration 需将 Site URL 改为生产域名并追加 `https://miniature-octo-telegram-puce.vercel.app/**`（当前仍指向预览域名 + /login、/reset-password）
-  - **仓库转 private 会拦截 Vercel 部署**（2026-11-20 实测：19:09:38 转私有后,后续 push 的 commit status `Vercel` = failure/"Deployment was blocked",转私有前最后一次部署正常）;GitHub PAT 无法修复(`/user/installations` 403,需 GitHub App 用户令牌),必须由账号主人在 Vercel Dashboard(Project → Settings → Git)或 GitHub(Settings → Applications → Vercel → Configure → Repository access)重新授权私有仓库访问;排查口诀:生产 HTML 的 `age`/`etag` 头 + `GET /repos/<owner>/<repo>/commits/<sha>/status` 看 Vercel context(该仓挂了两个 Vercel 项目:miniature-octo-telegram 与 -mkrx,同因同时被拦截)
+  - **仓库转 private 会拦截 Vercel 部署**（2026-11-20 实测：19:09:38 转私有后,后续 push 的 commit status `Vercel` = failure/"Deployment was blocked",转私有前最后一次部署正常）;GitHub PAT 无法修复(`/user/installations` 403,需 GitHub App 用户令牌),必须由账号主人在 Vercel Dashboard(Project → Settings → Git)或 GitHub(Settings → Applications → Vercel → Configure → Repository access)重新授权私有仓库访问;排查口诀:生产 HTML 的 `age`/`etag` 头 + `GET /repos/<owner>/<repo>/commits/<sha>/status` 看 Vercel context(该仓挂了两个 Vercel 项目:miniature-octo-telegram 与 -mkrx,同因同时被拦截)。**2026-11-22 已按用户要求改回 public**,无需再授权
 
 [云端 e2e 账号开通与凭据轮换]
 - Date: 2026-11-20
@@ -185,5 +185,5 @@ This file records user instructions, preferences, and teachings for reference in
   - e2e 用户名须匹配 `^[A-Za-z0-9]{8,15}$` 且含字母数字，否则 `profiles_fill_public_id` 会替换为随机 ID
   - `scripts/export-cloud-sql.mjs` 必须用函数替换 `.replaceAll(k, () => v)`，否则替换串中的 `$$` 折叠为 `$` 破坏 dollar-quote
   - avatar-sync 实时头像用例默认跳过，`E2E_AVATAR_SYNC=1` 才运行；生产函数 ACL 仅 `authenticated` 可执行四个关系判定函数
-  - 仓库已于 2026-11-22 转私有，Actions 改为消耗私有仓库分钟配额；两个 Vercel 项目需确认 GitHub App 对私有仓库的访问授权
+  - 仓库 2026-11-22 曾转私有导致 Vercel 部署被拦截，同日已改回 public；Actions 与 Vercel 均恢复公开仓库模式
   - 用于自动化的两个 Supabase PAT 已被用户吊销；后续 Management API 操作需用户提供新 PAT
