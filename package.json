@@ -16,12 +16,19 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.2",
+    "@takram/three-atmosphere": "^0.19.1",
+    "@takram/three-clouds": "^0.7.6",
+    "@takram/three-geospatial": "^0.9.1",
+    "@takram/three-geospatial-effects": "^0.6.4",
+    "3d-tiles-renderer": "0.4.27",
     "heic2any": "^0.0.4",
     "peerjs": "^1.5.5",
+    "postprocessing": "^6.39.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.6",
-    "three": "^0.160.0"
+    "tellux": "^0.3.0",
+    "three": "^0.184.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
