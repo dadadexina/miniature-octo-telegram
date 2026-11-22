@@ -10,7 +10,9 @@ import {
   vibrateNow,
 } from '../lib/appSettings'
 import {
+  buildMediaArchive,
   collectUserData,
+  downloadBlob,
   downloadTextFile,
   exportFileName,
   serializeExport,
@@ -108,6 +110,7 @@ export default function Settings() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
+  const [archiveBusy, setArchiveBusy] = useState(false)
   const fileRef = useRef(null)
   const ringtoneFileRef = useRef(null)
   const previewRef = useRef(null)
@@ -411,6 +414,38 @@ export default function Settings() {
       setNotice('导出失败，请稍后重试')
     } finally {
       setExportBusy(false)
+    }
+  }
+
+  const onExportArchive = async () => {
+    if (!cloudAccount) {
+      setNotice('演示账号没有云端数据可导出，请登录云端账号后使用')
+      return
+    }
+    setArchiveBusy(true)
+    try {
+      const result = await collectUserData(supabase, currentUser.id, { email })
+      if (!result.ok) {
+        setNotice(result.error || '导出失败，请稍后重试')
+        return
+      }
+      const archive = await buildMediaArchive(supabase, result.payload)
+      if (!archive.ok) {
+        setNotice(archive.error || '打包媒体失败，请稍后重试')
+        return
+      }
+      const blob = new Blob([archive.bytes], { type: 'application/zip' })
+      if (!downloadBlob(archive.fileName, blob)) {
+        setNotice('当前环境不支持下载文件')
+        return
+      }
+      const { total } = summarizeExport(result.payload)
+      const skipped = archive.skipped.length ? `，跳过 ${archive.skipped.length} 个` : ''
+      setNotice(`导出完成：${total} 条记录、${archive.included} 个媒体文件${skipped}，文件名 ${archive.fileName}`)
+    } catch {
+      setNotice('打包媒体失败，请稍后重试')
+    } finally {
+      setArchiveBusy(false)
     }
   }
 
@@ -905,6 +940,18 @@ export default function Settings() {
                 >
                   {exportBusy ? '正在打包...' : '下载数据文件'}
                 </button>
+                <button
+                  type="button"
+                  data-testid="settings-export-archive"
+                  className="mt-2 h-10 w-full border border-eink-divider text-[15px] text-eink-sub active:bg-[#E7E5DD] disabled:opacity-60"
+                  onClick={onExportArchive}
+                  disabled={archiveBusy}
+                >
+                  {archiveBusy ? '正在打包媒体...' : '下载含媒体压缩包'}
+                </button>
+                <p className="mt-2 text-[12px] leading-5 text-eink-sub">
+                  压缩包包含 data.json 与头像、朋友圈、消息图片，单文件上限 15MB，总量上限 80MB。
+                </p>
               </div>
             </div>
 

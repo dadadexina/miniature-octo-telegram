@@ -1,7 +1,12 @@
+import { createZip } from './zip'
+
 export const EXPORT_FORMAT = 'zhimo-export'
 export const EXPORT_VERSION = 1
 export const EXPORT_PAGE_SIZE = 500
 export const EXPORT_MAX_ROWS = 50000
+export const MEDIA_MAX_FILES = 500
+export const MEDIA_MAX_FILE_BYTES = 15 * 1024 * 1024
+export const MEDIA_MAX_TOTAL_BYTES = 80 * 1024 * 1024
 
 const EXPORT_QUERIES = [
   { key: 'profile', table: 'profiles', single: true, filter: (q, id) => q.eq('id', id) },
@@ -210,4 +215,127 @@ export function summarizeExport(payload) {
     (media?.momentImages?.length || 0) +
     (media?.messageMedia?.length || 0)
   return { total, mediaCount }
+}
+
+const PUBLIC_MEDIA_SOURCES = [
+  { bucket: 'avatars', key: 'avatars', folder: 'avatars' },
+  { bucket: 'moments', key: 'momentImages', folder: 'moments' },
+]
+
+async function resolveMediaUrl(client, item) {
+  const storage = client.storage.from(item.bucket)
+  if (item.access === 'public') {
+    const { data } = storage.getPublicUrl(item.path)
+    return data?.publicUrl ? { ok: true, url: data.publicUrl } : { ok: false, error: '缺少公开地址' }
+  }
+  const { data, error } = await storage.createSignedUrl(item.path, 900)
+  if (error || !data?.signedUrl) return { ok: false, error: error?.message || '签名失败' }
+  return { ok: true, url: data.signedUrl }
+}
+
+export async function buildMediaArchive(
+  client,
+  payload,
+  {
+    fetchImpl = globalThis.fetch,
+    now = new Date(),
+    maxFiles = MEDIA_MAX_FILES,
+    maxFileBytes = MEDIA_MAX_FILE_BYTES,
+    maxTotalBytes = MEDIA_MAX_TOTAL_BYTES,
+    fileName = '',
+  } = {}
+) {
+  if (!payload || !client?.storage) return { ok: false, error: '云端未配置' }
+  if (typeof fetchImpl !== 'function') return { ok: false, error: '当前环境不支持下载媒体' }
+
+  const files = []
+  const seen = new Set()
+  const push = (item) => {
+    const key = `${item.bucket}/${item.path}`
+    if (seen.has(key)) return
+    seen.add(key)
+    files.push(item)
+  }
+  for (const source of PUBLIC_MEDIA_SOURCES) {
+    for (const entry of payload.storage?.files?.[source.key] || []) {
+      if (entry?.path) push({ ...source, path: entry.path, access: 'public' })
+    }
+  }
+  for (const path of payload.storage?.files?.messageMedia || []) {
+    if (path) push({ bucket: 'message_media', folder: 'messages', path, access: 'signed' })
+  }
+
+  const entries = [{ name: 'data.json', data: serializeExport(payload) }]
+  const skipped = []
+  let totalBytes = 0
+  let included = 0
+
+  for (const item of files) {
+    if (included >= maxFiles) {
+      skipped.push({ path: item.path, reason: `超过 ${maxFiles} 个文件上限` })
+      continue
+    }
+    const urlResult = await resolveMediaUrl(client, item)
+    if (!urlResult.ok) {
+      skipped.push({ path: item.path, reason: urlResult.error })
+      continue
+    }
+    let response
+    try {
+      response = await fetchImpl(urlResult.url)
+    } catch {
+      skipped.push({ path: item.path, reason: '下载失败' })
+      continue
+    }
+    if (!response?.ok) {
+      skipped.push({ path: item.path, reason: `HTTP ${response?.status ?? '错误'}` })
+      continue
+    }
+    const buffer = await response.arrayBuffer()
+    if (buffer.byteLength > maxFileBytes) {
+      skipped.push({ path: item.path, reason: '单个文件超过上限' })
+      continue
+    }
+    if (totalBytes + buffer.byteLength > maxTotalBytes) {
+      skipped.push({ path: item.path, reason: '压缩包总量超过上限' })
+      continue
+    }
+    totalBytes += buffer.byteLength
+    included += 1
+    entries.push({ name: `media/${item.folder}/${item.path}`, data: new Uint8Array(buffer) })
+  }
+
+  const baseName = fileName || exportFileName(payload.account?.id, now)
+  return {
+    ok: true,
+    bytes: createZip(entries, { now }),
+    fileName: baseName.replace(/\.json$/, '') + '-media.zip',
+    included,
+    skipped,
+    totalBytes,
+  }
+}
+
+export function downloadBlob(
+  fileName,
+  blob,
+  { doc = globalThis.document, urlApi = globalThis.URL } = {}
+) {
+  if (!doc || typeof doc.createElement !== 'function' || !urlApi?.createObjectURL) return false
+  const href = urlApi.createObjectURL(blob)
+  const anchor = doc.createElement('a')
+  anchor.href = href
+  anchor.download = fileName
+  anchor.rel = 'noopener'
+  doc.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  setTimeout(() => {
+    try {
+      urlApi.revokeObjectURL?.(href)
+    } catch {
+      // 释放失败不影响已触发的下载
+    }
+  }, 0)
+  return true
 }

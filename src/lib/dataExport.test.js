@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   EXPORT_FORMAT,
   EXPORT_VERSION,
+  buildMediaArchive,
   collectUserData,
+  downloadBlob,
   downloadTextFile,
   exportFileName,
   serializeExport,
@@ -47,6 +49,11 @@ function createClient({ tables = {}, storage = {}, failTable = '', failBucket = 
     storage: {
       from(bucket) {
         return {
+          getPublicUrl: (path) => ({ data: { publicUrl: `https://cdn.test/${bucket}/${path}` } }),
+          createSignedUrl: async (path) => {
+            if (failBucket === bucket) return { data: null, error: { message: 'sign boom' } }
+            return { data: { signedUrl: `https://signed.test/${bucket}/${path}` }, error: null }
+          },
           list: async (prefix, options = {}) => {
             if (failBucket === bucket) return { data: null, error: { message: 'storage boom' } }
             const all = (storage[bucket] || []).map((name) => ({
@@ -183,5 +190,96 @@ describe('dataExport 输出', () => {
 
   it('无 document 时返回 false', () => {
     expect(downloadTextFile('a.json', '{}', { doc: null, urlApi: {} })).toBe(false)
+  })
+
+  it('downloadBlob 触发文件下载', () => {
+    const anchor = { click: vi.fn(), remove: vi.fn() }
+    const doc = { createElement: vi.fn(() => anchor), body: { appendChild: vi.fn() } }
+    const urlApi = { createObjectURL: vi.fn(() => 'blob:zip'), revokeObjectURL: vi.fn() }
+    expect(downloadBlob('a.zip', new Blob(['x']), { doc, urlApi })).toBe(true)
+    expect(anchor.download).toBe('a.zip')
+    expect(anchor.click).toHaveBeenCalled()
+  })
+})
+
+describe('buildMediaArchive', () => {
+  const basePayload = {
+    account: { id: USER_ID },
+    storage: {
+      files: {
+        avatars: [{ path: `${USER_ID}/me.png` }],
+        momentImages: [{ path: `${USER_ID}/m1.jpg` }],
+        messageMedia: ['pair-1/a.jpg'],
+      },
+    },
+  }
+
+  function mediaClient(options) {
+    const { client } = createClient(options)
+    return client
+  }
+
+  it('打包 data.json 与三类媒体', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new Uint8Array([1, 2]).buffer,
+    }))
+    const result = await buildMediaArchive(mediaClient(), basePayload, {
+      fetchImpl,
+      now: new Date('2026-11-22T08:00:00Z'),
+    })
+    expect(result.ok).toBe(true)
+    expect(result.included).toBe(3)
+    expect(result.skipped).toEqual([])
+    expect(result.fileName).toBe('zhimo-export-2026-11-22-11111111-media.zip')
+    expect(result.bytes.slice(0, 4)).toEqual(new Uint8Array([0x50, 0x4b, 0x03, 0x04]))
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(fetchImpl.mock.calls.map((call) => call[0])).toEqual([
+      `https://cdn.test/avatars/${USER_ID}/me.png`,
+      `https://cdn.test/moments/${USER_ID}/m1.jpg`,
+      'https://signed.test/message_media/pair-1/a.jpg',
+    ])
+  })
+
+  it('单个媒体失败时跳过并继续', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      if (String(url).includes('m1.jpg')) throw new Error('network')
+      return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1]).buffer }
+    })
+    const result = await buildMediaArchive(mediaClient(), basePayload, { fetchImpl })
+    expect(result.ok).toBe(true)
+    expect(result.included).toBe(2)
+    expect(result.skipped).toEqual([{ path: `${USER_ID}/m1.jpg`, reason: '下载失败' }])
+  })
+
+  it('超过单文件上限时跳过', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new Uint8Array(2048).buffer,
+    }))
+    const result = await buildMediaArchive(mediaClient(), basePayload, {
+      fetchImpl,
+      maxFileBytes: 1024,
+    })
+    expect(result.included).toBe(0)
+    expect(result.skipped).toHaveLength(3)
+    expect(result.skipped[0].reason).toBe('单个文件超过上限')
+  })
+
+  it('签名失败计入跳过', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new Uint8Array([1]).buffer,
+    }))
+    const result = await buildMediaArchive(
+      mediaClient({ failBucket: 'message_media' }),
+      basePayload,
+      { fetchImpl }
+    )
+    expect(result.skipped[0].path).toBe('pair-1/a.jpg')
+    expect(result.skipped[0].reason).toBe('sign boom')
   })
 })

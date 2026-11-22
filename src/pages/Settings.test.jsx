@@ -33,7 +33,9 @@ const profileMocks = vi.hoisted(() => ({ updateProfileSignature: vi.fn() }))
 vi.mock('../lib/profiles', () => ({ updateProfileSignature: profileMocks.updateProfileSignature }))
 
 const dataExportMock = vi.hoisted(() => ({
+  buildMediaArchive: vi.fn(),
   collectUserData: vi.fn(),
+  downloadBlob: vi.fn(),
   downloadTextFile: vi.fn(),
   exportFileName: vi.fn(),
   serializeExport: vi.fn(),
@@ -94,6 +96,14 @@ beforeEach(() => {
   dataExportMock.exportFileName.mockReturnValue('zhimo-export.json')
   dataExportMock.serializeExport.mockReturnValue('{}')
   dataExportMock.summarizeExport.mockReturnValue({ total: 4, mediaCount: 2 })
+  dataExportMock.buildMediaArchive.mockResolvedValue({
+    ok: true,
+    bytes: new Uint8Array([1, 2]),
+    fileName: 'zhimo-export-media.zip',
+    included: 2,
+    skipped: [],
+  })
+  dataExportMock.downloadBlob.mockReturnValue(true)
 })
 
 afterEach(() => {
@@ -467,6 +477,28 @@ describe('Settings 设置页', () => {
     )
     expect(dataExportMock.downloadTextFile).toHaveBeenCalledWith('zhimo-export.json', '{}')
     expect(screen.getByTestId('settings-notice').textContent).toContain('导出完成：4 条记录、2 个媒体文件清单')
+  })
+
+  it('云端账号可导出含媒体的压缩包', async () => {
+    useCloudAccount()
+    dataExportMock.buildMediaArchive.mockResolvedValue({
+      ok: true,
+      bytes: new Uint8Array([1, 2]),
+      fileName: 'zhimo-export-media.zip',
+      included: 2,
+      skipped: [{ path: 'a', reason: '下载失败' }],
+    })
+    setup()
+    openView(2)
+
+    fireEvent.click(screen.getByTestId('settings-export-archive'))
+
+    await waitFor(() => expect(dataExportMock.buildMediaArchive).toHaveBeenCalled())
+    expect(dataExportMock.downloadBlob).toHaveBeenCalledWith(
+      'zhimo-export-media.zip',
+      expect.any(Blob)
+    )
+    expect(screen.getByTestId('settings-notice').textContent).toContain('2 个媒体文件，跳过 1 个')
   })
 
   it('导出失败时展示错误提示且不触发下载', async () => {
