@@ -151,3 +151,26 @@ export async function deleteFriend(meId, friendId) {
   }
   return { ok: true }
 }
+
+// 收到陌生人消息时,如果双方存在 accepted 请求,说明只是好友边缺了一侧,
+// 补写自己这一行,让好友列表与消息保持一致。
+export async function repairFriendEdgeFromAccepted(meId, peerId, deps = {}) {
+  if (!meId || !peerId || meId === peerId) return { ok: false }
+  const findAccepted =
+    deps.findAccepted ||
+    (async (a, b) => {
+      const pair = `and(from_id.eq.${a},to_id.eq.${b}),and(from_id.eq.${b},to_id.eq.${a})`
+      const { data, error } = await supabase
+        .from('friend_requests')
+        .select('id')
+        .eq('status', 'accepted')
+        .or(pair)
+        .limit(1)
+      if (error) return { ok: false, found: false }
+      return { ok: true, found: (data || []).length > 0 }
+    })
+  const ensure = deps.ensure || upsertFriend
+  const accepted = await findAccepted(meId, peerId)
+  if (!accepted?.ok || !accepted.found) return { ok: false }
+  return ensure(meId, peerId)
+}

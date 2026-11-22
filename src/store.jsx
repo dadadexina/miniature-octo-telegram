@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { clearAccountStorage } from './lib/accountCleanup'
 import { notifyIncoming } from './lib/appSettings'
 import { blockUser, fetchMyBlocks, unblockUser } from './lib/blocks'
-import { deleteFriend, fetchFriends, normalizeRemark, updateFriendRemark, upsertFriend } from './lib/friends'
+import { deleteFriend, fetchFriends, normalizeRemark, repairFriendEdgeFromAccepted, updateFriendRemark, upsertFriend } from './lib/friends'
 import {
   acceptFriendRequest,
   cancelFriendRequest,
@@ -226,6 +226,7 @@ export function StoreProvider({ children }) {
   const refreshRequestsRef = useRef(null)
   const markLocalFriendRef = useRef(null)
   const friendResyncRef = useRef(null)
+  const incomingRepairRef = useRef(new Set())
   const hadDisconnectedRef = useRef(false)
   const profileSyncedRef = useRef(false)
 
@@ -627,6 +628,20 @@ export function StoreProvider({ children }) {
           const raw = payload.new
           const fromId = raw?.sender_id || raw?.from_id
           const toId = raw?.receiver_id || raw?.to_id
+          if (fromId && toId === me && fromId !== me) {
+            const known = stateRef.current.friendships.some(
+              (f) => f.userId === me && f.friendId === fromId
+            )
+            if (!known && !incomingRepairRef.current.has(fromId)) {
+              incomingRepairRef.current.add(fromId)
+              repairFriendEdgeFromAccepted(me, fromId)
+                .then((res) => {
+                  if (res?.ok) friendResyncRef.current?.()
+                  else incomingRepairRef.current.delete(fromId)
+                })
+                .catch(() => incomingRepairRef.current.delete(fromId))
+            }
+          }
           if (fromId && toId === me && fromId !== me && fromId !== activePeerRef.current) {
             const body = raw.content || raw.text || raw.body || ''
             const meta = stateRef.current.friendships.find(

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('./supabase', () => ({ supabase: {} }))
 
-const { mapFriend, normalizeRemark, FRIENDS_SQL } = await import('./friends')
+const { mapFriend, normalizeRemark, repairFriendEdgeFromAccepted, FRIENDS_SQL } = await import('./friends')
 
 describe('mapFriend', () => {
   it('映射 friends 表行', () => {
@@ -53,5 +53,36 @@ describe('FRIENDS_SQL', () => {
   it('禁止自己加自己为好友', () => {
     expect(FRIENDS_SQL).toContain('constraint friends_no_self check (owner_id <> friend_id)')
     expect(FRIENDS_SQL).toContain('alter table public.friends add constraint friends_no_self')
+  })
+})
+
+describe('repairFriendEdgeFromAccepted', () => {
+  it('存在 accepted 请求时补写自己的好友边', async () => {
+    const findAccepted = vi.fn().mockResolvedValue({ ok: true, found: true })
+    const ensure = vi.fn().mockResolvedValue({ ok: true })
+    const res = await repairFriendEdgeFromAccepted('me', 'peer', { findAccepted, ensure })
+    expect(res.ok).toBe(true)
+    expect(findAccepted).toHaveBeenCalledWith('me', 'peer')
+    expect(ensure).toHaveBeenCalledWith('me', 'peer')
+  })
+
+  it('没有 accepted 请求时不写好友边,避免把陌生人加成好友', async () => {
+    const ensure = vi.fn()
+    const res = await repairFriendEdgeFromAccepted('me', 'peer', {
+      findAccepted: vi.fn().mockResolvedValue({ ok: true, found: false }),
+      ensure,
+    })
+    expect(res.ok).toBe(false)
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
+  it('查询失败或参数非法时不动数据', async () => {
+    const ensure = vi.fn()
+    await repairFriendEdgeFromAccepted('me', 'peer', {
+      findAccepted: vi.fn().mockResolvedValue({ ok: false, found: false }),
+      ensure,
+    })
+    await repairFriendEdgeFromAccepted('me', 'me', { ensure })
+    expect(ensure).not.toHaveBeenCalled()
   })
 })
