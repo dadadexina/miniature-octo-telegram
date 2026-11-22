@@ -160,6 +160,26 @@ describe('Settings 设置页', () => {
     expect(screen.getByTestId('settings-list')).toBeTruthy()
   })
 
+  it('通知面板可配置免打扰时段与收件摘要', () => {
+    setup()
+    openView(0)
+
+    expect(screen.queryByTestId('settings-dnd-start')).toBeNull()
+    fireEvent.click(screen.getByRole('switch', { name: '开启免打扰' }))
+
+    fireEvent.change(screen.getByTestId('settings-dnd-start'), { target: { value: '21:30' } })
+    fireEvent.change(screen.getByTestId('settings-dnd-end'), { target: { value: '07:15' } })
+    fireEvent.click(screen.getByRole('switch', { name: '收件摘要' }))
+
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY))
+    expect(saved).toMatchObject({
+      dndEnabled: true,
+      dndStart: '21:30',
+      dndEnd: '07:15',
+      digestEnabled: false,
+    })
+  })
+
   it('通知面板提供十个提示音并支持试听与切换', () => {
     const created = []
     class FakeAudio {

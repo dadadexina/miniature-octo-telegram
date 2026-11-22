@@ -224,7 +224,7 @@ export default function Settings() {
       setNotice('请先开启新消息提醒')
       return
     }
-    notifyIncoming({ title: '新通知', body: '这是一条测试通知' })
+    notifyIncoming({ title: '新通知', body: '这是一条测试通知', force: true })
     setNotice('测试通知已发送')
   }
 
@@ -471,6 +471,71 @@ export default function Settings() {
                 提醒偏好保存在本机，重新登录后仍会保留。
               </li>
             </ul>
+
+            <div className="mt-6 px-4" data-testid="settings-dnd">
+              <p className="text-[16px] text-eink-text">免打扰</p>
+              <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                在设定时段内不逐条提醒，开启收件摘要后在免打扰结束后合并提示一次。
+              </p>
+              <div className="mt-3 border border-eink-divider bg-eink-bar">
+                <div className="flex items-center justify-between px-3 py-2.5">
+                  <span className="text-[14px] text-eink-text">开启免打扰</span>
+                  <Switch
+                    checked={settings.dndEnabled}
+                    onChange={(value) => update({ dndEnabled: value })}
+                    label="开启免打扰"
+                  />
+                </div>
+                {settings.dndEnabled ? (
+                  <>
+                    <div className="border-t border-eink-divider px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <label htmlFor="dnd-start" className="text-[14px] text-eink-text">
+                          开始时间
+                        </label>
+                        <input
+                          id="dnd-start"
+                          data-testid="settings-dnd-start"
+                          type="time"
+                          value={settings.dndStart}
+                          onChange={(e) => update({ dndStart: e.target.value })}
+                          className="h-9 border border-eink-line/30 bg-eink-paper px-2 text-[14px] text-eink-text outline-none"
+                        />
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <label htmlFor="dnd-end" className="text-[14px] text-eink-text">
+                          结束时间
+                        </label>
+                        <input
+                          id="dnd-end"
+                          data-testid="settings-dnd-end"
+                          type="time"
+                          value={settings.dndEnd}
+                          onChange={(e) => update({ dndEnd: e.target.value })}
+                          className="h-9 border border-eink-line/30 bg-eink-paper px-2 text-[14px] text-eink-text outline-none"
+                        />
+                      </div>
+                      <p className="mt-2 text-[12px] leading-5 text-eink-sub">
+                        支持跨午夜，例如 22:00 至 08:00；开始与结束相同表示全天免打扰。
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-eink-divider px-3 py-2.5">
+                      <span className="min-w-0">
+                        <span className="block text-[14px] text-eink-text">收件摘要</span>
+                        <span className="mt-0.5 block text-[12px] text-eink-sub">
+                          免打扰结束后合并提示未读数量与来源
+                        </span>
+                      </span>
+                      <Switch
+                        checked={settings.digestEnabled}
+                        onChange={(value) => update({ digestEnabled: value })}
+                        label="收件摘要"
+                      />
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
 
             <div className="mt-6 px-4">
               <p className="text-[16px] text-eink-text">新通知</p>

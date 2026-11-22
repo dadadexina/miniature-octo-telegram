@@ -220,6 +220,7 @@ export function StoreProvider({ children }) {
   const inboxIdsRef = useRef(new Set())
   const inboxRef = useRef([])
   const hiddenIdsRef = useRef(new Set())
+  const convPrefsRef = useRef({})
   const stateRef = useRef(state)
   const resyncRef = useRef(null)
   const refreshRequestsRef = useRef(null)
@@ -275,6 +276,10 @@ export function StoreProvider({ children }) {
   useEffect(() => {
     activePeerRef.current = activePeerId
   }, [activePeerId])
+
+  useEffect(() => {
+    convPrefsRef.current = convPrefs
+  }, [convPrefs])
 
   const ingestCloudMessage = useCallback((incoming) => {
     const msg = incoming?.raw ? incoming : mapMessage(incoming)
@@ -624,7 +629,17 @@ export function StoreProvider({ children }) {
           const toId = raw?.receiver_id || raw?.to_id
           if (fromId && toId === me && fromId !== me && fromId !== activePeerRef.current) {
             const body = raw.content || raw.text || raw.body || ''
-            notifyIncoming({ body: String(body).slice(0, 40) || '[新消息]' })
+            const meta = stateRef.current.friendships.find(
+              (f) => f.userId === me && f.friendId === fromId
+            )
+            const sender = stateRef.current.users.find((u) => u.id === fromId)
+            notifyIncoming({
+              body: String(body).slice(0, 40) || '[新消息]',
+              fromId,
+              fromName: meta?.remark || sender?.nickname || '',
+              muted: Boolean(convPrefsRef.current[fromId]?.muted),
+              userId: me,
+            })
           }
         }
       )

@@ -1,12 +1,14 @@
 import { Navigate, Outlet, useNavigate } from 'react-router-dom'
 import AuthBar from '../components/AuthBar'
 import TabBar from '../components/TabBar'
+import useNotificationDigest from '../hooks/useNotificationDigest'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../store'
 
 export default function Layout() {
   const { currentUser, logout, offline } = useStore()
   const navigate = useNavigate()
+  useNotificationDigest(currentUser?.id)
   if (!currentUser) return <Navigate to="/login" replace />
 
   const onSignOut = async () => {

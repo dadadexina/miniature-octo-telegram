@@ -1,4 +1,10 @@
 import { DEFAULT_SOUND_ID, NOTIFICATION_SOUNDS, playNotificationSound } from './notificationSounds'
+import {
+  clearDigestQueue,
+  queueDigestItem,
+  readDigestQueue,
+  summarizeDigest,
+} from './notificationDigest'
 import { CUSTOM_RINGTONE_ID, DEFAULT_RINGTONE_ID, RINGTONES } from './ringtones'
 import { DEFAULT_THEME_ID, THEME_IDS, themeById } from './themes'
 
@@ -9,6 +15,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   notifySound: true,
   notifyVibrate: true,
   notifySoundId: DEFAULT_SOUND_ID,
+  dndEnabled: false,
+  dndStart: '22:00',
+  dndEnd: '08:00',
+  digestEnabled: true,
   callRingtoneId: DEFAULT_RINGTONE_ID,
   customRingtoneName: '',
   theme: DEFAULT_THEME_ID,
@@ -17,9 +27,14 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
 const FONT_SCALES = ['small', 'standard', 'large']
 const VIBRATE_PATTERN = [120, 60, 120]
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
 
 function validRingtoneId(id) {
   return id === CUSTOM_RINGTONE_ID || RINGTONES.some((ringtone) => ringtone.id === id)
+}
+
+function validTime(value, fallback) {
+  return TIME_PATTERN.test(String(value || '')) ? value : fallback
 }
 
 function normalize(parsed) {
@@ -33,6 +48,10 @@ function normalize(parsed) {
     notifySoundId: NOTIFICATION_SOUNDS.some((sound) => sound.id === parsed.notifySoundId)
       ? parsed.notifySoundId
       : DEFAULT_SOUND_ID,
+    dndEnabled: parsed.dndEnabled === true,
+    dndStart: validTime(parsed.dndStart, DEFAULT_SETTINGS.dndStart),
+    dndEnd: validTime(parsed.dndEnd, DEFAULT_SETTINGS.dndEnd),
+    digestEnabled: parsed.digestEnabled !== false,
     callRingtoneId: validRingtoneId(parsed.callRingtoneId) ? parsed.callRingtoneId : DEFAULT_RINGTONE_ID,
     customRingtoneName: typeof parsed.customRingtoneName === 'string' ? parsed.customRingtoneName : '',
     theme: THEME_IDS.includes(parsed.theme) ? parsed.theme : DEFAULT_THEME_ID,
@@ -120,9 +139,23 @@ export function vibrateNow(pattern = VIBRATE_PATTERN) {
   }
 }
 
-export function notifyIncoming({ title = '新消息', body = '' } = {}) {
-  const settings = loadSettings()
-  if (!settings.notifyMessages) return
+function timeToMinutes(value) {
+  if (!TIME_PATTERN.test(String(value || ''))) return null
+  return Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5))
+}
+
+export function isQuietTime(settings, date = new Date()) {
+  if (!settings?.dndEnabled) return false
+  const start = timeToMinutes(settings.dndStart)
+  const end = timeToMinutes(settings.dndEnd)
+  if (start === null || end === null) return false
+  const now = date.getHours() * 60 + date.getMinutes()
+  if (start === end) return true
+  if (start < end) return now >= start && now < end
+  return now >= start || now < end
+}
+
+function deliverNotification(settings, { title = '新消息', body = '', tag = 'eink-message' } = {}) {
   if (settings.notifyVibrate) vibrateNow()
   if (settings.notifySound) {
     const audio = playNotificationSound(settings.notifySoundId)
@@ -131,11 +164,47 @@ export function notifyIncoming({ title = '新消息', body = '' } = {}) {
   const NotificationApi = globalThis.Notification
   if (NotificationApi && NotificationApi.permission === 'granted') {
     try {
-      new NotificationApi(title, { body, tag: 'eink-message' })
+      new NotificationApi(title, { body, tag })
     } catch {
       // 通知构造失败不影响消息同步
     }
   }
+}
+
+export function notifyIncoming({
+  title = '新消息',
+  body = '',
+  fromId = '',
+  fromName = '',
+  muted = false,
+  userId = '',
+  force = false,
+} = {}) {
+  const settings = loadSettings()
+  if (!settings.notifyMessages) return
+  if (muted) return
+  if (!force && isQuietTime(settings)) {
+    if (settings.digestEnabled && fromId) {
+      queueDigestItem(userId, { fromId, fromName })
+    }
+    return
+  }
+  deliverNotification(settings, { title, body })
+}
+
+export function flushDigestNotification({ userId = '', now = new Date(), storage } = {}) {
+  const settings = loadSettings(storage)
+  if (!settings.notifyMessages) return null
+  if (!settings.digestEnabled) {
+    clearDigestQueue(userId, storage)
+    return null
+  }
+  if (isQuietTime(settings, now)) return null
+  const summary = summarizeDigest(readDigestQueue(userId, storage))
+  if (!summary) return null
+  clearDigestQueue(userId, storage)
+  deliverNotification(settings, { title: summary.title, body: summary.body, tag: 'eink-digest' })
+  return summary
 }
 
 export { SETTINGS_KEY }
