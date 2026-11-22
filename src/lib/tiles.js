@@ -2,8 +2,8 @@ const RAD = Math.PI / 180
 const EQUATOR_METERS = 40075016.686
 
 export const TILE_PX = 256
-export const TILE_SPAN = 4
-export const TILE_MARGIN = 1.4
+export const TILE_SPAN = 5
+export const TILE_MARGIN = 2.4
 export const MIN_TILE_ZOOM = 3
 export const MAX_TILE_ZOOM = 19
 
@@ -36,17 +36,17 @@ export function tileToLat(y, zoom) {
 
 export function tileBlock(lat, lng, zoom, span = TILE_SPAN) {
   const count = 2 ** zoom
-  const half = span / 2
   const x = ((lng + 180) / 360) * count
   const sin = Math.sin(clamp(lat, -85.05112878, 85.05112878) * RAD)
   const y = (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * count
+  const offset = Math.floor(span / 2)
   const anchorX = Math.floor(x + 0.5)
-  const anchorY = clamp(Math.floor(y + 0.5), Math.ceil(half), count - Math.ceil(half))
+  const anchorY = clamp(Math.floor(y + 0.5), offset, count - span + offset)
   return {
     zoom,
     span,
-    originX: anchorX - half,
-    originY: anchorY - half,
+    originX: anchorX - offset,
+    originY: anchorY - offset,
     centerLat: lat,
     centerLng: lng,
   }
@@ -69,7 +69,7 @@ export function tileZoomFor({ altitudeWorld, lat, fovDeg = 45, span = TILE_SPAN,
   const cos = Math.max(Math.cos(clamp(lat, -85, 85) * RAD), 0.08)
   const levels = (span * EQUATOR_METERS * cos) / (view * margin)
   if (!(levels > 0)) return MAX_TILE_ZOOM
-  return clamp(Math.floor(Math.log2(levels)), MIN_TILE_ZOOM, MAX_TILE_ZOOM)
+  return clamp(Math.ceil(Math.log2(levels)), MIN_TILE_ZOOM, MAX_TILE_ZOOM)
 }
 
 export function latLngFromUnit(unit) {

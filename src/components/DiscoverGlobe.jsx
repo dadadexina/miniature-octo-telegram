@@ -6,6 +6,7 @@ import earthDayUrl from '../assets/earth/earth-day.jpg'
 import earthNightUrl from '../assets/earth/earth-night.jpg'
 import { PLACES, cityWeatherId, searchPlaces } from '../lib/places'
 import { cloudPoints, cloudGridFrom, buildCloudCanvas } from '../lib/clouds'
+import { searchPlacesOnline } from '../lib/geocode'
 import { fetchWeather } from '../lib/weather'
 import {
   MAX_ALTITUDE_WORLD,
@@ -192,6 +193,9 @@ export default function DiscoverGlobe({
   const [jumpQuery, setJumpQuery] = useState('')
   const [jumpError, setJumpError] = useState('')
   const [copied, setCopied] = useState('')
+  const [onlinePlaces, setOnlinePlaces] = useState([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState('')
   const [fallback, setFallback] = useState(() => !canUseWebGL())
   const [weather, setWeather] = useState({})
   const [now, setNow] = useState(() => Date.now())
@@ -306,7 +310,7 @@ export default function DiscoverGlobe({
       setFallback(true)
       return undefined
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, lowPower ? 1.25 : 1.75))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, lowPower ? 1.5 : 2))
     renderer.setClearColor(0x03070f, 1)
     renderer.domElement.className = 'block h-full w-full'
     container.appendChild(renderer.domElement)
@@ -879,21 +883,10 @@ export default function DiscoverGlobe({
     const updateLabels = () => {
       const items = state.labelItems
       if (!items.length) return
-      if (state.mapMode) {
-        items.forEach((item) => {
-          if (!item.visible) return
-          item.el.style.opacity = '0'
-          item.el.style.visibility = 'hidden'
-          item.visible = false
-        })
-        return
-      }
       const width = renderer.domElement.clientWidth
       const height = renderer.domElement.clientHeight
       if (!width || !height) return
       const distance = camera.position.length()
-      const altitude = Math.max(distance - R, MIN_ALTITUDE_WORLD)
-      const labelFade = smoothstep(0.09, 0.13, altitude)
       const camDir = camera.position.clone().normalize()
       const placed = []
       camera.updateMatrixWorld()
@@ -902,7 +895,7 @@ export default function DiscoverGlobe({
         let x = 0
         let y = 0
         if (visible) {
-          projected.copy(item.unit).multiplyScalar(R * 1.014).project(camera)
+          projected.copy(item.unit).multiplyScalar(R).project(camera)
           x = (projected.x * 0.5 + 0.5) * width
           y = (-projected.y * 0.5 + 0.5) * height
           if (projected.z < -1 || projected.z > 1 || x < 4 || x > width - 4 || y < 72 || y > height - 86) {
@@ -922,7 +915,7 @@ export default function DiscoverGlobe({
         }
         if (visible) {
           const fade = Math.min(1, (item.threshold - distance) / 0.7)
-          item.el.style.opacity = String(0.92 * fade * labelFade)
+          item.el.style.opacity = String((state.mapMode ? 0.98 : 0.92) * fade)
           item.el.style.visibility = 'visible'
           item.el.style.transform = `translate3d(${x + 5}px, ${y - 8}px, 0)`
           item.visible = true
@@ -958,7 +951,10 @@ export default function DiscoverGlobe({
           }
           const texture = new THREE.CanvasTexture(canvas)
           texture.colorSpace = THREE.SRGBColorSpace
-          texture.anisotropy = Math.min(lowPower ? 2 : 4, renderer.capabilities.getMaxAnisotropy())
+          texture.anisotropy = Math.min(
+            renderer.capabilities.getMaxAnisotropy(),
+            lowPower ? 4 : 8
+          )
           const offset = Math.max(5e-7, altitude * 0.005)
           const geometry = buildMapPatchGeometry(block, R + offset, lowPower ? 24 : 32)
           const material = new THREE.MeshBasicMaterial({
@@ -1160,25 +1156,80 @@ export default function DiscoverGlobe({
   const closeSheet = () => setSelectedId(null)
   const routeIndex = selectedRoute ? routes.findIndex((route) => route.id === selectedRoute.id) : -1
   const jumpCoords = useMemo(() => parseCoords(jumpQuery), [jumpQuery])
-  const jumpMatches = useMemo(() => (jumpCoords ? [] : searchPlaces(jumpQuery)), [jumpCoords, jumpQuery])
-  const goTo = (lat, lng) => {
-    threeRef.current?.flyTo(lat, lng)
+  const localMatches = useMemo(() => (jumpCoords ? [] : searchPlaces(jumpQuery)), [jumpCoords, jumpQuery])
+  const jumpMatches = useMemo(() => {
+    if (!onlinePlaces.length) return localMatches
+    const merged = [...localMatches.map((place) => ({ ...place, altitude: 0.006 }))]
+    onlinePlaces.forEach((place) => {
+      const duplicate = merged.some(
+        (item) =>
+          item.name === place.name &&
+          Math.abs(item.lat - place.lat) < 0.12 &&
+          Math.abs(item.lng - place.lng) < 0.12
+      )
+      if (!duplicate) merged.push(place)
+    })
+    return merged.slice(0, 10)
+  }, [localMatches, onlinePlaces])
+  useEffect(() => {
+    if (!jumpOpen || jumpCoords || jumpQuery.trim().length < 2) {
+      setOnlinePlaces([])
+      setSearchLoading(false)
+      setSearchError('')
+      return undefined
+    }
+    setOnlinePlaces([])
+    setSearchError('')
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      setSearchLoading(true)
+      const center = threeRef.current?.center?.()
+      searchPlacesOnline(jumpQuery, {
+        lat: center?.lat,
+        lng: center?.lng,
+        signal: controller.signal,
+      }).then((result) => {
+        if (controller.signal.aborted) return
+        setSearchLoading(false)
+        if (result.ok) setOnlinePlaces(result.places)
+        else if (!result.aborted) setSearchError(result.error || '地名搜索失败')
+      })
+    }, 420)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [jumpOpen, jumpQuery, jumpCoords])
+  const goTo = (lat, lng, altitude = 0.003) => {
+    threeRef.current?.flyTo(lat, lng, altitude)
     setJumpOpen(false)
     setJumpQuery('')
     setJumpError('')
+    setSearchError('')
   }
-  const submitJump = (event) => {
+  const submitJump = async (event) => {
     event.preventDefault()
     if (jumpCoords) {
-      goTo(jumpCoords.lat, jumpCoords.lng)
+      goTo(jumpCoords.lat, jumpCoords.lng, 0.0015)
       return
     }
-    const place = searchPlaces(jumpQuery, 1)[0]
+    const place = jumpMatches[0] || searchPlaces(jumpQuery, 1)[0]
     if (place) {
-      goTo(place.lat, place.lng, 0.003)
+      goTo(place.lat, place.lng, place.altitude || 0.006)
       return
     }
-    setJumpError(jumpQuery.trim() ? '没有找到这个地点，试试输入经纬度' : '输入城市名或经纬度')
+    if (jumpQuery.trim().length < 2) {
+      setJumpError('输入城市、村镇或经纬度')
+      return
+    }
+    setSearchLoading(true)
+    const result = await searchPlacesOnline(jumpQuery, { limit: 1 })
+    setSearchLoading(false)
+    if (result.ok && result.places[0]) {
+      goTo(result.places[0].lat, result.places[0].lng, result.places[0].altitude)
+      return
+    }
+    setJumpError(result.error || '没有找到这个地点，试试输入经纬度')
   }
   const copyCoords = async () => {
     const center = threeRef.current?.center?.()
@@ -1576,7 +1627,7 @@ export default function DiscoverGlobe({
                   setJumpQuery(event.target.value)
                   setJumpError('')
                 }}
-                placeholder="城市名，或 34.34,108.94"
+                placeholder="城市、街道、村镇，或 34.34,108.94"
                 autoFocus
                 className="h-10 min-w-0 flex-1 border border-[#2a6fa8]/45 bg-[#04101f] px-3 text-[14px] text-[#e8f6ff] outline-none placeholder:text-[#3d6f96] focus:border-[#4fc3ff]"
               />
@@ -1585,7 +1636,7 @@ export default function DiscoverGlobe({
                 data-testid="jump-submit"
                 className="h-10 shrink-0 bg-[#4fc3ff] px-4 text-[13px] font-medium text-[#03101f] active:bg-[#8fe6ff]"
               >
-                前往
+                {searchLoading ? '搜索中' : '前往'}
               </button>
             </form>
             {jumpError ? (
@@ -1598,7 +1649,7 @@ export default function DiscoverGlobe({
                 type="button"
                 data-testid="jump-coords"
                 className="mt-3 flex w-full items-baseline justify-between border border-[#2a6fa8]/45 bg-[#04101f] px-3 py-2.5 text-left active:bg-[#0a2138]"
-                onClick={() => goTo(jumpCoords.lat, jumpCoords.lng)}
+                onClick={() => goTo(jumpCoords.lat, jumpCoords.lng, 0.0015)}
               >
                 <span className="text-[14px] text-[#e8f6ff]">前往这组坐标</span>
                 <span className="text-[11px] text-[#7fc4f0] tabular-nums">
@@ -1614,10 +1665,15 @@ export default function DiscoverGlobe({
                     type="button"
                     data-testid="jump-result"
                     className="flex w-full items-baseline justify-between border-b border-[#12324f] px-1 py-3 text-left active:bg-[#0a2138]"
-                    onClick={() => goTo(place.lat, place.lng, 0.003)}
+                    onClick={() => goTo(place.lat, place.lng, place.altitude || 0.006)}
                   >
-                    <span className="text-[14px] text-[#dff1ff]">{place.name}</span>
-                    <span className="text-[11px] text-[#3d6f96] tabular-nums">
+                    <span className="min-w-0">
+                      <span className="block truncate text-[14px] text-[#dff1ff]">{place.name}</span>
+                      {place.detail ? (
+                        <span className="mt-0.5 block truncate text-[11px] text-[#5d92b8]">{place.detail}</span>
+                      ) : null}
+                    </span>
+                    <span className="ml-3 shrink-0 text-[11px] text-[#3d6f96] tabular-nums">
                       {formatCoords(place.lat, place.lng)}
                     </span>
                   </button>
@@ -1633,16 +1689,20 @@ export default function DiscoverGlobe({
                       type="button"
                       data-testid="jump-result"
                       className="border border-[#2a6fa8]/35 px-2.5 py-1.5 text-[12px] text-[#9ed4f7] active:bg-[#0a2138]"
-                      onClick={() => goTo(place.lat, place.lng, 0.003)}
+                      onClick={() => goTo(place.lat, place.lng, 0.006)}
                     >
                       {place.name}
                     </button>
                   ))}
                 </div>
               </div>
+            ) : !jumpCoords && jumpQuery.trim() ? (
+              <p data-testid="jump-hint" className="mt-3 border-t border-[#12324f] pt-3 text-[12px] text-[#5d92b8]">
+                {searchLoading ? '正在搜索地名…' : searchError || '没有找到匹配的地点，可按回车重试，或直接输入经纬度。'}
+              </p>
             ) : null}
             <p className="mt-5 text-[11px] leading-5 text-[#3d6f96]">
-              支持 49 个常驻城市，也可以直接输入任意经纬度。跳转后会落在街道图，可继续滚轮放大到村镇。
+              支持城市、街道、村镇等任意地名与经纬度，选中后直接飞到附近，可继续滚轮放大查看细节。
             </p>
           </div>
         </div>

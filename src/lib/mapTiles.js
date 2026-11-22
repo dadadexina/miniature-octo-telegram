@@ -122,7 +122,7 @@ function paintTile(image) {
     const luma = 0.299 * red + 0.587 * green + 0.114 * blue
     const water = blue > red + 10 && blue > green + 3 && luma > 90
     const road = luma > 248
-    const value = water ? 10 + (255 - luma) * 0.12 : road ? 120 : 16 + (255 - luma) * 0.68
+    const value = Math.min(240, water ? 10 + (255 - luma) * 0.12 : road ? 110 : 14 + (255 - luma) * 1.05)
     data[index] = Math.min(255, value * 0.62)
     data[index + 1] = Math.min(255, value * 0.78)
     data[index + 2] = Math.min(255, value)
