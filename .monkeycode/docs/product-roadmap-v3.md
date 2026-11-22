@@ -49,7 +49,7 @@
 ### M5 删除好友云端化与清理(P2 遗留)
 
 - [ ] 5.1 **删除好友后云端消息处理**:策略选择——双向软删(打 deleted_for 标记)或保留可查;需先决策,当前已知"重登后会话重现"体验缺陷
-- [ ] 5.2 **注销级联完备性复核**:Edge Function delete-account 对 moments/attachments/reports 新表的覆盖检查
+- [x] 5.2 **注销级联完备性复核**:Edge Function delete-account 对 moments/attachments/reports 新表的覆盖检查——复核发现 messages 无 auth.users 外键、注销后会残留,已改为显式删除双方会话与两侧媒体,再清理头像/朋友圈文件并删除账号
 
 ### M6 性能与规模化(按需触发,不预做)
 

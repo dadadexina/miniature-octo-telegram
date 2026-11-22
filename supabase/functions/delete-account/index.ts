@@ -47,7 +47,7 @@ async function collectUserMediaPaths(admin: ReturnType<typeof createClient>, uid
     const { data, error } = await admin
       .from('messages')
       .select('attachments')
-      .eq('sender_id', uid)
+      .or(`sender_id.eq.${uid},receiver_id.eq.${uid}`)
       .not('attachments', 'is', null)
       .range(from, from + pageSize - 1)
     if (error) throw new Error(`messages 查询失败: ${error.message}`)
@@ -84,8 +84,17 @@ Deno.serve(async (req) => {
     }
     const uid = userData.user.id
 
-    // 先清理存储，再删除账号：确保注销后不残留头像、朋友圈图片与聊天媒体
+    // messages 未设 auth.users 外键（历史原因），需显式清空双方会话，避免注销后消息残留
     const mediaPaths = await collectUserMediaPaths(admin, uid)
+    const { count: messagesRemoved, error: messageError } = await admin
+      .from('messages')
+      .delete({ count: 'exact' })
+      .or(`sender_id.eq.${uid},receiver_id.eq.${uid}`)
+    if (messageError) {
+      return json({ error: messageError.message }, 500)
+    }
+
+    // 再清理存储与账号：确保注销后不残留头像、朋友圈图片与聊天媒体
     const mediaRemoved = await removeMediaPaths(admin, mediaPaths)
     const avatarsRemoved = await removePrefix(admin, 'avatars', uid)
     const momentsRemoved = await removePrefix(admin, 'moments', uid)
@@ -96,7 +105,12 @@ Deno.serve(async (req) => {
     }
     return json({
       ok: true,
-      cleaned: { media: mediaRemoved, avatars: avatarsRemoved, moments: momentsRemoved },
+      cleaned: {
+        media: mediaRemoved,
+        avatars: avatarsRemoved,
+        moments: momentsRemoved,
+        messages: messagesRemoved || 0,
+      },
     })
   } catch (err) {
     return json({ error: err?.message || 'internal error' }, 500)
