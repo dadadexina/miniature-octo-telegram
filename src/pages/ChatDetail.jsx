@@ -15,7 +15,7 @@ import {
   fetchHiddenIds,
   fetchThread,
   hideMessage,
-  insertMessage,
+  insertMessageWithFriendHeal,
   isPairMessage,
   isUuid,
   recallMessage,
@@ -309,7 +309,7 @@ export default function ChatDetail() {
     setPendingList((prev) =>
       prev.map((item) => (item.tmpId === tmpId ? { ...item, status: 'sending', error: '' } : item))
     )
-    const result = await insertMessage({
+    const result = await insertMessageWithFriendHeal({
       senderId: currentUser.id,
       receiverId: peerId,
       content,

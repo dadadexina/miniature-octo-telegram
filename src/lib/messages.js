@@ -1,3 +1,4 @@
+import { upsertFriend } from './friends'
 import { isPermissionError } from './profiles'
 import { supabase } from './supabase'
 
@@ -94,6 +95,22 @@ export async function insertMessage({ senderId, receiverId, content, replyToId =
     return { ok: false, error: error.message, permission: isPermissionError(error) }
   }
   return { ok: true, message: mapMessage(data) }
+}
+
+// 互加好友依赖双方各一行 friends。旧数据里可能只有接受方那一行,
+// 导致 can_message 判定为陌生人。发送被权限拒绝时补写自己这一行再重试一次。
+export async function insertMessageWithFriendHeal(payload, deps = {}) {
+  const insert = deps.insert || insertMessage
+  const ensure = deps.ensure || upsertFriend
+  const first = await insert(payload)
+  if (first?.ok || !first?.permission) return first
+  try {
+    const healed = await ensure(payload.senderId, payload.receiverId)
+    if (!healed?.ok) return first
+  } catch {
+    return first
+  }
+  return insert(payload)
 }
 
 export function escapeLikePattern(q) {

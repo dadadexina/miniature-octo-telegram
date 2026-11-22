@@ -6,6 +6,7 @@ const {
   escapeLikePattern,
   groupConversations,
   involvesUser,
+  insertMessageWithFriendHeal,
   isPairMessage,
   isUuid,
   mapMessage,
@@ -121,5 +122,55 @@ describe('escapeLikePattern', () => {
     expect(escapeLikePattern('50,off')).toBe('50,off')
     expect(escapeLikePattern('')).toBe('')
     expect(escapeLikePattern(null)).toBe('')
+  })
+})
+
+describe('insertMessageWithFriendHeal', () => {
+  const payload = { senderId: 'me', receiverId: 'peer', content: 'hi' }
+
+  it('首次成功时不再补写好友边', async () => {
+    const insert = vi.fn().mockResolvedValue({ ok: true, message: { id: 'm1' } })
+    const ensure = vi.fn()
+    const res = await insertMessageWithFriendHeal(payload, { insert, ensure })
+    expect(res.ok).toBe(true)
+    expect(ensure).not.toHaveBeenCalled()
+    expect(insert).toHaveBeenCalledTimes(1)
+  })
+
+  it('权限失败时补写自己这一行后重试成功', async () => {
+    const insert = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, error: 'new row violates row-level security policy', permission: true })
+      .mockResolvedValueOnce({ ok: true, message: { id: 'm2' } })
+    const ensure = vi.fn().mockResolvedValue({ ok: true })
+    const res = await insertMessageWithFriendHeal(payload, { insert, ensure })
+    expect(ensure).toHaveBeenCalledWith('me', 'peer')
+    expect(insert).toHaveBeenCalledTimes(2)
+    expect(res.ok).toBe(true)
+  })
+
+  it('非权限错误直接返回,不补写好友边', async () => {
+    const insert = vi.fn().mockResolvedValue({ ok: false, error: 'network', permission: false })
+    const ensure = vi.fn()
+    const res = await insertMessageWithFriendHeal(payload, { insert, ensure })
+    expect(ensure).not.toHaveBeenCalled()
+    expect(res.error).toBe('network')
+  })
+
+  it('补写失败时保留原始错误', async () => {
+    const first = { ok: false, error: 'rls', permission: true }
+    const insert = vi.fn().mockResolvedValue(first)
+    const ensure = vi.fn().mockResolvedValue({ ok: false, error: 'denied' })
+    const res = await insertMessageWithFriendHeal(payload, { insert, ensure })
+    expect(res).toEqual(first)
+    expect(insert).toHaveBeenCalledTimes(1)
+  })
+
+  it('补写抛错时保留原始错误', async () => {
+    const first = { ok: false, error: 'rls', permission: true }
+    const insert = vi.fn().mockResolvedValue(first)
+    const ensure = vi.fn().mockRejectedValue(new Error('boom'))
+    const res = await insertMessageWithFriendHeal(payload, { insert, ensure })
+    expect(res).toEqual(first)
   })
 })
