@@ -54,6 +54,12 @@ describe('FRIENDS_SQL', () => {
     expect(FRIENDS_SQL).toContain('constraint friends_no_self check (owner_id <> friend_id)')
     expect(FRIENDS_SQL).toContain('alter table public.friends add constraint friends_no_self')
   })
+
+  it('包含 unfriend RPC:成对删边并作废 accepted 请求', () => {
+    expect(FRIENDS_SQL).toContain('create or replace function public.unfriend(peer uuid)')
+    expect(FRIENDS_SQL).toContain('delete from public.friends')
+    expect(FRIENDS_SQL).toContain('delete from public.friend_requests')
+  })
 })
 
 describe('repairFriendEdgeFromAccepted', () => {

@@ -20,7 +20,7 @@ export function recomputeUnreadCounts({ messages, meId, readAtMap = {}, activePe
 export function friendlyInsertError(errorMsg = '', permission = false) {
   const msg = String(errorMsg || '').toLowerCase()
   if (permission || msg.includes('row-level security') || msg.includes('42501')) {
-    return '消息发送失败：对方可能已将你拉黑，或你们还不是好友'
+    return '消息发送失败：对方不是你的好友，或已将你拉黑'
   }
   return errorMsg || '发送失败'
 }

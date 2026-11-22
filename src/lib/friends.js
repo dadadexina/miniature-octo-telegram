@@ -73,7 +73,28 @@ do $$ begin
     foreign key (friend_id) references auth.users (id) on delete cascade;
 exception when duplicate_object then null; when others then
   raise notice '跳过 friends_friend_fk: %', sqlerrm;
-end $$;`
+end $$;
+
+-- 删除好友:成对删除两侧好友边,并作废 accepted 请求。
+-- 作废请求后双方都无法再发消息,也无法借残留请求补边恢复关系,重新聊天需重新加好友。
+create or replace function public.unfriend(peer uuid)
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null or peer is null or peer = auth.uid() then
+    raise exception 'invalid unfriend target';
+  end if;
+  delete from public.friends
+    where (owner_id = auth.uid() and friend_id = peer)
+       or (owner_id = peer and friend_id = auth.uid());
+  delete from public.friend_requests
+    where status = 'accepted'
+      and ((from_id = auth.uid() and to_id = peer)
+        or (from_id = peer and to_id = auth.uid()));
+end
+$fn$;
+
+revoke execute on function public.unfriend(uuid) from public, anon;
+grant execute on function public.unfriend(uuid) to authenticated;`
 
 export function normalizeRemark(value) {
   return String(value || '').trim().slice(0, REMARK_MAX)
@@ -140,7 +161,25 @@ export async function updateFriendRemark(meId, friendId, remark) {
 }
 
 export async function deleteFriend(meId, friendId) {
-  // 好友关系是双方各一行,单删一侧会残留反向边,必须成对删除
+  // 优先走 unfriend RPC:成对删除两侧好友边并作废 accepted 请求,
+  // 作废请求后双方都无法再发消息,也无法借残留请求补边恢复关系。
+  try {
+    const rpc = await supabase.rpc('unfriend', { peer: friendId })
+    if (rpc && !rpc.error) return { ok: true }
+    if (rpc?.error) {
+      const message = String(rpc.error.message || '').toLowerCase()
+      const missing =
+        rpc.error.code === 'PGRST202' ||
+        message.includes('could not find the function') ||
+        message.includes('does not exist')
+      if (!missing) {
+        return { ok: false, error: rpc.error.message, permission: isPermissionError(rpc.error) }
+      }
+    }
+  } catch {
+    // RPC 调用异常时退回直接成对删除
+  }
+  // 旧库未部署 unfriend RPC 时的兜底:好友关系是双方各一行,必须成对删除
   const pair = `and(owner_id.eq.${meId},friend_id.eq.${friendId}),and(owner_id.eq.${friendId},friend_id.eq.${meId})`
   const { error } = await supabase
     .from('friends')

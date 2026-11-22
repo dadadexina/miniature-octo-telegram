@@ -177,15 +177,14 @@ returns boolean language sql stable security definer set search_path = public as
   select a = b
     or (
       not exists (select 1 from public.blocks bl where bl.blocker_id = b and bl.blocked_id = a)
+      -- 接收方必须仍把发送方当好友:任一方删除后,反向边消失,消息即不可发送
+      and exists (select 1 from public.friends f where f.owner_id = b and f.friend_id = a)
       and (
         public.are_contacts(a, b)
-        or (
-          exists (select 1 from public.friends f where f.owner_id = a and f.friend_id = b)
-          and exists (
-            select 1 from public.friend_requests r
-            where r.status = 'accepted'
-              and ((r.from_id = a and r.to_id = b) or (r.from_id = b and r.to_id = a))
-          )
+        or exists (
+          select 1 from public.friend_requests r
+          where r.status = 'accepted'
+            and ((r.from_id = a and r.to_id = b) or (r.from_id = b and r.to_id = a))
         )
       )
     )
@@ -457,8 +456,8 @@ end $$;
 
 -- ============ friends 对等边回写(接受方替请求方建边 / 双方互备) ============
 -- permissive 策略与 friends_insert_own 叠加(OR):本人边始终可插;
--- 对等边(owner=对方, friend=我)仅在「反向边已存在」时允许插入,
--- 即只允许补齐已有关系,不能凭已接受的旧请求单方面重建好友。
+-- 对等边(owner=对方, friend=我)仅在同一对存在 accepted 请求时允许插入,
+-- 即只允许补齐已确认的好友关系,不能凭已接受的旧请求单方面重建好友。
 
 drop policy if exists "friends_insert_reciprocal" on public.friends;
 create policy "friends_insert_reciprocal" on public.friends for insert
@@ -472,6 +471,27 @@ with check (
         or (r.from_id = public.friends.owner_id and r.to_id = auth.uid()))
   )
 );
+
+-- 删除好友:成对删除两侧好友边,并作废 accepted 请求。
+-- 作废请求后,双方都无法再发消息,也无法借残留请求补边恢复关系,重新聊天需重新加好友。
+create or replace function public.unfriend(peer uuid)
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null or peer is null or peer = auth.uid() then
+    raise exception 'invalid unfriend target';
+  end if;
+  delete from public.friends
+    where (owner_id = auth.uid() and friend_id = peer)
+       or (owner_id = peer and friend_id = auth.uid());
+  delete from public.friend_requests
+    where status = 'accepted'
+      and ((from_id = auth.uid() and to_id = peer)
+        or (from_id = peer and to_id = auth.uid()));
+end
+$fn$;
+
+revoke execute on function public.unfriend(uuid) from public, anon;
+grant execute on function public.unfriend(uuid) to authenticated;
 
 -- ============ Realtime ============
 

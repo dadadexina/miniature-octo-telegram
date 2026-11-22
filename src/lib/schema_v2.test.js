@@ -17,12 +17,22 @@ describe('UPGRADE_SQL 幂等性', () => {
     expect(UPGRADE_SQL).toContain('bl.blocker_id = m.author_id and bl.blocked_id = auth.uid()')
   })
 
-  it('can_message 容忍单边好友(历史脏数据)', () => {
+  it('can_message 要求接收方仍持有发送方好友边', () => {
     const fn = UPGRADE_SQL.slice(UPGRADE_SQL.indexOf('create or replace function public.can_message'))
     const body = fn.slice(0, fn.indexOf('$fn$;'))
-    expect(body).toContain('public.are_contacts(a, b)')
+    expect(body).toContain('f.owner_id = b and f.friend_id = a')
     expect(body).toContain("r.status = 'accepted'")
-    expect(body).toContain('f.owner_id = a and f.friend_id = b')
+  })
+
+  it('unfriend 成对删边并作废 accepted 请求', () => {
+    const at = UPGRADE_SQL.indexOf('create or replace function public.unfriend(peer uuid)')
+    expect(at).toBeGreaterThan(-1)
+    const fn = UPGRADE_SQL.slice(at)
+    const body = fn.slice(0, fn.indexOf('$fn$;'))
+    expect(body).toContain('delete from public.friends')
+    expect(body).toContain('delete from public.friend_requests')
+    expect(body).toContain("status = 'accepted'")
+    expect(UPGRADE_SQL).toContain('grant execute on function public.unfriend(uuid) to authenticated')
   })
 
   it('can_view_profile 仅对已接受关系开放', () => {
