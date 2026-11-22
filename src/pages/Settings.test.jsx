@@ -48,6 +48,7 @@ const authMock = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
   reauthenticate: vi.fn(),
   updateUser: vi.fn(),
+  signOut: vi.fn(),
 }))
 const functionsMock = vi.hoisted(() => ({ invoke: vi.fn() }))
 
@@ -90,6 +91,7 @@ beforeEach(() => {
   authMock.signInWithPassword.mockResolvedValue({ error: null })
   authMock.reauthenticate.mockResolvedValue({ error: null })
   authMock.updateUser.mockResolvedValue({ error: null })
+  authMock.signOut.mockResolvedValue({ error: null })
   profileMocks.updateProfileSignature.mockResolvedValue({ ok: true, profile: { nickname: '我' } })
   dataExportMock.collectUserData.mockResolvedValue({ ok: true, payload: { counts: {}, storage: {} } })
   dataExportMock.downloadTextFile.mockReturnValue(true)
@@ -338,6 +340,18 @@ describe('Settings 设置页', () => {
     expect(document.documentElement.dataset.fontScale).toBe('large')
     expect(screen.getByTestId('settings-font-large').getAttribute('aria-pressed')).toBe('true')
     expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)).fontScale).toBe('large')
+  })
+
+  it('退出所有设备需二次确认并调用全局退出', async () => {
+    useCloudAccount()
+    setup()
+    openView(2)
+    fireEvent.click(screen.getByTestId('settings-signout-all'))
+    expect(screen.getByTestId('settings-confirm-signout-all')).toBeTruthy()
+    fireEvent.click(screen.getByText('确认退出'))
+    await waitFor(() => expect(authMock.signOut).toHaveBeenCalledWith({ scope: 'global' }))
+    expect(storeMocks.purgeAccount).toHaveBeenCalled()
+    expect(storeMocks.logout).toHaveBeenCalled()
   })
 
   it('账号安全面板对演示账号给出限制提示', () => {

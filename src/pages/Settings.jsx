@@ -109,6 +109,8 @@ export default function Settings() {
   const [notificationPermission, setNotificationPermission] = useState(readNotificationPermission)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirmSignOutAll, setConfirmSignOutAll] = useState(false)
+  const [signingOutAll, setSigningOutAll] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
   const [archiveBusy, setArchiveBusy] = useState(false)
   const fileRef = useRef(null)
@@ -447,6 +449,20 @@ export default function Settings() {
     } finally {
       setArchiveBusy(false)
     }
+  }
+
+  const onSignOutAll = async () => {
+    setSigningOutAll(true)
+    try {
+      await supabase.auth.signOut({ scope: 'global' })
+    } catch {
+      // 网络异常时仍清理本地会话，避免停留在失效账号
+    }
+    setSigningOutAll(false)
+    setConfirmSignOutAll(false)
+    purgeAccount()
+    logout()
+    navigate('/login', { replace: true })
   }
 
   const onDeleteAccount = async () => {
@@ -958,7 +974,17 @@ export default function Settings() {
             <div className="mt-8 px-4 pb-8">
               <button
                 type="button"
+                data-testid="settings-signout-all"
+                className="h-11 w-full border border-eink-divider text-[15px] text-eink-sub active:bg-[#E7E5DD]"
+                onClick={() => (cloudAccount ? setConfirmSignOutAll(true) : setNotice('演示账号无需退出所有设备'))}
+              >
+                退出所有设备
+              </button>
+              <p className="mt-2 text-center text-[12px] text-eink-sub">在所有手机和电脑上退出当前账号，需要重新登录。</p>
+              <button
+                type="button"
                 data-testid="settings-delete-account"
+                className="mt-6 h-11 w-full border border-eink-ink text-[15px] text-eink-ink active:bg-[#E7E5DD]"
                 className="h-11 w-full border border-eink-ink text-[15px] text-eink-ink active:bg-[#E7E5DD]"
                 onClick={() => (cloudAccount ? setConfirmDelete(true) : setNotice('演示账号无需注销'))}
               >
@@ -1049,6 +1075,37 @@ export default function Settings() {
             >
               确认
             </button>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmSignOutAll ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8">
+          <div
+            className="w-full max-w-[300px] border border-eink-divider bg-eink-paper px-5 pb-4 pt-5 text-center"
+            role="dialog"
+            aria-modal="true"
+            data-testid="settings-confirm-signout-all"
+          >
+            <p className="text-[14px] leading-6 text-eink-text">将在此账号的所有设备上退出登录，确定继续？</p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                className="h-10 flex-1 border border-eink-divider text-[14px] text-eink-sub"
+                onClick={() => setConfirmSignOutAll(false)}
+                disabled={signingOutAll}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="h-10 flex-1 bg-eink-ink text-[14px] text-eink-paper disabled:opacity-60"
+                onClick={onSignOutAll}
+                disabled={signingOutAll}
+              >
+                {signingOutAll ? '正在退出...' : '确认退出'}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
