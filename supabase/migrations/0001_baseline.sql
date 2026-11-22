@@ -888,3 +888,36 @@ create trigger profiles_fill_public_id
 grant execute on function public.update_public_id(text) to authenticated;
 grant execute on function public.search_profile(text) to authenticated;
 grant execute on function public.random_public_id() to authenticated;
+
+-- ============ 举报（UGC 合规） ============
+
+create table if not exists public.reports (
+  id uuid primary key default gen_random_uuid(),
+  reporter_id uuid not null references auth.users (id) on delete cascade,
+  target_type text not null check (target_type in ('message', 'moment', 'user')),
+  target_id text not null,
+  target_user_id uuid references auth.users (id) on delete set null,
+  reason text not null check (reason in ('spam', 'harassment', 'porn', 'illegal', 'other')),
+  detail text not null default '',
+  status text not null default 'open' check (status in ('open', 'reviewing', 'closed')),
+  created_at timestamptz not null default now(),
+  constraint reports_unique_target unique (reporter_id, target_type, target_id),
+  constraint reports_detail_len check (char_length(detail) <= 500)
+);
+
+create index if not exists reports_created_idx on public.reports (created_at desc);
+
+alter table public.reports enable row level security;
+
+drop policy if exists "reports_insert_own" on public.reports;
+create policy "reports_insert_own" on public.reports for insert
+to authenticated
+with check (reporter_id = auth.uid());
+
+drop policy if exists "reports_select_own" on public.reports;
+create policy "reports_select_own" on public.reports for select
+to authenticated
+using (reporter_id = auth.uid());
+
+revoke all on public.reports from anon;
+grant select, insert on public.reports to authenticated;

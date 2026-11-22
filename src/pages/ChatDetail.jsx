@@ -5,6 +5,7 @@ import Avatar from '../components/Avatar'
 import CopySql from '../components/CopySql'
 import NavBar from '../components/NavBar'
 import LongTextBody from '../components/LongTextBody'
+import ReportSheet from '../components/ReportSheet'
 import SignedImage from '../components/SignedImage'
 import useKeyboardInset from '../hooks/useKeyboardInset'
 import useSwipeBack from '../hooks/useSwipeBack'
@@ -24,6 +25,7 @@ import { downscaleImageFile } from '../lib/imagePipeline'
 import { callEventText } from '../lib/call'
 import { useCallCenter } from '../lib/callContext'
 import { MESSAGE_MEDIA_LIMITS, uploadMessageBlob } from '../lib/messageMedia'
+import { submitReport } from '../lib/reports'
 import { supabase } from '../lib/supabase'
 import { friendlyInsertError } from '../lib/syncHelpers'
 import { useStore } from '../store'
@@ -59,6 +61,7 @@ export default function ChatDetail() {
   const [pendingList, setPendingList] = useState([])
   const [hiddenIds, setHiddenIds] = useState(() => new Set())
   const [activeMsgId, setActiveMsgId] = useState(null)
+  const [reportMsg, setReportMsg] = useState(null)
   const [quoteMsg, setQuoteMsg] = useState(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQ, setSearchQ] = useState('')
@@ -750,6 +753,20 @@ export default function ChatDetail() {
                               撤回
                             </button>
                           ) : null}
+                          {cloudReady && !mine ? (
+                            <button
+                              type="button"
+                              data-testid="report-action"
+                              className="px-1.5 py-0.5 text-[12px] text-eink-sub active:bg-eink-pressed"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveMsgId(null)
+                                setReportMsg(msg)
+                              }}
+                            >
+                              举报
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             data-testid="delete-action"
@@ -915,6 +932,25 @@ export default function ChatDetail() {
         </button>
         </div>
       </form>
+
+      {reportMsg ? (
+        <ReportSheet
+          title="举报这条消息，我们会尽快核实处理。"
+          onClose={() => setReportMsg(null)}
+          onSubmit={async (reason, detail) => {
+            const result = await submitReport({
+              reporterId: currentUser.id,
+              targetType: 'message',
+              targetId: String(reportMsg.id),
+              targetUserId: peerId,
+              reason,
+              detail,
+            })
+            if (result.ok) setHint('已提交举报，感谢你的反馈')
+            return result
+          }}
+        />
+      ) : null}
 
       {viewerUrl ? (
         <div

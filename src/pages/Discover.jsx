@@ -4,6 +4,7 @@ import Avatar from '../components/Avatar'
 import MomentCover from '../components/MomentCover'
 import { CommentIcon, ThumbIcon } from '../components/MomentIcons'
 import PullIndicator from '../components/PullIndicator'
+import ReportSheet from '../components/ReportSheet'
 import { isUuid } from '../lib/messages'
 import { downscaleMomentImage } from '../lib/momentImage'
 import usePullToRefresh from '../lib/usePullToRefresh'
@@ -16,6 +17,7 @@ import {
   uploadMomentImage,
 } from '../lib/moments'
 import { fetchProfilesByIds } from '../lib/profiles'
+import { submitReport } from '../lib/reports'
 import { loadLocalSignature } from '../lib/signature'
 import { useStore } from '../store'
 import { formatRelativeTime } from '../utils'
@@ -43,6 +45,7 @@ function CloudDiscover() {
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState('')
   const [publishing, setPublishing] = useState(false)
+  const [reportMoment, setReportMoment] = useState(null)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState({})
   const [commentText, setCommentText] = useState({})
@@ -312,7 +315,16 @@ function CloudDiscover() {
                       >
                         删除
                       </button>
-                    ) : null}
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid="report-moment"
+                        className="font-medium text-eink-sub"
+                        onClick={() => setReportMoment(moment)}
+                      >
+                        举报
+                      </button>
+                    )}
                   </div>
                   {momentLikes.length ? (
                     <div className="mt-1.5 border-t border-eink-divider pt-1.5 text-[12px] leading-5 text-eink-sub">
@@ -373,6 +385,25 @@ function CloudDiscover() {
           </div>
         ) : null}
       </div>
+
+      {reportMoment ? (
+        <ReportSheet
+          title="举报这条动态，我们会尽快核实处理。"
+          onClose={() => setReportMoment(null)}
+          onSubmit={async (reason, detail) => {
+            const result = await submitReport({
+              reporterId: meId,
+              targetType: 'moment',
+              targetId: reportMoment.id,
+              targetUserId: reportMoment.authorId,
+              reason,
+              detail,
+            })
+            if (result.ok) setError('已提交举报，感谢你的反馈')
+            return result
+          }}
+        />
+      ) : null}
 
       {open ? (
         <div className="fixed inset-0 z-40 flex items-end bg-black/60" onClick={() => !publishing && setOpen(false)}>
