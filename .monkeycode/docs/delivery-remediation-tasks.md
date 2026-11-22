@@ -38,7 +38,7 @@
 
 ## 3. 安全与合规（P0，代码可做）
 
-- [ ] **3.1 注销清理 Storage 媒体**：`supabase/functions/delete-account/index.ts` 在删用户前，用 service role 列出并删除 `avatars/<uid>/`、`moments/`、`message_media/` 中该用户对象（含配对目录）；补测试/说明。负责：我
+- [x] **3.1 注销清理 Storage 媒体** —— 已完成（commit `f2d4ccc`）：先删 `avatars/<uid>/`、`moments/<uid>/` 前缀与 `messages.attachments.path` 指向的 `message_media` 文件，再删账号；清理失败则中止。需重新部署 Edge Function 生效。
 - [x] **3.2 朋友圈拉黑隔离** —— 已完成（commit `feb1970`）：`can_view_moment` 增加双向拉黑排除；需重跑 `CLOUD_SQL` 生效。
 - [x] **3.3 好友自约束** —— 已完成（commit `feb1970`）：`friends` 增加 `friends_no_self` 约束 + 幂等补丁；需重跑 `CLOUD_SQL` 生效。
 - [ ] **3.4 关系函数权限收紧**：若 0.7 显示 PUBLIC 可执行，`revoke execute ... from public` 后按需 `grant to authenticated`。负责：我（依赖 0.7）
