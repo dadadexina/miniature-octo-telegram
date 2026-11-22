@@ -26,7 +26,7 @@
 - 好友系统：好友请求 → 对方验证的双向流程（`friend_requests`，realtime 实时通知）、云端好友边存储（friends 表）、公开 ID 精确搜索添加（RPC 防用户名枚举）
 - 拉黑防护：单向拒收（被拉黑方消息被 RLS 拒绝并收到明确提示）、「设置 → 账号安全」黑名单管理；陌生人（非好友）无法发起私聊
 - 个人资料：头像（本地图片上传，自动降采样 256px、灰度显示；未上传时回退灰阶色板首字块）、昵称编辑（云端 + 本地降级）
-- 发现（地球关系网，云端）：深色 3D 真实地球（NASA Blue Marble 昼面、城市灯光夜面），拖动旋转、缩放；按真实太阳位置呈现晨昏线，全球云量由 Open-Meteo 实时采样；放大后显示 49 座真实城市的地名与实时气温，标签自动避让并随缩放分级出现；好友为发光节点、关系为弧线；点击节点查看本周信笺并直接回信（进入单聊）。天气失败时静默降级。发布文字/图片（自动降采样），动态仅好友可见（RLS）。通讯录含好友请求列表
+- 发现（地球关系网，云端）：深色 3D 真实地球（NASA Blue Marble 昼面、城市灯光夜面），拖动旋转，滚轮/双指无级缩放；按真实太阳位置呈现晨昏线，全球云量由 Open-Meteo 实时采样；放大后显示 49 座真实城市的地名与实时气温，继续放大切换为 OpenStreetMap 街道图，可读到真实经纬度、镇村地名和道路；好友为发光节点、关系为弧线；点击节点查看本周信笺并直接回信（进入单聊）。天气或地图瓦片失败时静默降级。发布文字/图片（自动降采样），动态仅好友可见（RLS）。通讯录含好友请求列表
 - 语音通话基于 WebRTC（PeerJS 云信令，`peerjs`）：仅云端登录账号可用，双方需各自停留在与对方的聊天页；首次呼叫需授权麦克风，来电页支持接听/拒绝，通话中可静音与查看计时
 - 未执行云端 SQL 时自动降级为本地演示模式（演示账号仍可完整体验）
 - PWA 离线支持：`vite-plugin-pwa` 生成 service worker 预缓存静态资源，断网时可打开应用并读取本地缓存会话（`registerType: autoUpdate` 自动更新）
@@ -135,7 +135,7 @@ supabase/functions/
 
 `npm run build` 产物为纯静态站点，可部署到任意静态托管（Vercel、Netlify、Nginx 等），无需服务端运行时。已配置 PWA manifest 与矢量图标，支持添加到主屏幕。
 
-地球昼面与夜间灯光影像来自 NASA Blue Marble/Black Marble，经由 three-globe 与 three.js 示例分发；天气与云量数据来自 [Open-Meteo](https://open-meteo.com/)。
+地球昼面与夜间灯光影像来自 NASA Blue Marble/Black Marble，经由 three-globe 与 three.js 示例分发；天气与云量数据来自 [Open-Meteo](https://open-meteo.com/)；街道图瓦片来自 [OpenStreetMap](https://www.openstreetmap.org/copyright)（© OpenStreetMap contributors）。
 
 **Vercel（推荐，零配置）**：仓库已含 `vercel.json`（Vite 框架 + SPA rewrites）与 `.env.production`（构建期公开配置：`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`，anon key 设计上随客户端产物公开，安全性由 RLS 保障），导入仓库即可直接部署。其他平台构建时注入同名环境变量，或直接复用 `.env.production`；未注入时站点仍能以本地演示模式运行。部署完成后，需在 Supabase Auth → URL Configuration 将生产域名加入 Site URL 与 Redirect URLs。
 

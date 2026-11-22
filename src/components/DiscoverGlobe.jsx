@@ -7,12 +7,28 @@ import earthNightUrl from '../assets/earth/earth-night.jpg'
 import { PLACES, cityWeatherId } from '../lib/places'
 import { cloudPoints, cloudGridFrom, buildCloudCanvas } from '../lib/clouds'
 import { fetchWeather } from '../lib/weather'
+import {
+  MAX_ALTITUDE_WORLD,
+  MIN_ALTITUDE_WORLD,
+  altitudeLabel,
+  formatCoords,
+  latLngFromUnit,
+  tileBlock,
+  tileToLat,
+  tileToLng,
+  tileZoomFor,
+} from '../lib/tiles'
+import { OSM_COPYRIGHT, OSM_COPYRIGHT_URL, buildTileCanvas, clearTileCache } from '../lib/mapTiles'
 import { formatRelativeTime } from '../utils'
 
 const RAD = Math.PI / 180
 const R = 2
 const PALETTE = [0x4fc3ff, 0x7cffb2, 0xffa94d, 0xff6b9d]
 const ME_COLOR = 0xffd166
+const MIN_DISTANCE = R + MIN_ALTITUDE_WORLD
+const MAX_DISTANCE = R + MAX_ALTITUDE_WORLD
+const MAP_DISTANCE = R + 0.06
+const GLOW_DISTANCE = R + 0.36
 
 function hashString(value) {
   const text = String(value || '')
@@ -44,7 +60,7 @@ function toVec(lat, lng, radius = R) {
   )
 }
 
-const ME_COORDS = { lat: 34, lng: 108 }
+const ME_COORDS = { lat: 34.3416, lng: 108.9398 }
 
 function sunPosition(date = new Date()) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0)
@@ -99,6 +115,38 @@ function buildArc(aUnit, bUnit, radius) {
   return new THREE.CatmullRomCurve3(points)
 }
 
+function buildMapPatchGeometry(block, radius, segments = 32) {
+  const positions = []
+  const uvs = []
+  const indices = []
+  for (let row = 0; row <= segments; row += 1) {
+    const tileRow = block.originY + (block.span * row) / segments
+    const lat = tileToLat(tileRow, block.zoom)
+    for (let column = 0; column <= segments; column += 1) {
+      const tileColumn = block.originX + (block.span * column) / segments
+      const lng = tileToLng(tileColumn, block.zoom)
+      const point = toVec(lat, lng, radius)
+      positions.push(point.x, point.y, point.z)
+      uvs.push(column / segments, 1 - row / segments)
+    }
+  }
+  const stride = segments + 1
+  for (let row = 0; row < segments; row += 1) {
+    for (let column = 0; column < segments; column += 1) {
+      const a = row * stride + column
+      const b = a + 1
+      const c = a + stride
+      const d = c + 1
+      indices.push(a, c, b, b, c, d)
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geometry.setIndex(indices)
+  return geometry
+}
+
 export default function DiscoverGlobe({
   people,
   links = [],
@@ -113,6 +161,7 @@ export default function DiscoverGlobe({
   const containerRef = useRef(null)
   const tooltipRef = useRef(null)
   const labelsRef = useRef(null)
+  const coordsRef = useRef(null)
   const labelElsRef = useRef(new Map())
   const threeRef = useRef(null)
   const meNameRef = useRef(meName)
@@ -208,7 +257,7 @@ export default function DiscoverGlobe({
 
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500)
-    camera.position.set(0, 1.8, 10)
+    camera.position.copy(toVec(ME_COORDS.lat, ME_COORDS.lng, 10))
 
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
@@ -218,14 +267,15 @@ export default function DiscoverGlobe({
 
     const reducedMotion =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
     controls.dampingFactor = 0.08
     controls.rotateSpeed = 0.5
-    controls.zoomSpeed = 0.8
     controls.enablePan = false
-    controls.minDistance = 4.4
-    controls.maxDistance = 16
+    controls.enableZoom = false
+    controls.minDistance = MIN_DISTANCE
+    controls.maxDistance = MAX_DISTANCE
     controls.autoRotate = !reducedMotion
     controls.autoRotateSpeed = 0.55
 
@@ -370,7 +420,12 @@ export default function DiscoverGlobe({
       transparent: true,
       depthWrite: false,
     })
-    globe.add(new THREE.Mesh(new THREE.SphereGeometry(R * 1.18, 48, 32), glowMaterial))
+    const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(R * 1.18, 48, 32), glowMaterial)
+    globe.add(atmosphere)
+
+    const mapPatch = new THREE.Group()
+    mapPatch.visible = false
+    globe.add(mapPatch)
 
     const starGeometry = new THREE.BufferGeometry()
     const starPositions = new Float32Array(1600 * 3)
@@ -411,6 +466,12 @@ export default function DiscoverGlobe({
       hoveredId: null,
       selectedId: null,
       disposed: false,
+      mapMode: false,
+      patchMesh: null,
+      patchKey: '',
+      patchToken: 0,
+      patchLoading: false,
+      patchAt: 0,
     }
 
     state.cloudTexture = null
@@ -422,6 +483,21 @@ export default function DiscoverGlobe({
       cloudMaterial.uniforms.cloudMap.value = texture
       if (state.cloudTexture) state.cloudTexture.dispose()
       state.cloudTexture = texture
+    }
+
+    const altitudeOf = () => Math.max(camera.position.length() - R, MIN_ALTITUDE_WORLD)
+    const setAltitude = (value) => {
+      const altitude = THREE.MathUtils.clamp(value, MIN_ALTITUDE_WORLD, MAX_ALTITUDE_WORLD)
+      const direction = camera.position.clone().normalize()
+      camera.position.copy(direction.multiplyScalar(R + altitude))
+    }
+    state.zoomBy = (factor) => {
+      controls.autoRotate = false
+      setAltitude(altitudeOf() * factor)
+    }
+    state.resetView = () => {
+      controls.autoRotate = false
+      setAltitude(8)
     }
 
     state.labelItems = []
@@ -610,10 +686,53 @@ export default function DiscoverGlobe({
       if (tooltipRef.current) tooltipRef.current.style.opacity = 0
     }
 
+    const onWheel = (event) => {
+      event.preventDefault()
+      controls.autoRotate = false
+      const delta = THREE.MathUtils.clamp(event.deltaY, -240, 240)
+      setAltitude(altitudeOf() * Math.exp(delta * 0.0022))
+    }
+
+    const touchPoints = new Map()
+    let pinch = null
+    const onTouchDown = (event) => {
+      if (event.pointerType !== 'touch') return
+      touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      if (touchPoints.size === 2) {
+        const [first, second] = [...touchPoints.values()]
+        pinch = {
+          distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)),
+          altitude: altitudeOf(),
+        }
+      }
+    }
+    const onTouchMove = (event) => {
+      if (!touchPoints.has(event.pointerId)) return
+      touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      if (!pinch || touchPoints.size < 2) return
+      const [first, second] = [...touchPoints.values()]
+      const distance = Math.max(1, Math.hypot(first.x - second.x, first.y - second.y))
+      setAltitude(pinch.altitude * (pinch.distance / distance))
+    }
+    const onTouchUp = (event) => {
+      touchPoints.delete(event.pointerId)
+      if (touchPoints.size < 2) pinch = null
+    }
+    const onDoubleClick = () => {
+      controls.autoRotate = false
+      setAltitude(8)
+    }
+
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
     renderer.domElement.addEventListener('pointerup', onPointerUp)
     renderer.domElement.addEventListener('pointermove', onPointerMove)
     renderer.domElement.addEventListener('pointerleave', onPointerLeave)
+    renderer.domElement.addEventListener('pointerdown', onTouchDown)
+    renderer.domElement.addEventListener('pointermove', onTouchMove)
+    renderer.domElement.addEventListener('pointerup', onTouchUp)
+    renderer.domElement.addEventListener('pointercancel', onTouchUp)
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false })
+    renderer.domElement.addEventListener('dblclick', onDoubleClick)
 
     const resize = () => {
       const width = container.clientWidth || 1
@@ -633,6 +752,15 @@ export default function DiscoverGlobe({
     const updateLabels = () => {
       const items = state.labelItems
       if (!items.length) return
+      if (state.mapMode) {
+        items.forEach((item) => {
+          if (!item.visible) return
+          item.el.style.opacity = '0'
+          item.el.style.visibility = 'hidden'
+          item.visible = false
+        })
+        return
+      }
       const width = renderer.domElement.clientWidth
       const height = renderer.domElement.clientHeight
       if (!width || !height) return
@@ -677,6 +805,87 @@ export default function DiscoverGlobe({
       })
     }
 
+    const disposePatch = () => {
+      if (!state.patchMesh) return
+      mapPatch.remove(state.patchMesh)
+      state.patchMesh.geometry.dispose()
+      state.patchMesh.material.map?.dispose()
+      state.patchMesh.material.dispose()
+      state.patchMesh = null
+    }
+
+    const installPatch = (block, key, altitude) => {
+      const token = state.patchToken + 1
+      state.patchToken = token
+      state.patchLoading = true
+      state.patchAt = Date.now()
+      buildTileCanvas(block.zoom, block.originX, block.originY, block.span)
+        .then((canvas) => {
+          if (state.disposed || token !== state.patchToken) return
+          if (!canvas) {
+            state.patchKey = key
+            return
+          }
+          const texture = new THREE.CanvasTexture(canvas)
+          texture.colorSpace = THREE.SRGBColorSpace
+          texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
+          const offset = Math.max(5e-7, altitude * 0.005)
+          const geometry = buildMapPatchGeometry(block, R + offset)
+          const material = new THREE.MeshBasicMaterial({
+            map: texture,
+            side: THREE.DoubleSide,
+            depthTest: false,
+            depthWrite: false,
+          })
+          const mesh = new THREE.Mesh(geometry, material)
+          mesh.renderOrder = 10
+          disposePatch()
+          mapPatch.add(mesh)
+          state.patchMesh = mesh
+          state.patchKey = key
+        })
+        .catch(() => {
+          if (token === state.patchToken) state.patchKey = key
+        })
+        .finally(() => {
+          if (token === state.patchToken) state.patchLoading = false
+        })
+    }
+
+    const updateSurface = () => {
+      const distance = camera.position.length()
+      const altitude = Math.max(distance - R, MIN_ALTITUDE_WORLD)
+      const point = latLngFromUnit(camera.position)
+      const mapActive = distance < MAP_DISTANCE && Math.abs(point.lat) < 84
+      let zoom = 0
+      if (mapActive) {
+        zoom = tileZoomFor({ altitudeWorld: altitude, lat: point.lat, fovDeg: camera.fov })
+        const block = tileBlock(point.lat, point.lng, zoom)
+        const key = `${zoom}:${block.originX}:${block.originY}`
+        if (key !== state.patchKey && !state.patchLoading && Date.now() - state.patchAt > 220) {
+          installPatch(block, key, altitude)
+        }
+      }
+      state.mapMode = mapActive
+      network.visible = altitude > 0.08
+      grid.visible = altitude > 0.05
+      cloudShell.visible = altitude > 0.06
+      atmosphere.visible = distance > GLOW_DISTANCE
+      mapPatch.visible = mapActive && Boolean(state.patchMesh)
+      if (altitude < 2 && controls.autoRotate) controls.autoRotate = false
+      if (coordsRef.current && Date.now() - (state.coordAt || 0) > 120) {
+        state.coordAt = Date.now()
+        const suffix = mapActive
+          ? `海拔 ${altitudeLabel(altitude)} · 地图 z${zoom}`
+          : altitude < 1.2
+            ? altitudeLabel(altitude)
+            : ''
+        coordsRef.current.textContent = suffix
+          ? `${formatCoords(point.lat, point.lng)} · ${suffix}`
+          : formatCoords(point.lat, point.lng)
+      }
+    }
+
     const clock = new THREE.Clock()
     let frame = 0
     const animate = () => {
@@ -690,7 +899,16 @@ export default function DiscoverGlobe({
         node.mesh.scale.setScalar(scale)
       })
       controls.update()
+      const distance = camera.position.length()
+      const altitude = Math.max(distance - R, MIN_ALTITUDE_WORLD)
+      const near = THREE.MathUtils.clamp(altitude * 0.2, 1e-6, 0.5)
+      if (Math.abs(camera.near - near) / near > 0.15) {
+        camera.near = near
+        camera.updateProjectionMatrix()
+      }
+      controls.rotateSpeed = THREE.MathUtils.clamp(altitude * 0.066, 1e-6, 0.5)
       camera.updateMatrixWorld()
+      updateSurface()
       updateLabels()
       renderer.render(scene, camera)
     }
@@ -710,8 +928,17 @@ export default function DiscoverGlobe({
       renderer.domElement.removeEventListener('pointerup', onPointerUp)
       renderer.domElement.removeEventListener('pointermove', onPointerMove)
       renderer.domElement.removeEventListener('pointerleave', onPointerLeave)
+      renderer.domElement.removeEventListener('pointerdown', onTouchDown)
+      renderer.domElement.removeEventListener('pointermove', onTouchMove)
+      renderer.domElement.removeEventListener('pointerup', onTouchUp)
+      renderer.domElement.removeEventListener('pointercancel', onTouchUp)
+      renderer.domElement.removeEventListener('wheel', onWheel)
+      renderer.domElement.removeEventListener('dblclick', onDoubleClick)
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
       controls.dispose()
+      state.patchToken += 1
+      disposePatch()
+      clearTileCache()
       state.cloudTexture?.dispose()
       dayMap.dispose()
       nightMap.dispose()
@@ -771,6 +998,55 @@ export default function DiscoverGlobe({
           <p data-testid="globe-weather" className="mt-1 text-[10px] tracking-[0.06em] text-[#3d6f96]">
             此刻 · 本地 {deviceClock(currentDate)} · {deviceDaylight(currentDate)} · 城市实时天气
           </p>
+          <p
+            ref={coordsRef}
+            data-testid="globe-coords"
+            className={`mt-1.5 text-[10px] tracking-[0.14em] text-[#6fb8e2] tabular-nums ${fallback ? 'hidden' : ''}`}
+          >
+            N 0.00° E 0.00°
+          </p>
+        </div>
+
+        <div
+          data-testid="globe-crosshair"
+          aria-hidden="true"
+          className={`pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 ${fallback ? 'hidden' : ''}`}
+        >
+          <span className="absolute left-1/2 top-1/2 h-px w-5 -translate-x-1/2 -translate-y-1/2 bg-[#7fc4f0]/55" />
+          <span className="absolute left-1/2 top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-[#7fc4f0]/55" />
+          <span className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#7cffb2]/85" />
+        </div>
+
+        <div
+          className={`absolute right-4 top-1/2 z-20 -translate-y-1/2 flex-col gap-1 ${fallback ? 'hidden' : 'flex'}`}
+        >
+          <button
+            type="button"
+            data-testid="globe-zoom-in"
+            aria-label="放大"
+            className="h-9 w-9 border border-[#2a6fa8]/40 bg-[#081628]/85 text-[17px] leading-none text-[#7fc4f0] backdrop-blur active:bg-[#0a2138]"
+            onClick={() => threeRef.current?.zoomBy(0.55)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            data-testid="globe-zoom-out"
+            aria-label="缩小"
+            className="h-9 w-9 border border-[#2a6fa8]/40 bg-[#081628]/85 text-[17px] leading-none text-[#7fc4f0] backdrop-blur active:bg-[#0a2138]"
+            onClick={() => threeRef.current?.zoomBy(1.8)}
+          >
+            -
+          </button>
+          <button
+            type="button"
+            data-testid="globe-reset-view"
+            aria-label="回到全球"
+            className="h-9 w-9 border border-[#2a6fa8]/40 bg-[#081628]/85 text-[10px] leading-none tracking-[0.06em] text-[#7fc4f0] backdrop-blur active:bg-[#0a2138]"
+            onClick={() => threeRef.current?.resetView()}
+          >
+            全球
+          </button>
         </div>
 
         {loading ? (
@@ -834,11 +1110,22 @@ export default function DiscoverGlobe({
         ) : null}
 
         <div className="pointer-events-none absolute inset-x-0 bottom-4 flex items-end justify-between px-5">
-          <p className="text-[11px] leading-5 text-[#3d6f96]">
-            拖动旋转 · 放大显示地名
-            <br />
-            点击节点查看关系
-          </p>
+          <div className="min-w-0">
+            <p className="text-[11px] leading-5 text-[#3d6f96]">
+              拖动旋转 · 滚轮/双指放大至村镇
+              <br />
+              点击节点查看关系 · 双击回到全球
+            </p>
+            <a
+              href={OSM_COPYRIGHT_URL}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="globe-attribution"
+              className="pointer-events-auto mt-1 inline-block text-[9px] tracking-[0.04em] text-[#2f5d7d] underline decoration-[#2f5d7d]/50 underline-offset-2 hover:text-[#7fc4f0]"
+            >
+              {OSM_COPYRIGHT}
+            </a>
+          </div>
           <button
             type="button"
             data-testid="routes-toggle"
