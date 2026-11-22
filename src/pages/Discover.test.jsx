@@ -81,7 +81,7 @@ describe('Discover 地球页', () => {
   it('展示关系地球并移除信息流互动', async () => {
     setup()
     expect(await screen.findByTestId('relationship-globe')).toBeTruthy()
-    expect(screen.getByRole('heading', { name: '你的地球' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '地球关系网' })).toBeTruthy()
     expect(screen.getByTestId('discover-write')).toBeTruthy()
     await screen.findByTestId('routes-empty')
     expect(screen.queryByTestId('like-btn')).toBeNull()

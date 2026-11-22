@@ -78,14 +78,14 @@ export default function Discover() {
 
 function DiscoverHeader({ weekLabel, onWrite }) {
   return (
-    <header className="sticky top-0 z-20 flex h-11 shrink-0 items-center border-b border-eink-divider bg-eink-bar px-3">
-      <div className="w-16 truncate text-[10px] tracking-tight text-eink-faint">{weekLabel}</div>
-      <h1 className="flex-1 truncate text-center text-[17px] font-medium">你的地球</h1>
+    <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center border-b border-[#12324f] bg-[#03070f]/95 px-3 text-[#dff1ff] backdrop-blur">
+      <div className="w-16 truncate text-[10px] tracking-tight text-[#3d6f96]">{weekLabel}</div>
+      <h1 className="flex-1 truncate text-center text-[16px] font-medium tracking-[0.18em]">地球关系网</h1>
       <div className="flex w-16 justify-end">
         <button
           type="button"
           data-testid="discover-write"
-          className="text-[13px] font-medium text-eink-ink underline underline-offset-4"
+          className="text-[12px] tracking-[0.08em] text-[#4fc3ff] underline underline-offset-4"
           onClick={onWrite}
         >
           写一页
@@ -190,6 +190,20 @@ function CloudDiscover({ onReply }) {
     () => buildRoutes({ meId, feed, getUser, displayNameOf, avatarColor }),
     [meId, feed, getUser, displayNameOf, avatarColor]
   )
+  const links = useMemo(() => {
+    const ids = new Set(people.map((person) => person.id))
+    const pairs = new Map()
+    people.forEach((person) => pairs.set(`me:${person.id}`, [meId, person.id]))
+    people.forEach((person) => {
+      friendsOf(person.id).forEach((other) => {
+        if (other.id === meId || other.id === person.id || !ids.has(other.id)) return
+        const forward = person.id < other.id
+        const key = forward ? `${person.id}:${other.id}` : `${other.id}:${person.id}`
+        pairs.set(key, forward ? [person.id, other.id] : [other.id, person.id])
+      })
+    })
+    return [...pairs.values()]
+  }, [people, meId, friendsOf])
 
   const pickImage = (file) => {
     if (!file) return
@@ -235,7 +249,7 @@ function CloudDiscover({ onReply }) {
   }
 
   return (
-    <div className="flex h-full flex-col bg-eink-paper">
+    <div className="flex h-full flex-col bg-[#03070f]">
       <DiscoverHeader
         weekLabel={weekLabel}
         onWrite={() => {
@@ -243,14 +257,13 @@ function CloudDiscover({ onReply }) {
           setOpen(true)
         }}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
-        <p className="px-6 pt-3 text-center text-[11px] leading-5 text-eink-sub">
-          {meName} 的地球上，只有你认识的人
-        </p>
+      <div className="min-h-0 flex-1">
         <DiscoverGlobe
           people={people}
+          links={links}
           routes={routes}
           meId={meId}
+          meName={meName}
           loading={loading}
           error={loadError}
           emptyText="本周还没有朋友写信。你可以先写一页。"
@@ -261,21 +274,21 @@ function CloudDiscover({ onReply }) {
       {open ? (
         <div className="fixed inset-0 z-40 flex items-end bg-black/60" onClick={() => !publishing && setOpen(false)}>
           <form
-            className="safe-bottom w-full border-t-2 border-eink-ink bg-eink-bar px-4 pb-5 pt-3"
+            className="safe-bottom w-full border-t border-[#2a6fa8]/70 bg-[#071a2e] px-4 pt-3 pb-5 text-[#dff1ff]"
             onClick={(event) => event.stopPropagation()}
             onSubmit={submit}
           >
             <div className="mb-3 flex items-center justify-between">
-              <button type="button" className="px-1 text-[15px] text-eink-sub" onClick={() => setOpen(false)}>
+              <button type="button" className="px-1 text-[15px] text-[#7fc4f0]" onClick={() => setOpen(false)}>
                 取消
               </button>
-              <span className="text-[16px] font-medium">写一页</span>
-              <button type="submit" className="px-1 text-[15px] font-medium text-eink-ink" disabled={publishing}>
+              <span className="text-[16px] font-medium text-white">写一页</span>
+              <button type="submit" className="px-1 text-[15px] font-medium text-[#4fc3ff]" disabled={publishing}>
                 {publishing ? '寄出中...' : '寄出'}
               </button>
             </div>
             <textarea
-              className="h-32 w-full resize-none border border-eink-divider bg-eink-paper p-3 text-[16px] leading-7 outline-none"
+              className="h-32 w-full resize-none border border-[#12324f] bg-[#04101f] p-3 text-[16px] leading-7 text-[#e8f6ff] outline-none placeholder:text-[#3d6f96]"
               placeholder="这一周，想留下什么？"
               maxLength={2000}
               value={text}
@@ -289,7 +302,7 @@ function CloudDiscover({ onReply }) {
               <button
                 type="button"
                 data-testid="pick-image"
-                className="border border-eink-divider bg-eink-surface px-3 py-1.5 text-[13px] text-eink-sub active:bg-eink-pressed"
+                className="border border-[#2a6fa8]/40 bg-[#081628] px-3 py-1.5 text-[13px] text-[#7fc4f0] active:bg-[#0a2138]"
                 onClick={() => fileRef.current?.click()}
               >
                 {imageFile ? '更换图片' : '附一张图'}
@@ -297,7 +310,7 @@ function CloudDiscover({ onReply }) {
               {imageFile ? (
                 <button
                   type="button"
-                  className="text-[13px] text-eink-sub underline underline-offset-2"
+                  className="text-[13px] text-[#7fc4f0] underline underline-offset-2"
                   onClick={() => {
                     setImageFile(null)
                     setImagePreview('')
@@ -318,10 +331,10 @@ function CloudDiscover({ onReply }) {
               <img
                 src={imagePreview}
                 alt="待发布图片预览"
-                className="mt-2 max-h-[160px] w-auto max-w-[160px] border border-eink-divider object-cover grayscale"
+                className="mt-2 max-h-[160px] w-auto max-w-[160px] border border-[#12324f] object-cover"
               />
             ) : null}
-            {formError ? <p className="mt-2 text-[13px] font-medium text-eink-ink">{formError}</p> : null}
+            {formError ? <p className="mt-2 text-[13px] font-medium text-[#ffb3cb]">{formError}</p> : null}
           </form>
         </div>
       ) : null}
@@ -389,17 +402,41 @@ function LocalDiscover({ onReply }) {
   const [images, setImages] = useState(4)
   const [formError, setFormError] = useState('')
   const weekLabel = useMemo(() => formatWeekLabel(), [])
-  const feed = momentsFeed().map((moment) => ({
-    id: moment.id,
-    authorId: moment.userId,
-    content: moment.text,
-    imageUrl: '',
-    imageCount: moment.images,
-    createdAt: moment.time,
-  }))
-  const friends = friendsOf(meId)
-  const people = buildPeople({ meId, friends, feed, getUser, displayNameOf, avatarColor })
-  const routes = buildRoutes({ meId, feed, getUser, displayNameOf, avatarColor })
+  const feed = useMemo(
+    () =>
+      momentsFeed().map((moment) => ({
+        id: moment.id,
+        authorId: moment.userId,
+        content: moment.text,
+        imageUrl: '',
+        imageCount: moment.images,
+        createdAt: moment.time,
+      })),
+    [momentsFeed]
+  )
+  const friends = useMemo(() => friendsOf(meId), [friendsOf, meId])
+  const people = useMemo(
+    () => buildPeople({ meId, friends, feed, getUser, displayNameOf, avatarColor }),
+    [meId, friends, feed, getUser, displayNameOf, avatarColor]
+  )
+  const routes = useMemo(
+    () => buildRoutes({ meId, feed, getUser, displayNameOf, avatarColor }),
+    [meId, feed, getUser, displayNameOf, avatarColor]
+  )
+  const links = useMemo(() => {
+    const ids = new Set(people.map((person) => person.id))
+    const pairs = new Map()
+    people.forEach((person) => pairs.set(`me:${person.id}`, [meId, person.id]))
+    people.forEach((person) => {
+      friendsOf(person.id).forEach((other) => {
+        if (other.id === meId || other.id === person.id || !ids.has(other.id)) return
+        const forward = person.id < other.id
+        const key = forward ? `${person.id}:${other.id}` : `${other.id}:${person.id}`
+        pairs.set(key, forward ? [person.id, other.id] : [other.id, person.id])
+      })
+    })
+    return [...pairs.values()]
+  }, [people, meId, friendsOf])
 
   useEffect(() => {
     const prev = document.body.style.overflow
@@ -423,44 +460,43 @@ function LocalDiscover({ onReply }) {
   }
 
   return (
-    <div className="flex h-full flex-col bg-eink-paper">
+    <div className="flex h-full flex-col bg-[#03070f]">
       <DiscoverHeader weekLabel={weekLabel} onWrite={() => setOpen(true)} />
-      <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
-        <p className="px-6 pt-3 text-center text-[11px] leading-5 text-eink-sub">
-          {meName} 的地球上，只有你认识的人
-        </p>
+      <div className="min-h-0 flex-1">
         <DiscoverGlobe
           people={people}
+          links={links}
           routes={routes}
           meId={meId}
+          meName={meName}
           loading={false}
           error=""
           emptyText="还没有信。你可以先写一页。"
           onReply={onReply}
         />
-        <p className="mx-4 mb-6 border border-eink-divider bg-eink-bar px-3 py-1.5 text-center text-[12px] text-eink-sub">
-          演示数据 · 登录云端账号后同步真实近况
-        </p>
       </div>
+      <p className="shrink-0 border-t border-[#12324f] bg-[#071a2e] px-3 py-1.5 text-center text-[11px] text-[#3d6f96]">
+        演示数据 · 登录云端账号后同步真实近况
+      </p>
 
       {open ? (
         <div className="fixed inset-0 z-40 flex items-end bg-black/60" onClick={() => setOpen(false)}>
           <form
-            className="safe-bottom w-full border-t-2 border-eink-ink bg-eink-bar px-4 pb-5 pt-3"
+            className="safe-bottom w-full border-t border-[#2a6fa8]/70 bg-[#071a2e] px-4 pt-3 pb-5 text-[#dff1ff]"
             onClick={(event) => event.stopPropagation()}
             onSubmit={submit}
           >
             <div className="mb-3 flex items-center justify-between">
-              <button type="button" className="px-1 text-[15px] text-eink-sub" onClick={() => setOpen(false)}>
+              <button type="button" className="px-1 text-[15px] text-[#7fc4f0]" onClick={() => setOpen(false)}>
                 取消
               </button>
-              <span className="text-[16px] font-medium">写一页</span>
-              <button type="submit" className="px-1 text-[15px] font-medium text-eink-ink">
+              <span className="text-[16px] font-medium text-white">写一页</span>
+              <button type="submit" className="px-1 text-[15px] font-medium text-[#4fc3ff]">
                 寄出
               </button>
             </div>
             <textarea
-              className="h-32 w-full resize-none border border-eink-divider bg-eink-paper p-3 text-[16px] leading-7 outline-none"
+              className="h-32 w-full resize-none border border-[#12324f] bg-[#04101f] p-3 text-[16px] leading-7 text-[#e8f6ff] outline-none placeholder:text-[#3d6f96]"
               placeholder="这一周，想留下什么？"
               value={text}
               onChange={(event) => {
@@ -470,13 +506,13 @@ function LocalDiscover({ onReply }) {
               autoFocus
             />
             <div className="mt-3">
-              <div className="mb-2 text-[13px] text-eink-sub">图片数量</div>
+              <div className="mb-2 text-[13px] text-[#7fc4f0]">图片数量</div>
               <div className="flex flex-wrap gap-1.5">
                 {Array.from({ length: 10 }).map((_, n) => (
                   <button
                     key={n}
                     type="button"
-                    className={`h-8 w-8 ${images === n ? 'bg-eink-ink text-eink-paper' : 'border border-eink-divider bg-eink-surface text-eink-sub'}`}
+                    className={`h-8 w-8 ${images === n ? 'bg-[#4fc3ff] text-[#03101f]' : 'border border-[#2a6fa8]/40 bg-[#081628] text-[#7fc4f0]'}`}
                     onClick={() => setImages(n)}
                   >
                     {n}
@@ -485,7 +521,7 @@ function LocalDiscover({ onReply }) {
               </div>
             </div>
             {images > 0 ? <PhotoGrid count={images} seed="preview" /> : null}
-            {formError ? <p className="mt-2 text-[13px] font-medium text-eink-ink">{formError}</p> : null}
+            {formError ? <p className="mt-2 text-[13px] font-medium text-[#ffb3cb]">{formError}</p> : null}
           </form>
         </div>
       ) : null}

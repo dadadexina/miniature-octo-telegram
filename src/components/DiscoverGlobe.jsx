@@ -1,9 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import Avatar from './Avatar'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import ImageViewer from './ImageViewer'
 import { formatRelativeTime } from '../utils'
 
 const RAD = Math.PI / 180
+const R = 2
+const PALETTE = [0x4fc3ff, 0x7cffb2, 0xffa94d, 0xff6b9d]
+const ME_COLOR = 0xffd166
 
 function hashString(value) {
   const text = String(value || '')
@@ -21,480 +25,689 @@ function pointFor(id) {
   const v = (Math.floor(hash / 10000) % 10000) / 10000
   return {
     lat: Math.asin(2 * v - 1) / RAD,
-    lon: u * 360 - 180,
+    lng: u * 360 - 180,
   }
 }
 
-function projectLL(lat, lon, rotation) {
-  const latRad = lat * RAD
-  const lonRad = (lon + rotation) * RAD
-  return {
-    x: 50 + Math.cos(latRad) * Math.sin(lonRad) * 46,
-    y: 50 - Math.sin(latRad) * 46,
-    z: Math.cos(latRad) * Math.cos(lonRad),
-  }
-}
-
-function project(id, rotation) {
-  const { lat, lon } = pointFor(id)
-  return projectLL(lat, lon, rotation)
-}
-
-const LAND_POLYGONS = [
-  [
-    [-168, 65], [-160, 70], [-140, 70], [-125, 72], [-100, 70], [-80, 73], [-62, 60],
-    [-55, 50], [-65, 45], [-70, 41], [-75, 35], [-81, 25], [-90, 21], [-97, 18],
-    [-105, 22], [-113, 29], [-124, 40], [-130, 55], [-150, 60], [-168, 65],
-  ],
-  [
-    [-81, 0], [-75, 10], [-60, 10], [-50, 0], [-35, -6], [-40, -22], [-55, -35],
-    [-65, -55], [-72, -52], [-75, -30], [-70, -18], [-81, 0],
-  ],
-  [
-    [-17, 15], [-16, 22], [-10, 28], [0, 37], [10, 37], [20, 32], [32, 31], [43, 12],
-    [51, 12], [41, -2], [40, -15], [35, -25], [25, -34], [18, -34], [12, -18],
-    [9, -1], [8, 4], [-8, 5], [-17, 15],
-  ],
-  [
-    [-10, 36], [-9, 44], [-1, 48], [2, 51], [5, 58], [10, 64], [20, 70], [30, 70],
-    [45, 68], [60, 70], [75, 73], [95, 76], [120, 73], [140, 72], [160, 69],
-    [180, 65], [180, 58], [160, 56], [145, 44], [140, 35], [130, 33], [122, 31],
-    [120, 22], [108, 10], [103, 1], [98, 8], [95, 16], [88, 21], [80, 8], [72, 20],
-    [66, 24], [58, 25], [50, 30], [43, 12], [40, 15], [32, 30], [28, 41], [20, 40],
-    [14, 38], [3, 42], [-10, 36],
-  ],
-  [
-    [114, -22], [122, -18], [135, -12], [142, -11], [146, -19], [150, -25],
-    [153, -28], [150, -37], [140, -38], [130, -32], [115, -34], [114, -22],
-  ],
-  [
-    [-45, 60], [-30, 70], [-20, 75], [-25, 82], [-45, 83], [-58, 80], [-60, 70], [-45, 60],
-  ],
-  [[43, -12], [50, -15], [50, -25], [45, -25], [43, -12]],
-  [[130, 32], [140, 36], [145, 44], [141, 45], [136, 35], [130, 32]],
-  [[-6, 50], [-2, 53], [-3, 58], [-6, 58], [-6, 50]],
-  [[166, -46], [174, -41], [178, -38], [174, -35], [168, -44], [166, -46]],
-]
-
-function insidePolygon(lon, lat, polygon) {
-  let inside = false
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
-    const [xi, yi] = polygon[i]
-    const [xj, yj] = polygon[j]
-    if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
-      inside = !inside
-    }
-  }
-  return inside
-}
-
-const LAND_DOTS = (() => {
-  const dots = []
-  for (let lat = -76; lat <= 76; lat += 4) {
-    for (let lon = -180; lon < 180; lon += 4) {
-      if (LAND_POLYGONS.some((polygon) => insidePolygon(lon, lat, polygon))) dots.push({ lat, lon })
-    }
-  }
-  return dots
-})()
-
-function formatLongitude(rotation) {
-  const raw = (((-rotation + 180) % 360) + 360) % 360 - 180
-  const value = Math.round(Math.abs(raw))
-  if (value === 0) return '0°'
-  return `${value}°${raw > 0 ? 'E' : 'W'}`
-}
-
-function isoWeek(date) {
-  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
-  const day = target.getUTCDay() || 7
-  target.setUTCDate(target.getUTCDate() + 4 - day)
-  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1))
-  return Math.ceil(((target - yearStart) / 86400000 + 1) / 7)
-}
-
-function routePath(point) {
-  if (!point || point.z <= 0.05) return ''
-  const controlX = 50 + (point.x - 50) * 0.42
-  const controlY = 88 - Math.abs(point.x - 50) * 0.16 - 10
-  return `M 50 88 Q ${controlX} ${controlY} ${point.x} ${point.y}`
-}
-
-function GlobeArt({ rotation }) {
-  const rawId = useId()
-  const suffix = rawId.replace(/[^a-zA-Z0-9_-]/g, '')
-  const clipId = `globe-clip-${suffix}`
-  const shadeId = `globe-shade-${suffix}`
-  const meridians = Array.from({ length: 6 }, (_, index) => index * 30)
-  const latitudes = [-60, -30, 0, 30, 60]
-  const ticks = Array.from({ length: 48 }, (_, index) => index * 7.5)
-
-  return (
-    <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full text-eink-ink" aria-hidden="true">
-      <defs>
-        <clipPath id={clipId}>
-          <circle cx="50" cy="50" r="46" />
-        </clipPath>
-        <radialGradient id={shadeId} cx="46%" cy="40%" r="52%">
-          <stop offset="0%" stopColor="rgb(var(--eink-line))" stopOpacity="0" />
-          <stop offset="74%" stopColor="rgb(var(--eink-line))" stopOpacity="0" />
-          <stop offset="92%" stopColor="rgb(var(--eink-line))" stopOpacity="0.04" />
-          <stop offset="100%" stopColor="rgb(var(--eink-line))" stopOpacity="0.09" />
-        </radialGradient>
-      </defs>
-      <circle cx="50" cy="50" r="46" fill="rgb(var(--eink-bar))" />
-      <g clipPath={`url(#${clipId})`}>
-        <g fill="currentColor">
-          {LAND_DOTS.map((dot) => {
-            const point = projectLL(dot.lat, dot.lon, rotation)
-            if (point.z <= 0.04) return null
-            return (
-              <circle
-                key={`${dot.lat}:${dot.lon}`}
-                cx={point.x}
-                cy={point.y}
-                r={0.48 + 0.22 * point.z}
-                opacity={0.28 + 0.34 * point.z}
-              />
-            )
-          })}
-        </g>
-        <g opacity="0.14" stroke="currentColor" fill="none" strokeWidth="0.2">
-          {latitudes.map((lat) => {
-            const y = 50 - Math.sin(lat * RAD) * 46
-            const rx = Math.cos(lat * RAD) * 46
-            return <ellipse key={lat} cx="50" cy={y} rx={rx} ry={Math.max(1.2, rx * 0.16)} />
-          })}
-          {meridians.map((lon) => {
-            const points = []
-            for (let lat = -80; lat <= 80; lat += 8) {
-              const latRad = lat * RAD
-              const lonRad = (lon + rotation) * RAD
-              points.push(`${50 + Math.cos(latRad) * Math.sin(lonRad) * 46},${50 - Math.sin(latRad) * 46}`)
-            }
-            return <polyline key={lon} points={points.join(' ')} />
-          })}
-        </g>
-        <circle cx="50" cy="50" r="46" fill={`url(#${shadeId})`} />
-        <circle cx="50" cy="50" r="45.9" fill="none" stroke="currentColor" strokeWidth="0.3" opacity="0.5" />
-      </g>
-      <g stroke="currentColor" strokeLinecap="round">
-        {ticks.map((angle, index) => {
-          const long = index % 6 === 0
-          const rad = angle * RAD
-          const inner = long ? 46.8 : 47.6
-          const outer = long ? 49.4 : 48.8
-          return (
-            <line
-              key={angle}
-              x1={50 + Math.cos(rad) * inner}
-              y1={50 + Math.sin(rad) * inner}
-              x2={50 + Math.cos(rad) * outer}
-              y2={50 + Math.sin(rad) * outer}
-              strokeWidth={long ? 0.34 : 0.16}
-              opacity={long ? 0.4 : 0.22}
-            />
-          )
-        })}
-      </g>
-      <circle
-        cx="50"
-        cy="50"
-        r="49.6"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="0.14"
-        strokeDasharray="0.5 2.2"
-        opacity="0.2"
-      />
-    </svg>
+function toVec(lat, lng, radius = R) {
+  const phi = (90 - lat) * RAD
+  const theta = (lng + 180) * RAD
+  return new THREE.Vector3(
+    -radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta)
   )
 }
 
-export default function DiscoverGlobe({ people, routes, meId, loading, error, emptyText, onReply }) {
-  const [rotation, setRotation] = useState(0)
-  const [selected, setSelected] = useState(null)
+function canUseWebGL() {
+  try {
+    if (typeof window.WebGLRenderingContext === 'undefined') return false
+    const canvas = document.createElement('canvas')
+    return Boolean(canvas.getContext('webgl2') || canvas.getContext('webgl'))
+  } catch {
+    return false
+  }
+}
+
+function disposeObject(object) {
+  object.traverse((child) => {
+    child.geometry?.dispose?.()
+    const material = child.material
+    if (Array.isArray(material)) material.forEach((item) => item.dispose?.())
+    else material?.dispose?.()
+  })
+}
+
+function buildArc(aUnit, bUnit, radius) {
+  const angle = aUnit.angleTo(bUnit)
+  const axis = new THREE.Vector3().crossVectors(aUnit, bUnit)
+  if (axis.lengthSq() < 1e-8) axis.set(1, 0, 0)
+  else axis.normalize()
+  const height = radius * (0.04 + angle * 0.14)
+  const points = []
+  for (let i = 0; i <= 64; i += 1) {
+    const t = i / 64
+    const point = aUnit.clone().applyAxisAngle(axis, angle * t)
+    point.multiplyScalar(radius + Math.sin(Math.PI * t) * height)
+    points.push(point)
+  }
+  return new THREE.CatmullRomCurve3(points)
+}
+
+export default function DiscoverGlobe({
+  people,
+  links = [],
+  meId,
+  meName = '你',
+  routes = [],
+  loading,
+  error,
+  emptyText,
+  onReply,
+}) {
+  const containerRef = useRef(null)
+  const tooltipRef = useRef(null)
+  const threeRef = useRef(null)
+  const meNameRef = useRef(meName)
+  const [selectedId, setSelectedId] = useState(null)
   const [viewerUrl, setViewerUrl] = useState('')
-  const [hint, setHint] = useState('')
-  const dragRef = useRef(null)
-  const movedRef = useRef(false)
-  const centeredRef = useRef(false)
-  const touchedRef = useRef(false)
+  const [listOpen, setListOpen] = useState(false)
+  const [fallback] = useState(() => !canUseWebGL())
 
-  const coordinates = useMemo(() => {
-    const map = new Map()
-    people.forEach((person) => {
-      map.set(person.id, project(person.id, rotation))
+  useEffect(() => {
+    meNameRef.current = meName
+  }, [meName])
+
+  const routeByAuthor = useMemo(() => new Map(routes.map((route) => [route.authorId, route])), [routes])
+  const selectedPerson = useMemo(() => {
+    if (!selectedId) return null
+    if (selectedId === meId) return { id: meId, name: meName }
+    return people.find((person) => person.id === selectedId) || { id: selectedId, name: '朋友' }
+  }, [selectedId, meId, meName, people])
+  const selectedRoute = selectedId ? routeByAuthor.get(selectedId) : null
+
+  const relationNames = useMemo(() => {
+    if (!selectedId) return []
+    const names = new Map([[meId, meName], ...people.map((person) => [person.id, person.name])])
+    const ids = new Set()
+    links.forEach(([a, b]) => {
+      if (a === selectedId) ids.add(b)
+      else if (b === selectedId) ids.add(a)
     })
-    return map
-  }, [people, rotation])
-
-  const routeAuthors = useMemo(() => new Set(routes.map((route) => route.authorId)), [routes])
-  const hiddenCount = useMemo(
-    () => people.filter((person) => (coordinates.get(person.id)?.z ?? 0) <= 0.05).length,
-    [people, coordinates]
-  )
-  const routeIndex = useMemo(() => {
-    const map = new Map()
-    routes.forEach((route, index) => map.set(route.authorId, index))
-    return map
-  }, [routes])
+    return [...ids].map((id) => names.get(id)).filter(Boolean)
+  }, [selectedId, links, people, meId, meName])
 
   useEffect(() => {
-    if (centeredRef.current || touchedRef.current || !routes.length) return
-    centeredRef.current = true
-    setRotation(-pointFor(routes[0].authorId).lon)
-  }, [routes])
+    if (fallback) return undefined
+    const container = containerRef.current
+    if (!container) return undefined
 
-  useEffect(() => {
-    if (!selected) return undefined
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500)
+    camera.position.set(0, 1.8, 6.6)
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    renderer.setClearColor(0x03070f, 1)
+    renderer.domElement.className = 'block h-full w-full'
+    container.appendChild(renderer.domElement)
+
+    const reducedMotion =
+      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.rotateSpeed = 0.5
+    controls.zoomSpeed = 0.8
+    controls.enablePan = false
+    controls.minDistance = 3.2
+    controls.maxDistance = 12
+    controls.autoRotate = !reducedMotion
+    controls.autoRotateSpeed = 0.55
+
+    scene.add(new THREE.AmbientLight(0x6fa8dc, 1.1))
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4)
+    keyLight.position.set(4, 2, 5)
+    scene.add(keyLight)
+    const rimLight = new THREE.DirectionalLight(0x2f7fc0, 1.2)
+    rimLight.position.set(-5, -2, -4)
+    scene.add(rimLight)
+
+    const globe = new THREE.Group()
+    scene.add(globe)
+
+    globe.add(
+      new THREE.Mesh(
+        new THREE.SphereGeometry(R, 64, 48),
+        new THREE.MeshPhongMaterial({
+          color: 0x0b2a4a,
+          emissive: 0x04101f,
+          shininess: 10,
+          specular: 0x123a5c,
+        })
+      )
+    )
+
+    const gridMaterial = new THREE.LineBasicMaterial({ color: 0x2a6fa8, transparent: true, opacity: 0.26 })
+    const grid = new THREE.Group()
+    for (let lat = -75; lat <= 75; lat += 15) {
+      const points = []
+      for (let lng = -180; lng <= 180; lng += 4) points.push(toVec(lat, lng, R * 1.001))
+      grid.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), gridMaterial))
+    }
+    for (let lng = -180; lng < 180; lng += 15) {
+      const points = []
+      for (let lat = -90; lat <= 90; lat += 4) points.push(toVec(lat, lng, R * 1.001))
+      grid.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), gridMaterial))
+    }
+    globe.add(grid)
+
+    const glowMaterial = new THREE.ShaderMaterial({
+      uniforms: { glowColor: { value: new THREE.Color(0x3fa9ff) } },
+      vertexShader: `
+        varying vec3 vNormal;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform vec3 glowColor;
+        varying vec3 vNormal;
+        void main() {
+          float i = pow(0.65 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.0);
+          gl_FragColor = vec4(glowColor, 1.0) * clamp(i, 0.0, 1.0);
+        }`,
+      side: THREE.BackSide,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+    })
+    globe.add(new THREE.Mesh(new THREE.SphereGeometry(R * 1.18, 48, 32), glowMaterial))
+
+    const starGeometry = new THREE.BufferGeometry()
+    const starPositions = new Float32Array(1600 * 3)
+    for (let i = 0; i < 1600; i += 1) {
+      const distance = 30 + Math.random() * 60
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.acos(2 * Math.random() - 1)
+      starPositions[i * 3] = distance * Math.sin(phi) * Math.cos(theta)
+      starPositions[i * 3 + 1] = distance * Math.cos(phi)
+      starPositions[i * 3 + 2] = distance * Math.sin(phi) * Math.sin(theta)
+    }
+    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
+    const starMaterial = new THREE.PointsMaterial({
+      color: 0x9ec8ff,
+      size: 0.28,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false,
+    })
+    scene.add(new THREE.Points(starGeometry, starMaterial))
+
+    const network = new THREE.Group()
+    globe.add(network)
+
+    const state = {
+      renderer,
+      scene,
+      camera,
+      controls,
+      network,
+      nodes: new Map(),
+      nodeList: [],
+      meshList: [],
+      edges: [],
+      raycaster: new THREE.Raycaster(),
+      pointer: new THREE.Vector2(),
+      hoveredId: null,
+      selectedId: null,
+      disposed: false,
+    }
+
+    const clearNetwork = () => {
+      network.children.slice().forEach((child) => {
+        network.remove(child)
+        disposeObject(child)
+      })
+      state.nodes = new Map()
+      state.nodeList = []
+      state.meshList = []
+      state.edges = []
+    }
+
+    state.rebuild = (nextPeople, nextLinks, nextMeId) => {
+      clearNetwork()
+      const nodeGeometry = new THREE.SphereGeometry(0.034, 16, 16)
+
+      const addNode = (id, name, isMe) => {
+        const { lat, lng } = isMe ? { lat: 34, lng: 108 } : pointFor(id)
+        const position = toVec(lat, lng, R * 1.005)
+        const color = isMe ? ME_COLOR : PALETTE[hashString(id) % PALETTE.length]
+        const material = new THREE.MeshBasicMaterial({ color, transparent: true })
+        const mesh = new THREE.Mesh(nodeGeometry, material)
+        mesh.position.copy(position)
+        mesh.userData.nodeId = id
+        network.add(mesh)
+        const node = {
+          id,
+          name,
+          mesh,
+          material,
+          isMe,
+          baseScale: isMe ? 1.7 : 1,
+        }
+        state.nodes.set(id, node)
+        state.nodeList.push(node)
+        state.meshList.push(mesh)
+      }
+
+      addNode(nextMeId, meNameRef.current, true)
+      nextPeople.forEach((person) => {
+        if (person.id !== nextMeId) addNode(person.id, person.name, false)
+      })
+
+      nextLinks.forEach(([a, b]) => {
+        const from = state.nodes.get(a)
+        const to = state.nodes.get(b)
+        if (!from || !to) return
+        const curve = buildArc(
+          from.mesh.position.clone().normalize(),
+          to.mesh.position.clone().normalize(),
+          R * 1.002
+        )
+        const geometry = new THREE.TubeGeometry(curve, 64, 0.006, 6, false)
+        const material = new THREE.MeshBasicMaterial({
+          color: 0x3fa9ff,
+          transparent: true,
+          opacity: 0.3,
+          depthWrite: false,
+        })
+        const mesh = new THREE.Mesh(geometry, material)
+        network.add(mesh)
+        state.edges.push({ a, b, material })
+      })
+
+      state.applyHighlight(state.selectedId)
+    }
+
+    state.applyHighlight = (selected) => {
+      const related = new Set()
+      if (selected) {
+        related.add(selected)
+        state.edges.forEach((edge) => {
+          if (edge.a === selected || edge.b === selected) {
+            related.add(edge.a)
+            related.add(edge.b)
+          }
+        })
+      }
+      state.nodeList.forEach((node) => {
+        const isSelected = node.id === selected
+        const isRelated = related.has(node.id)
+        const active = !selected || isRelated
+        const baseColor = node.isMe ? ME_COLOR : PALETTE[hashString(node.id) % PALETTE.length]
+        node.material.color.setHex(isSelected ? 0xffd166 : isRelated ? 0x8fe6ff : baseColor)
+        node.material.opacity = active ? 1 : 0.15
+        node.baseScale = isSelected ? 2.2 : isRelated && selected ? 1.5 : node.isMe ? 1.7 : 1
+      })
+      state.edges.forEach((edge) => {
+        const active = !selected || edge.a === selected || edge.b === selected
+        edge.material.opacity = active ? (selected ? 0.9 : 0.3) : 0.05
+        edge.material.color.setHex(active && selected ? 0x8fe6ff : 0x3fa9ff)
+      })
+    }
+
+    state.setSelected = (id) => {
+      state.selectedId = id
+      state.applyHighlight(id)
+      controls.autoRotate = !reducedMotion && !id && !state.hoveredId
+    }
+
+    const pickNode = (clientX, clientY) => {
+      const rect = renderer.domElement.getBoundingClientRect()
+      state.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1
+      state.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1
+      state.raycaster.setFromCamera(state.pointer, camera)
+      const hit = state.raycaster.intersectObjects(state.meshList, false)[0]
+      return hit?.object?.userData?.nodeId || null
+    }
+
+    let downPoint = null
+
+    const onPointerDown = (event) => {
+      downPoint = { x: event.clientX, y: event.clientY }
+    }
+
+    const onPointerUp = (event) => {
+      if (!downPoint) return
+      const moved = Math.hypot(event.clientX - downPoint.x, event.clientY - downPoint.y)
+      downPoint = null
+      if (moved > 8) return
+      const id = pickNode(event.clientX, event.clientY)
+      setSelectedId(id)
+    }
+
+    const onPointerMove = (event) => {
+      const id = pickNode(event.clientX, event.clientY)
+      if (id !== state.hoveredId) {
+        state.hoveredId = id
+        controls.autoRotate = !reducedMotion && !id && !state.selectedId
+        renderer.domElement.style.cursor = id ? 'pointer' : 'grab'
+      }
+      const tooltip = tooltipRef.current
+      if (!tooltip) return
+      if (id) {
+        tooltip.textContent = state.nodes.get(id)?.name || ''
+        tooltip.style.left = `${event.clientX}px`
+        tooltip.style.top = `${event.clientY}px`
+        tooltip.style.opacity = 1
+      } else {
+        tooltip.style.opacity = 0
+      }
+    }
+
+    const onPointerLeave = () => {
+      state.hoveredId = null
+      controls.autoRotate = !reducedMotion && !state.selectedId
+      renderer.domElement.style.cursor = 'grab'
+      if (tooltipRef.current) tooltipRef.current.style.opacity = 0
+    }
+
+    renderer.domElement.addEventListener('pointerdown', onPointerDown)
+    renderer.domElement.addEventListener('pointerup', onPointerUp)
+    renderer.domElement.addEventListener('pointermove', onPointerMove)
+    renderer.domElement.addEventListener('pointerleave', onPointerLeave)
+
+    const resize = () => {
+      const width = container.clientWidth || 1
+      const height = container.clientHeight || 1
+      camera.aspect = width / height
+      camera.updateProjectionMatrix()
+      renderer.setSize(width, height, false)
+    }
+    resize()
+    const observer = new ResizeObserver(resize)
+    observer.observe(container)
+
+    threeRef.current = state
+    state.setSelected(null)
+
+    const clock = new THREE.Clock()
+    let frame = 0
+    const animate = () => {
+      if (state.disposed) return
+      frame = requestAnimationFrame(animate)
+      const time = clock.getElapsedTime()
+      state.nodeList.forEach((node) => {
+        const hoverBoost = node.id === state.hoveredId && node.id !== state.selectedId ? 1.5 : 1
+        const target = node.baseScale * hoverBoost * (1 + Math.sin(time * 1.8 + hashString(node.id)) * 0.08)
+        const scale = THREE.MathUtils.lerp(node.mesh.scale.x, target, 0.14)
+        node.mesh.scale.setScalar(scale)
+      })
+      controls.update()
+      renderer.render(scene, camera)
+    }
+    animate()
+
+    const onContextLost = (event) => {
+      event.preventDefault()
+    }
+    renderer.domElement.addEventListener('webglcontextlost', onContextLost)
+
     return () => {
-      document.body.style.overflow = prev
+      state.disposed = true
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown)
+      renderer.domElement.removeEventListener('pointerup', onPointerUp)
+      renderer.domElement.removeEventListener('pointermove', onPointerMove)
+      renderer.domElement.removeEventListener('pointerleave', onPointerLeave)
+      renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
+      controls.dispose()
+      disposeObject(scene)
+      renderer.dispose()
+      renderer.domElement.remove()
+      threeRef.current = null
     }
-  }, [selected])
+  }, [fallback])
 
-  const onPointerDown = (event) => {
-    touchedRef.current = true
-    dragRef.current = { x: event.clientX, rotation }
-    movedRef.current = false
-    event.currentTarget.setPointerCapture?.(event.pointerId)
+  useEffect(() => {
+    if (fallback) return
+    threeRef.current?.rebuild(people, links, meId)
+  }, [fallback, people, links, meId])
+
+  useEffect(() => {
+    threeRef.current?.setSelected(selectedId)
+  }, [fallback, selectedId])
+
+  const closeSheet = () => setSelectedId(null)
+  const routeIndex = selectedRoute ? routes.findIndex((route) => route.id === selectedRoute.id) : -1
+  const reply = () => {
+    const peerId = selectedId
+    closeSheet()
+    onReply(peerId)
   }
-
-  const onPointerMove = (event) => {
-    if (!dragRef.current) return
-    const delta = event.clientX - dragRef.current.x
-    if (Math.abs(delta) > 4) movedRef.current = true
-    setRotation(dragRef.current.rotation + delta * 0.45)
-  }
-
-  const onPointerUp = (event) => {
-    dragRef.current = null
-    event.currentTarget.releasePointerCapture?.(event.pointerId)
-  }
-
-  const openRoute = (route) => {
-    setSelected(route)
-    setViewerUrl('')
-    setHint('')
-    setRotation(-pointFor(route.authorId).lon)
-  }
-
-  const openPerson = (person) => {
-    if (movedRef.current) return
-    const route = routes.find((item) => item.authorId === person.id)
-    if (route) {
-      openRoute(route)
-      return
-    }
-    setHint(person.id === meId ? '这是你的坐标' : `${person.name} 本周还没有留下信`)
-  }
-
-  const selectedIndex = selected ? routes.findIndex((route) => route.id === selected.id) : -1
 
   return (
-    <>
-      <section className="px-4 pt-3">
+    <div className="relative flex h-full flex-col overflow-hidden bg-[#03070f] text-[#dff1ff]">
+      <div className="relative min-h-0 flex-1">
         <div
+          ref={containerRef}
           data-testid="relationship-globe"
-          className="relative mx-auto aspect-square w-full max-w-[340px] cursor-grab touch-none select-none active:cursor-grabbing"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-        >
-          <span aria-hidden="true" className="pointer-events-none absolute inset-[5%] -rotate-2 border border-eink-line/20" />
-          <span aria-hidden="true" className="pointer-events-none absolute inset-[2.5%] rotate-1 border border-eink-line/25 bg-eink-paper/70" />
-          <GlobeArt rotation={rotation} />
+          aria-label="3D 地球关系网，可拖动旋转、缩放并点击节点"
+          className={fallback ? 'hidden' : 'absolute inset-0'}
+        />
+        <div
+          ref={tooltipRef}
+          data-testid="globe-tooltip"
+          className="pointer-events-none fixed z-20 -translate-x-1/2 -translate-y-[160%] rounded-md border border-[#5ab4ff]/45 bg-[#081628]/92 px-2.5 py-1.5 text-[13px] whitespace-nowrap text-[#cfe9ff] opacity-0 transition-opacity"
+          style={{ left: 0, top: 0 }}
+        />
 
-          <span className="pointer-events-none absolute left-0 top-0 border border-eink-line/30 px-1 py-0.5 text-[9px] tracking-[0.16em] text-eink-faint">
-            W{isoWeek(new Date())}
-          </span>
-          <span className="pointer-events-none absolute right-0 top-0 border border-eink-line/30 px-1 py-0.5 text-[9px] tracking-[0.16em] text-eink-faint">
-            {formatLongitude(rotation)}
-          </span>
-
-          <svg viewBox="0 0 100 100" className="pointer-events-none absolute inset-0 h-full w-full text-eink-ink" aria-hidden="true">
-            {routes.map((route) => {
-              const point = coordinates.get(route.authorId)
-              if (!point || point.z <= 0.05) return null
-              return (
-                <g key={route.id}>
-                  <path
-                    d={routePath(point)}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="0.46"
-                    strokeDasharray="1.1 1.5"
-                    opacity={selected?.id === route.id ? 0.9 : 0.46}
-                  />
-                  <circle cx={point.x} cy={point.y} r="1.15" fill="none" stroke="currentColor" strokeWidth="0.28" opacity="0.6" />
-                </g>
-              )
-            })}
-          </svg>
-
-          <div className="pointer-events-none absolute left-1/2 top-[88%] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center">
-            <span className="relative flex h-4 w-4 items-center justify-center">
-              <span className="absolute h-4 w-px bg-eink-ink/40" />
-              <span className="absolute h-px w-4 bg-eink-ink/40" />
-              <span className="relative block h-1.5 w-1.5 rounded-full bg-eink-ink" />
-            </span>
-            <span className="mt-0.5 text-[9px] leading-none text-eink-sub">你</span>
-          </div>
-
-          {people.map((person) => {
-            const point = coordinates.get(person.id)
-            if (!point) return null
-            const front = point.z > 0.05
-            const isRoute = routeAuthors.has(person.id)
-            if (!front) {
-              return (
-                <span
-                  key={person.id}
-                  className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-                  style={{ left: `${point.x}%`, top: `${point.y}%` }}
-                >
-                  <span className="block h-1 w-1 rounded-full bg-eink-ink opacity-15" />
-                </span>
-              )
-            }
-            return (
-              <button
-                key={person.id}
-                type="button"
-                data-testid={`globe-person-${person.id}`}
-                aria-label={`查看${person.name}的近况`}
-                className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer"
-                style={{ left: `${point.x}%`, top: `${point.y}%` }}
-                onClick={() => openPerson(person)}
-              >
-                {isRoute ? (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full border border-eink-ink bg-eink-bar text-[9px] leading-none text-eink-ink ring-2 ring-eink-bar">
-                    {String((routeIndex.get(person.id) ?? 0) + 1).padStart(2, '0')}
-                  </span>
-                ) : (
-                  <span className="block h-2 w-2 rounded-full border border-eink-sub/70 bg-eink-bar ring-2 ring-eink-bar" />
-                )}
-              </button>
-            )
-          })}
-        </div>
-        <p data-testid="globe-hint" className="mt-1 text-center text-[11px] leading-5 text-eink-faint">
-          {hint || (hiddenCount ? `${hiddenCount} 位朋友在背面，拖动地球看看` : '拖动地球，换个方向')}
+        <p className="pointer-events-none absolute inset-x-0 top-3 text-center text-[11px] tracking-[0.08em] text-[#3d6f96]">
+          {meName} 的地球 · 只有你认识的人
         </p>
-      </section>
-
-      <section className="px-4 pb-8 pt-4">
-        <div className="flex items-baseline justify-between border-b border-eink-line/20 pb-2">
-          <h2 className="text-[12px] tracking-[0.22em] text-eink-sub">本周航线</h2>
-          <span className="text-[11px] text-eink-faint">{routes.length ? `${routes.length} 页` : '等信'}</span>
-        </div>
 
         {loading ? (
-          <p data-testid="routes-loading" className="py-10 text-center text-[13px] text-eink-sub">
+          <p
+            data-testid="routes-loading"
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[12px] tracking-[0.14em] text-[#3d6f96]"
+          >
             正在取信...
           </p>
-        ) : error ? (
-          <p data-testid="routes-error" className="py-10 text-center text-[13px] text-eink-sub">
+        ) : null}
+        {error ? (
+          <p
+            data-testid="routes-error"
+            className="absolute inset-x-6 top-14 border border-[#ff6b9d]/30 bg-[#2a0b16]/80 px-3 py-2 text-center text-[12px] text-[#ffb3cb]"
+          >
             {error}
           </p>
-        ) : routes.length === 0 ? (
-          <p data-testid="routes-empty" className="py-10 text-center text-[13px] leading-6 text-eink-sub">
+        ) : null}
+        {!loading && !error && routes.length === 0 ? (
+          <p
+            data-testid="routes-empty"
+            className="pointer-events-none absolute inset-x-8 bottom-20 text-center text-[12px] leading-6 text-[#3d6f96]"
+          >
             {emptyText}
           </p>
-        ) : (
-          <div>
-            {routes.map((route, index) => (
-              <button
-                key={route.id}
-                type="button"
-                data-testid="route-card"
-                className="flex w-full gap-3 border-b border-eink-divider px-1 py-3.5 text-left active:bg-eink-active/50"
-                onClick={() => openRoute(route)}
-              >
-                <span className="w-6 shrink-0 pt-0.5 text-[11px] tracking-[0.12em] text-eink-faint">
-                  {String(index + 1).padStart(2, '0')}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-[14px] font-medium text-eink-ink">{route.name}</span>
-                    <span className="shrink-0 text-[11px] text-eink-faint">{formatRelativeTime(route.createdAt)}</span>
-                  </span>
-                  <span className="mt-1 line-clamp-2 block text-[13px] leading-5 text-eink-sub">
-                    {route.content || (route.imageUrl ? '寄来了一张照片' : route.imageCount ? `寄来 ${route.imageCount} 张图` : '寄来了一页信')}
-                  </span>
-                </span>
-                <span className="shrink-0 pt-0.5 text-[16px] text-eink-faint">›</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
+        ) : null}
 
-      {selected ? (
+        {fallback ? (
+          <div data-testid="globe-fallback" className="absolute inset-0 overflow-y-auto px-5 pt-10 pb-24">
+            <p className="mb-4 text-center text-[11px] text-[#3d6f96]">当前环境不支持 3D，已切换为关系列表</p>
+            {routes.length ? (
+              routes.map((route, index) => (
+                <button
+                  key={route.id}
+                  type="button"
+                  data-testid="route-card"
+                  className="flex w-full items-baseline gap-3 border-b border-[#12324f] px-1 py-3.5 text-left active:bg-[#0a2138]"
+                  onClick={() => setSelectedId(route.authorId)}
+                >
+                  <span className="w-7 shrink-0 text-[11px] tracking-[0.12em] text-[#3d6f96]">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-[14px] text-[#dff1ff]">{route.name}</span>
+                      <span className="shrink-0 text-[11px] text-[#3d6f96]">
+                        {formatRelativeTime(route.createdAt)}
+                      </span>
+                    </span>
+                    <span className="mt-1 line-clamp-2 block text-[13px] leading-5 text-[#7fc4f0]">
+                      {route.content ||
+                        (route.imageUrl ? '寄来了一张照片' : route.imageCount ? `寄来 ${route.imageCount} 张图` : '寄来了一页信')}
+                    </span>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p className="py-10 text-center text-[13px] text-[#3d6f96]">还没有人留下信</p>
+            )}
+          </div>
+        ) : null}
+
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 flex items-end justify-between px-5">
+          <p className="text-[11px] leading-5 text-[#3d6f96]">
+            拖动旋转 · 双指缩放
+            <br />
+            点击节点查看关系
+          </p>
+          <button
+            type="button"
+            data-testid="routes-toggle"
+            className="pointer-events-auto border border-[#2a6fa8]/40 bg-[#081628]/80 px-3 py-1.5 text-[11px] tracking-[0.1em] text-[#7fc4f0] backdrop-blur active:bg-[#0a2138]"
+            onClick={() => setListOpen(true)}
+          >
+            本周航线 {routes.length} 页
+          </button>
+        </div>
+      </div>
+
+      {selectedPerson ? (
         <div
-          className="fixed inset-0 z-40 flex items-end bg-black/50"
+          className="fixed inset-0 z-40 flex items-end bg-black/70"
           data-testid="moment-backdrop"
-          onClick={() => setSelected(null)}
+          onClick={closeSheet}
         >
           <div
             role="dialog"
             aria-modal="true"
             data-testid="moment-sheet"
-            className="safe-bottom max-h-[82vh] w-full overflow-y-auto border-t-2 border-eink-ink bg-eink-paper px-5 pb-6 pt-4"
+            className="safe-bottom max-h-[80vh] w-full overflow-y-auto border-t border-[#2a6fa8]/70 bg-[#071a2e] px-5 pt-4 pb-6 text-[#dff1ff]"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between text-[10px] tracking-[0.2em] text-eink-faint">
-              <span>第 {String(Math.max(selectedIndex, 0) + 1).padStart(2, '0')} 页</span>
-              <button type="button" className="px-1 text-[12px] tracking-normal text-eink-sub" onClick={() => setSelected(null)}>
+            <div className="flex items-baseline justify-between text-[10px] tracking-[0.18em] text-[#3d6f96]">
+              <span>
+                {selectedRoute && routeIndex >= 0 ? `第 ${String(routeIndex + 1).padStart(2, '0')} 页` : '关系'}
+              </span>
+              <button type="button" className="px-1 text-[12px] tracking-normal text-[#7fc4f0]" onClick={closeSheet}>
                 收起
               </button>
             </div>
-            <div className="mt-4 flex items-center gap-3">
-              <Avatar name={selected.name} color={selected.color} size={38} src={selected.avatarUrl || ''} />
-              <div className="min-w-0">
-                <p className="truncate text-[15px] font-medium text-eink-ink">{selected.name}</p>
-                <p className="mt-0.5 text-[11px] text-eink-faint">{formatRelativeTime(selected.createdAt)}</p>
-              </div>
+            <div className="mt-4 flex items-baseline justify-between gap-3">
+              <h2 className="truncate text-[18px] font-medium tracking-[0.04em] text-white">{selectedPerson.name}</h2>
+              {selectedRoute ? (
+                <span className="shrink-0 text-[11px] text-[#3d6f96]">
+                  {formatRelativeTime(selectedRoute.createdAt)}
+                </span>
+              ) : null}
             </div>
-            {selected.content ? (
-              <p className="moment-text mt-5 whitespace-pre-wrap break-words text-[16px] leading-8 text-eink-ink">
-                {selected.content}
+            {selectedId === meId ? (
+              <p className="mt-4 text-[13px] leading-6 text-[#7fc4f0]">
+                这是你的坐标。本周航线都从这里出发。
               </p>
+            ) : selectedRoute ? (
+              <>
+                {selectedRoute.content ? (
+                  <p className="moment-text mt-5 text-[15px] leading-7 break-words whitespace-pre-wrap text-[#e8f6ff]">
+                    {selectedRoute.content}
+                  </p>
+                ) : null}
+                {selectedRoute.imageUrl ? (
+                  <button
+                    type="button"
+                    data-testid="moment-sheet-image"
+                    className="mt-4 block w-full cursor-zoom-in border border-[#12324f]"
+                    onClick={() => setViewerUrl(selectedRoute.imageUrl)}
+                  >
+                    <img src={selectedRoute.imageUrl} alt="信笺图片" className="max-h-[320px] w-full object-cover" />
+                  </button>
+                ) : selectedRoute.imageCount ? (
+                  <div className="mt-4 border border-[#12324f] bg-[#04101f] px-4 py-6 text-center text-[13px] text-[#7fc4f0]">
+                    附 {selectedRoute.imageCount} 张图
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <p className="mt-4 text-[13px] leading-6 text-[#7fc4f0]">本周还没有留下信。</p>
+            )}
+
+            {relationNames.length ? (
+              <div data-testid="moment-relations" className="mt-5 border-t border-[#12324f] pt-3">
+                <p className="text-[10px] tracking-[0.18em] text-[#3d6f96]">
+                  关系 {relationNames.length}
+                </p>
+                <p className="mt-1.5 text-[12px] leading-6 text-[#7fc4f0]">
+                  {relationNames.slice(0, 6).join(' · ')}
+                  {relationNames.length > 6 ? ` · 等 ${relationNames.length} 人` : ''}
+                </p>
+              </div>
             ) : null}
-            {selected.imageUrl ? (
+
+            {selectedId !== meId ? (
               <button
                 type="button"
-                data-testid="moment-sheet-image"
-                className="mt-4 block w-full cursor-zoom-in border border-eink-divider"
-                onClick={() => setViewerUrl(selected.imageUrl)}
+                data-testid="moment-reply"
+                className="mt-6 h-11 w-full bg-[#4fc3ff] text-[15px] font-medium text-[#03101f] active:bg-[#8fe6ff]"
+                onClick={reply}
               >
-                <img src={selected.imageUrl} alt="信笺图片" className="max-h-[320px] w-full object-cover grayscale" />
+                回信
               </button>
-            ) : selected.imageCount ? (
-              <div className="mt-4 border border-eink-divider bg-eink-surface px-4 py-6 text-center text-[13px] text-eink-sub">
-                附 {selected.imageCount} 张图
-              </div>
             ) : null}
-            <button
-              type="button"
-              data-testid="moment-reply"
-              className="mt-6 h-11 w-full bg-eink-ink text-[15px] text-eink-paper active:bg-eink-pressed"
-              onClick={() => {
-                setSelected(null)
-                onReply(selected.authorId)
-              }}
-            >
-              回信
-            </button>
-            <p className="mt-2 text-center text-[11px] text-eink-faint">回信会进入你们的单聊</p>
+            <p className="mt-2 text-center text-[11px] text-[#3d6f96]">回信会进入你们的单聊</p>
+          </div>
+        </div>
+      ) : null}
+
+      {listOpen ? (
+        <div
+          className="fixed inset-0 z-40 flex items-end bg-black/70"
+          data-testid="routes-backdrop"
+          onClick={() => setListOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            data-testid="routes-sheet"
+            className="safe-bottom max-h-[76vh] w-full overflow-y-auto border-t border-[#2a6fa8]/70 bg-[#071a2e] px-5 pt-4 pb-6 text-[#dff1ff]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-baseline justify-between border-b border-[#12324f] pb-3">
+              <h2 className="text-[10px] tracking-[0.22em] text-[#3d6f96]">本周航线</h2>
+              <button type="button" className="text-[12px] text-[#7fc4f0]" onClick={() => setListOpen(false)}>
+                收起
+              </button>
+            </div>
+            {routes.length ? (
+              routes.map((route, index) => (
+                <button
+                  key={route.id}
+                  type="button"
+                  data-testid="route-card"
+                  className="flex w-full items-baseline gap-3 border-b border-[#12324f] px-1 py-3.5 text-left active:bg-[#0a2138]"
+                  onClick={() => {
+                    setListOpen(false)
+                    setSelectedId(route.authorId)
+                  }}
+                >
+                  <span className="w-7 shrink-0 text-[11px] tracking-[0.12em] text-[#3d6f96]">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-[14px] text-[#dff1ff]">{route.name}</span>
+                      <span className="shrink-0 text-[11px] text-[#3d6f96]">
+                        {formatRelativeTime(route.createdAt)}
+                      </span>
+                    </span>
+                    <span className="mt-1 line-clamp-2 block text-[13px] leading-5 text-[#7fc4f0]">
+                      {route.content ||
+                        (route.imageUrl ? '寄来了一张照片' : route.imageCount ? `寄来 ${route.imageCount} 张图` : '寄来了一页信')}
+                    </span>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p className="py-10 text-center text-[13px] text-[#3d6f96]">{emptyText}</p>
+            )}
           </div>
         </div>
       ) : null}
 
       {viewerUrl ? <ImageViewer url={viewerUrl} onClose={() => setViewerUrl('')} /> : null}
-    </>
+    </div>
   )
 }
