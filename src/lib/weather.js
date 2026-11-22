@@ -1,5 +1,5 @@
 const CACHE_KEY = 'weather-cache-v2'
-const CACHE_TTL = 15 * 60 * 1000
+const CACHE_TTL = 10 * 60 * 1000
 const TIMEOUT = 8000
 
 export function weatherText(code) {
@@ -32,7 +32,9 @@ function readCache() {
 
 function writeCache(byId) {
   try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), byId }))
+    const existing = readCache()
+    const merged = existing?.byId ? { ...existing.byId, ...byId } : byId
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), byId: merged }))
   } catch {
     // 忽略隐私模式下的存储失败
   }

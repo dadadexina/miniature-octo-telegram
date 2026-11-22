@@ -60,6 +60,27 @@ describe('fetchWeather', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('不同批次的结果会合并缓存', async () => {
+    const fetchMock = vi.fn(async (url) => {
+      const isCity = String(url).includes('latitude=31.20') && !String(url).includes('51.50')
+      return {
+        ok: true,
+        json: async () =>
+          isCity
+            ? [{ current: { temperature_2m: 21, weather_code: 0, cloud_cover: 5 } }]
+            : [{ current: { temperature_2m: 9, weather_code: 3, cloud_cover: 80 } }],
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchWeather([POINTS[0]])
+    await fetchWeather([POINTS[1]])
+    const merged = await fetchWeather(POINTS)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(merged.byId.a.temp).toBe(21)
+    expect(merged.byId.b.temp).toBe(9)
+  })
+
   it('请求失败时静默返回', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })))
     const result = await fetchWeather(POINTS)

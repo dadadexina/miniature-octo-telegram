@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import ImageViewer from './ImageViewer'
+import earthDayUrl from '../assets/earth/earth-day.jpg'
+import earthNightUrl from '../assets/earth/earth-night.jpg'
+import { PLACES, cityWeatherId } from '../lib/places'
+import { cloudPoints, cloudGridFrom, buildCloudCanvas } from '../lib/clouds'
 import { fetchWeather } from '../lib/weather'
 import { formatRelativeTime } from '../utils'
 
@@ -42,10 +46,6 @@ function toVec(lat, lng, radius = R) {
 
 const ME_COORDS = { lat: 34, lng: 108 }
 
-function coordsFor(id, meId) {
-  return id === meId ? ME_COORDS : pointFor(id)
-}
-
 function sunPosition(date = new Date()) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0)
   const dayOfYear = Math.floor((date.getTime() - start) / 86400000)
@@ -55,48 +55,13 @@ function sunPosition(date = new Date()) {
   return { declination, lng, dir: toVec(declination, lng, 1).normalize() }
 }
 
-function isDaylight(lat, lng, date = new Date()) {
-  return toVec(lat, lng, 1).dot(sunPosition(date).dir) > -0.05
+function deviceClock(date = new Date()) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
-function localClock(lng, date = new Date()) {
-  const minutes = date.getUTCHours() * 60 + date.getUTCMinutes()
-  const local = Math.round((minutes + lng * 4 + 1440) % 1440)
-  const hour = Math.floor(local / 60) % 24
-  return `${String(hour).padStart(2, '0')}:${String(local % 60).padStart(2, '0')}`
-}
-
-function createCloudTexture() {
-  try {
-    const canvas = document.createElement('canvas')
-    canvas.width = 512
-    canvas.height = 256
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    let seed = 7
-    const random = () => {
-      seed = (seed * 16807) % 2147483647
-      return seed / 2147483647
-    }
-    for (let i = 0; i < 140; i += 1) {
-      const x = random() * 512
-      const y = random() * 256
-      const radius = 16 + random() * 58
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius)
-      gradient.addColorStop(0, `rgba(223,241,255,${0.08 + random() * 0.1})`)
-      gradient.addColorStop(1, 'rgba(223,241,255,0)')
-      ctx.fillStyle = gradient
-      ctx.beginPath()
-      ctx.arc(x, y, radius, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    const texture = new THREE.CanvasTexture(canvas)
-    texture.wrapS = THREE.RepeatWrapping
-    texture.wrapT = THREE.ClampToEdgeWrapping
-    return texture
-  } catch {
-    return null
-  }
+function deviceDaylight(date = new Date()) {
+  const hour = date.getHours()
+  return hour >= 6 && hour < 18 ? '白昼' : '夜晚'
 }
 
 function canUseWebGL() {
@@ -147,6 +112,8 @@ export default function DiscoverGlobe({
 }) {
   const containerRef = useRef(null)
   const tooltipRef = useRef(null)
+  const labelsRef = useRef(null)
+  const labelElsRef = useRef(new Map())
   const threeRef = useRef(null)
   const meNameRef = useRef(meName)
   const [selectedId, setSelectedId] = useState(null)
@@ -155,15 +122,10 @@ export default function DiscoverGlobe({
   const [fallback] = useState(() => !canUseWebGL())
   const [weather, setWeather] = useState({})
   const [now, setNow] = useState(() => Date.now())
-  const weatherRef = useRef(weather)
 
   useEffect(() => {
     meNameRef.current = meName
   }, [meName])
-
-  useEffect(() => {
-    weatherRef.current = weather
-  }, [weather])
 
   useEffect(() => {
     if (fallback) return undefined
@@ -174,27 +136,51 @@ export default function DiscoverGlobe({
   useEffect(() => {
     if (fallback) return undefined
     let cancelled = false
-    const points = [
-      { id: meId, ...coordsFor(meId, meId) },
-      ...people
-        .filter((person) => person.id !== meId)
-        .map((person) => ({ id: person.id, ...coordsFor(person.id, meId) })),
-    ]
-    fetchWeather(points).then((result) => {
-      if (!cancelled && result.ok) setWeather(result.byId)
-    })
+    const points = PLACES.map((place) => ({ id: cityWeatherId(place), lat: place.lat, lng: place.lng }))
+    const load = () => {
+      fetchWeather(points).then((result) => {
+        if (!cancelled && result.ok) setWeather((previous) => ({ ...previous, ...result.byId }))
+      })
+    }
+    load()
+    const timer = setInterval(load, 15 * 60 * 1000)
     return () => {
       cancelled = true
+      clearInterval(timer)
     }
-  }, [fallback, meId, people])
+  }, [fallback])
 
   useEffect(() => {
-    if (fallback) return
-    const rows = Object.values(weather)
-    if (!rows.length) return
-    const average = rows.reduce((total, row) => total + (row.cloud ?? 40), 0) / rows.length
-    threeRef.current?.setCloudOpacity(0.04 + (average / 100) * 0.16)
-  }, [fallback, weather])
+    if (fallback) return undefined
+    let cancelled = false
+    const points = cloudPoints()
+    const load = () => {
+      fetchWeather(points).then((result) => {
+        if (cancelled || !result.ok) return
+        const canvas = buildCloudCanvas(cloudGridFrom(result.byId))
+        if (canvas) threeRef.current?.setClouds(canvas)
+      })
+    }
+    load()
+    const timer = setInterval(load, 15 * 60 * 1000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [fallback])
+
+  useEffect(() => {
+    const labels = labelElsRef.current
+    if (!labels.size) return
+    PLACES.forEach((place) => {
+      const item = labels.get(place.id)
+      if (!item) return
+      const info = weather[cityWeatherId(place)]
+      const temp = typeof info?.temp === 'number' ? `${Math.round(info.temp)}°` : ''
+      item.temp.textContent = temp
+      item.el.title = info ? `${place.name} · ${info.label}${temp ? ` ${temp}` : ''}` : place.name
+    })
+  }, [weather])
 
   const routeByAuthor = useMemo(() => new Map(routes.map((route) => [route.authorId, route])), [routes])
   const selectedPerson = useMemo(() => {
@@ -222,7 +208,7 @@ export default function DiscoverGlobe({
 
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500)
-    camera.position.set(0, 1.8, 6.6)
+    camera.position.set(0, 1.8, 10)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
@@ -238,8 +224,8 @@ export default function DiscoverGlobe({
     controls.rotateSpeed = 0.5
     controls.zoomSpeed = 0.8
     controls.enablePan = false
-    controls.minDistance = 3.2
-    controls.maxDistance = 12
+    controls.minDistance = 4.4
+    controls.maxDistance = 16
     controls.autoRotate = !reducedMotion
     controls.autoRotateSpeed = 0.55
 
@@ -254,51 +240,95 @@ export default function DiscoverGlobe({
     const globe = new THREE.Group()
     scene.add(globe)
 
+    const textureLoader = new THREE.TextureLoader()
+    const dayMap = textureLoader.load(earthDayUrl)
+    dayMap.colorSpace = THREE.SRGBColorSpace
+    dayMap.wrapS = THREE.RepeatWrapping
+    dayMap.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
+    const nightMap = textureLoader.load(earthNightUrl)
+    nightMap.colorSpace = THREE.SRGBColorSpace
+    nightMap.wrapS = THREE.RepeatWrapping
+    nightMap.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
+
+    const sunVector = new THREE.Vector3(1, 0, 0)
     const globeMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        sunDirection: { value: new THREE.Vector3(1, 0, 0) },
-        dayColor: { value: new THREE.Color(0x16507f) },
-        nightColor: { value: new THREE.Color(0x01050b) },
+        dayMap: { value: dayMap },
+        nightMap: { value: nightMap },
+        sunDirection: { value: sunVector },
       },
       vertexShader: `
+        varying vec2 vUv;
         varying vec3 vWorldNormal;
         void main() {
+          vUv = uv;
           vWorldNormal = normalize(mat3(modelMatrix) * normal);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: `
+        uniform sampler2D dayMap;
+        uniform sampler2D nightMap;
         uniform vec3 sunDirection;
-        uniform vec3 dayColor;
-        uniform vec3 nightColor;
+        varying vec2 vUv;
         varying vec3 vWorldNormal;
         void main() {
-          float light = smoothstep(-0.18, 0.3, dot(normalize(vWorldNormal), normalize(sunDirection)));
-          vec3 color = mix(nightColor, dayColor, light);
-          color += vec3(0.05, 0.1, 0.16) * pow(max(dot(normalize(vWorldNormal), normalize(sunDirection)), 0.0), 2.0);
+          vec3 normal = normalize(vWorldNormal);
+          vec3 sunDir = normalize(sunDirection);
+          float sunDot = dot(normal, sunDir);
+          vec3 surface = texture2D(dayMap, vUv).rgb;
+          surface = mix(surface, vec3(0.16, 0.42, 0.66), 0.3);
+          surface *= vec3(0.78, 0.94, 1.1);
+          vec3 dayColor = surface * (0.58 + 0.5 * max(sunDot, 0.0));
+          vec3 lights = texture2D(nightMap, vUv).rgb;
+          float lightsMask = smoothstep(0.04, 0.6, dot(lights, vec3(0.333)));
+          vec3 nightColor = vec3(0.004, 0.012, 0.026) + vec3(1.0, 0.78, 0.44) * lightsMask * 0.4;
+          vec3 color = mix(nightColor, dayColor, smoothstep(-0.16, 0.22, sunDot));
+          float dusk = exp(-pow((sunDot + 0.02) / 0.13, 2.0));
+          color += vec3(0.3, 0.13, 0.04) * dusk * 0.16;
+          color += vec3(0.3, 0.6, 0.9) * pow(max(sunDot, 0.0), 10.0) * 0.06;
           gl_FragColor = vec4(color, 1.0);
         }`,
     })
-    globe.add(new THREE.Mesh(new THREE.SphereGeometry(R, 64, 48), globeMaterial))
+    globe.add(new THREE.Mesh(new THREE.SphereGeometry(R, 96, 64), globeMaterial))
 
-    const cloudTexture = createCloudTexture()
-    const cloudMaterial = new THREE.MeshBasicMaterial({
-      color: 0xcfe9ff,
-      map: cloudTexture,
+    const blankCloud = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat)
+    blankCloud.needsUpdate = true
+    const cloudMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        cloudMap: { value: blankCloud },
+        sunDirection: { value: sunVector },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        varying vec3 vWorldNormal;
+        void main() {
+          vUv = uv;
+          vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform sampler2D cloudMap;
+        uniform vec3 sunDirection;
+        varying vec2 vUv;
+        varying vec3 vWorldNormal;
+        void main() {
+          float alpha = texture2D(cloudMap, vUv).a;
+          float lit = 0.2 + 0.8 * smoothstep(-0.14, 0.32, dot(normalize(vWorldNormal), normalize(sunDirection)));
+          gl_FragColor = vec4(vec3(0.78, 0.88, 1.0), alpha * lit * 0.48);
+        }`,
       transparent: true,
-      opacity: 0.06,
       depthWrite: false,
     })
-    const cloudShell = new THREE.Mesh(new THREE.SphereGeometry(R * 1.008, 48, 32), cloudMaterial)
+    const cloudShell = new THREE.Mesh(new THREE.SphereGeometry(R * 1.012, 64, 48), cloudMaterial)
     globe.add(cloudShell)
 
     const updateSun = () => {
-      const { dir } = sunPosition(new Date())
-      globeMaterial.uniforms.sunDirection.value.copy(dir)
+      sunVector.copy(sunPosition(new Date()).dir)
     }
     updateSun()
     const sunTimer = setInterval(updateSun, 60000)
 
-    const gridMaterial = new THREE.LineBasicMaterial({ color: 0x2a6fa8, transparent: true, opacity: 0.26 })
+    const gridMaterial = new THREE.LineBasicMaterial({ color: 0x2a6fa8, transparent: true, opacity: 0.12 })
     const grid = new THREE.Group()
     for (let lat = -75; lat <= 75; lat += 15) {
       const points = []
@@ -313,19 +343,27 @@ export default function DiscoverGlobe({
     globe.add(grid)
 
     const glowMaterial = new THREE.ShaderMaterial({
-      uniforms: { glowColor: { value: new THREE.Color(0x3fa9ff) } },
+      uniforms: {
+        glowColor: { value: new THREE.Color(0x3fa9ff) },
+        sunDirection: { value: sunVector },
+      },
       vertexShader: `
         varying vec3 vNormal;
+        varying vec3 vWorldNormal;
         void main() {
           vNormal = normalize(normalMatrix * normal);
+          vWorldNormal = normalize(mat3(modelMatrix) * normal);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: `
         uniform vec3 glowColor;
+        uniform vec3 sunDirection;
         varying vec3 vNormal;
+        varying vec3 vWorldNormal;
         void main() {
           float i = pow(0.65 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.0);
-          gl_FragColor = vec4(glowColor, 1.0) * clamp(i, 0.0, 1.0);
+          float day = smoothstep(-0.4, 0.6, dot(normalize(vWorldNormal), normalize(sunDirection)));
+          gl_FragColor = vec4(glowColor * (0.7 + 0.5 * day), 1.0) * clamp(i, 0.0, 1.0) * (0.6 + 0.4 * day);
         }`,
       side: THREE.BackSide,
       blending: THREE.AdditiveBlending,
@@ -375,8 +413,52 @@ export default function DiscoverGlobe({
       disposed: false,
     }
 
-    state.setCloudOpacity = (value) => {
-      cloudMaterial.opacity = Math.min(0.28, Math.max(0.03, value))
+    state.cloudTexture = null
+    state.setClouds = (canvas) => {
+      const texture = new THREE.CanvasTexture(canvas)
+      texture.wrapS = THREE.RepeatWrapping
+      texture.wrapT = THREE.ClampToEdgeWrapping
+      texture.needsUpdate = true
+      cloudMaterial.uniforms.cloudMap.value = texture
+      if (state.cloudTexture) state.cloudTexture.dispose()
+      state.cloudTexture = texture
+    }
+
+    state.labelItems = []
+    const labelLayer = labelsRef.current
+    if (labelLayer) {
+      labelLayer.replaceChildren()
+      labelElsRef.current = new Map()
+      PLACES.forEach((place) => {
+        const el = document.createElement('div')
+        el.setAttribute('data-testid', 'globe-label')
+        el.dataset.tier = String(place.tier)
+        el.className =
+          'pointer-events-none absolute left-0 top-0 flex items-baseline gap-1 whitespace-nowrap text-[10px] leading-none tracking-[0.04em] text-[#b8ddff] will-change-transform'
+        el.style.textShadow = '0 1px 5px rgba(2, 8, 16, 0.92)'
+        el.style.opacity = '0'
+        el.style.visibility = 'hidden'
+        el.style.transition = 'opacity 220ms ease'
+        const dot = document.createElement('span')
+        dot.className = 'h-[3px] w-[3px] shrink-0 rounded-full bg-[#7cffb2]'
+        const name = document.createElement('span')
+        name.textContent = place.name
+        const temp = document.createElement('span')
+        temp.className = 'text-[9px] text-[#6fb8e2]'
+        el.append(dot, name, temp)
+        labelLayer.appendChild(el)
+        const item = {
+          place,
+          el,
+          temp,
+          unit: toVec(place.lat, place.lng, 1).normalize(),
+          threshold: place.tier === 1 ? 14 : place.tier === 2 ? 11.5 : 9.2,
+          width: place.name.length * 11 + 32,
+          visible: false,
+        }
+        labelElsRef.current.set(place.id, item)
+        state.labelItems.push(item)
+      })
     }
 
     const clearNetwork = () => {
@@ -409,8 +491,6 @@ export default function DiscoverGlobe({
           mesh,
           material,
           isMe,
-          lat,
-          lng,
           baseScale: isMe ? 1.7 : 1,
         }
         state.nodes.set(id, node)
@@ -514,14 +594,7 @@ export default function DiscoverGlobe({
       const tooltip = tooltipRef.current
       if (!tooltip) return
       if (id) {
-        const node = state.nodes.get(id)
-        const info = weatherRef.current?.[id]
-        const parts = [node?.name || '']
-        if (info) {
-          parts.push(`${info.label}${info.temp !== null && info.temp !== undefined ? ` ${Math.round(info.temp)}°` : ''}`)
-        }
-        if (node) parts.push(isDaylight(node.lat, node.lng, new Date()) ? '白昼' : '夜晚')
-        tooltip.textContent = parts.filter(Boolean).join(' · ')
+        tooltip.textContent = state.nodes.get(id)?.name || ''
         tooltip.style.left = `${event.clientX}px`
         tooltip.style.top = `${event.clientY}px`
         tooltip.style.opacity = 1
@@ -556,6 +629,54 @@ export default function DiscoverGlobe({
     threeRef.current = state
     state.setSelected(null)
 
+    const projected = new THREE.Vector3()
+    const updateLabels = () => {
+      const items = state.labelItems
+      if (!items.length) return
+      const width = renderer.domElement.clientWidth
+      const height = renderer.domElement.clientHeight
+      if (!width || !height) return
+      const distance = camera.position.length()
+      const camDir = camera.position.clone().normalize()
+      const placed = []
+      camera.updateMatrixWorld()
+      items.forEach((item) => {
+        let visible = distance <= item.threshold && item.unit.dot(camDir) > 0.08
+        let x = 0
+        let y = 0
+        if (visible) {
+          projected.copy(item.unit).multiplyScalar(R * 1.014).project(camera)
+          x = (projected.x * 0.5 + 0.5) * width
+          y = (-projected.y * 0.5 + 0.5) * height
+          if (projected.z < -1 || projected.z > 1 || x < 4 || x > width - 4 || y < 72 || y > height - 86) {
+            visible = false
+          }
+        }
+        if (visible) {
+          const rect = { left: x + 5, top: y - 8, right: x + 5 + item.width, bottom: y + 8 }
+          for (let index = 0; index < placed.length; index += 1) {
+            const other = placed[index]
+            if (rect.left < other.right && rect.right > other.left && rect.top < other.bottom && rect.bottom > other.top) {
+              visible = false
+              break
+            }
+          }
+          if (visible) placed.push(rect)
+        }
+        if (visible) {
+          const fade = Math.min(1, (item.threshold - distance) / 0.7)
+          item.el.style.opacity = String(0.92 * fade)
+          item.el.style.visibility = 'visible'
+          item.el.style.transform = `translate3d(${x + 5}px, ${y - 8}px, 0)`
+          item.visible = true
+        } else if (item.visible) {
+          item.el.style.opacity = '0'
+          item.el.style.visibility = 'hidden'
+          item.visible = false
+        }
+      })
+    }
+
     const clock = new THREE.Clock()
     let frame = 0
     const animate = () => {
@@ -568,8 +689,9 @@ export default function DiscoverGlobe({
         const scale = THREE.MathUtils.lerp(node.mesh.scale.x, target, 0.14)
         node.mesh.scale.setScalar(scale)
       })
-      cloudShell.rotation.y += 0.00022
       controls.update()
+      camera.updateMatrixWorld()
+      updateLabels()
       renderer.render(scene, camera)
     }
     animate()
@@ -590,7 +712,10 @@ export default function DiscoverGlobe({
       renderer.domElement.removeEventListener('pointerleave', onPointerLeave)
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
       controls.dispose()
-      cloudTexture?.dispose()
+      state.cloudTexture?.dispose()
+      dayMap.dispose()
+      nightMap.dispose()
+      blankCloud.dispose()
       disposeObject(scene)
       renderer.dispose()
       renderer.domElement.remove()
@@ -608,19 +733,6 @@ export default function DiscoverGlobe({
   }, [fallback, selectedId])
 
   const currentDate = new Date(now)
-  const meCoords = coordsFor(meId, meId)
-  const meWeather = weather[meId]
-  const meSky = isDaylight(meCoords.lat, meCoords.lng, currentDate) ? '白昼' : '夜晚'
-  const meWeatherText = meWeather
-    ? `${meWeather.label}${meWeather.temp !== null && meWeather.temp !== undefined ? ` ${Math.round(meWeather.temp)}°` : ''}`
-    : ''
-  const selectedCoords = selectedId ? coordsFor(selectedId, meId) : null
-  const selectedWeather = selectedId ? weather[selectedId] : null
-  const selectedSky = selectedCoords
-    ? isDaylight(selectedCoords.lat, selectedCoords.lng, currentDate)
-      ? '白昼'
-      : '夜晚'
-    : ''
 
   const closeSheet = () => setSelectedId(null)
   const routeIndex = selectedRoute ? routes.findIndex((route) => route.id === selectedRoute.id) : -1
@@ -640,6 +752,12 @@ export default function DiscoverGlobe({
           className={fallback ? 'hidden' : 'absolute inset-0'}
         />
         <div
+          ref={labelsRef}
+          data-testid="globe-labels"
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+        />
+        <div
           ref={tooltipRef}
           data-testid="globe-tooltip"
           className="pointer-events-none fixed z-20 -translate-x-1/2 -translate-y-[160%] rounded-md border border-[#5ab4ff]/45 bg-[#081628]/92 px-2.5 py-1.5 text-[13px] whitespace-nowrap text-[#cfe9ff] opacity-0 transition-opacity"
@@ -648,11 +766,10 @@ export default function DiscoverGlobe({
 
         <div className="pointer-events-none absolute inset-x-0 top-3 text-center">
           <p className="text-[11px] tracking-[0.08em] text-[#7fc4f0]">
-            {meName} 的地球 · 只有你认识的人
+            {meName} 的地球 · 全球实时天气
           </p>
           <p data-testid="globe-weather" className="mt-1 text-[10px] tracking-[0.06em] text-[#3d6f96]">
-            此刻 · 当地 {localClock(meCoords.lng, currentDate)} · {meSky}
-            {meWeatherText ? ` · ${meWeatherText}` : ''}
+            此刻 · 本地 {deviceClock(currentDate)} · {deviceDaylight(currentDate)} · 城市实时天气
           </p>
         </div>
 
@@ -718,7 +835,7 @@ export default function DiscoverGlobe({
 
         <div className="pointer-events-none absolute inset-x-0 bottom-4 flex items-end justify-between px-5">
           <p className="text-[11px] leading-5 text-[#3d6f96]">
-            拖动旋转 · 双指缩放
+            拖动旋转 · 放大显示地名
             <br />
             点击节点查看关系
           </p>
@@ -762,19 +879,6 @@ export default function DiscoverGlobe({
                 </span>
               ) : null}
             </div>
-            {selectedCoords ? (
-              <p className="mt-2 text-[11px] tracking-[0.04em] text-[#7fc4f0]">
-                当地 {localClock(selectedCoords.lng, currentDate)} · {selectedSky}
-                {selectedWeather
-                  ? ` · ${selectedWeather.label}${
-                      selectedWeather.temp !== null && selectedWeather.temp !== undefined
-                        ? ` ${Math.round(selectedWeather.temp)}°`
-                        : ''
-                    }`
-                  : ''}
-              </p>
-            ) : null}
-
             {selectedId === meId ? (
               <p className="mt-4 text-[13px] leading-6 text-[#7fc4f0]">
                 这是你的坐标。本周航线都从这里出发。
