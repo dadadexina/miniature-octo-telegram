@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import AuthBar from '../components/AuthBar'
 import Avatar from '../components/Avatar'
 import CopySql from '../components/CopySql'
+import ImageViewer from '../components/ImageViewer'
 import NavBar from '../components/NavBar'
 import LongTextBody from '../components/LongTextBody'
 import ReportSheet from '../components/ReportSheet'
@@ -21,7 +22,7 @@ import {
   recallMessage,
   searchThreadMessages,
 } from '../lib/messages'
-import { downscaleImageFile } from '../lib/imagePipeline'
+import { readImageFile } from '../lib/imagePipeline'
 import { callEventText } from '../lib/call'
 import { useCallCenter } from '../lib/callContext'
 import { MESSAGE_MEDIA_LIMITS, uploadMessageBlob } from '../lib/messageMedia'
@@ -370,19 +371,19 @@ export default function ChatDetail() {
     e.target.value = ''
     if (!file) return
     setAttach({ status: 'processing', error: '' })
-    const scaled = await downscaleImageFile(file, MESSAGE_MEDIA_LIMITS)
-    if (!scaled.ok) {
-      setAttach({ status: 'error', error: scaled.error })
+    const prepared = await readImageFile(file, MESSAGE_MEDIA_LIMITS)
+    if (!prepared.ok) {
+      setAttach({ status: 'error', error: prepared.error })
       return
     }
     const url =
-      typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(scaled.blob) : ''
+      typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(prepared.blob) : ''
     setAttach({
       status: 'ready',
-      blob: scaled.blob,
+      blob: prepared.blob,
       url,
-      width: scaled.width || 0,
-      height: scaled.height || 0,
+      width: prepared.width || 0,
+      height: prepared.height || 0,
       error: '',
     })
   }
@@ -679,6 +680,7 @@ export default function ChatDetail() {
                 )
               }
               const read = mine && peerReadTs > 0 && peerReadTs >= msg.time
+              const imageOnly = msg.attachments?.type === 'image' && !String(msg.text || '').trim()
               return (
                 <div
                   key={msg.id}
@@ -708,7 +710,7 @@ export default function ChatDetail() {
                       </Link>
                     )}
                     <div className={`flex max-w-[78%] flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                      <Bubble mine={mine}>
+                      <Bubble mine={mine} bare={imageOnly}>
                         {msg.replyToId ? <QuoteStrip mine={mine} quote={resolveQuote(msg.replyToId)} /> : null}
                         {msg.attachments?.type === 'image' ? (
                           <SignedImage attachment={msg.attachments} onView={setViewerUrl} />
@@ -800,7 +802,7 @@ export default function ChatDetail() {
                           <img
                             src={item.image}
                             alt=""
-                            className="mb-1 max-w-full border border-eink-divider object-cover opacity-80"
+                            className="mb-1 max-w-full object-contain opacity-80"
                             style={{ width: 160 }}
                           />
                         ) : null}
@@ -851,7 +853,7 @@ export default function ChatDetail() {
               <img
                 src={attach.url}
                 alt="附件预览"
-                className="h-14 w-14 border border-eink-divider object-cover"
+                className="h-14 w-14 object-contain"
               />
             ) : null}
             <button
@@ -952,19 +954,7 @@ export default function ChatDetail() {
         />
       ) : null}
 
-      {viewerUrl ? (
-        <div
-          data-testid="image-viewer"
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4"
-          onClick={() => setViewerUrl(null)}
-        >
-          <img
-            src={viewerUrl}
-            alt="图片大图"
-            className="max-h-full max-w-full object-contain"
-          />
-        </div>
-      ) : null}
+      {viewerUrl ? <ImageViewer url={viewerUrl} onClose={() => setViewerUrl(null)} /> : null}
     </div>
   )
 }
@@ -992,7 +982,10 @@ function pickReply() {
   return REPLIES[Math.floor(Math.random() * REPLIES.length)]
 }
 
-function Bubble({ mine, children }) {
+function Bubble({ mine, bare = false, children }) {
+  if (bare) {
+    return <div className="relative max-w-full">{children}</div>
+  }
   return (
     <div className={`relative max-w-full ${mine ? 'mr-1' : 'ml-1'}`}>
       <span className={`bubble-tail ${mine ? 'bubble-tail-mine' : 'bubble-tail-peer'}`} />

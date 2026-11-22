@@ -5,7 +5,7 @@ import { signedMediaUrl } from '../lib/messageMedia'
 function displaySize(attachment) {
   const w = Number(attachment?.width) || 0
   const h = Number(attachment?.height) || 0
-  if (!w || !h) return { width: 168, height: 168 }
+  if (!w || !h) return null
   const long = 220
   const short = Math.max(96, Math.round((long * Math.min(w, h)) / Math.max(w, h)))
   return w >= h ? { width: long, height: short } : { width: short, height: long }
@@ -43,7 +43,7 @@ export default function SignedImage({ attachment, onView }) {
     return (
       <div
         data-testid="media-loading"
-        style={{ width: size.width, height: size.height }}
+        style={size ? { width: size.width, height: size.height } : { width: 168, height: 168 }}
         className="mt-1 animate-pulse bg-eink-line/40"
       />
     )
@@ -55,10 +55,10 @@ export default function SignedImage({ attachment, onView }) {
       src={url}
       alt="图片消息"
       loading="lazy"
-      width={size.width}
-      height={size.height}
-      style={{ width: size.width, height: size.height }}
-      className="mt-1 cursor-zoom-in border border-eink-divider object-cover"
+      width={size?.width}
+      height={size?.height}
+      style={size ? { width: size.width, height: size.height } : { maxHeight: 240 }}
+      className="mt-1 max-w-full cursor-zoom-in object-contain"
       onClick={() => onView?.(url)}
     />
   )

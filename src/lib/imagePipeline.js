@@ -1,3 +1,5 @@
+const MAX_DIMENSION_PROBE_BYTES = 15 * 1024 * 1024
+
 export const IMAGE_PIPELINE_DEFAULTS = {
   maxSourceBytes: 10 * 1024 * 1024,
   maxSide: 1280,
@@ -21,6 +23,53 @@ async function canvasToBlob(canvas, quality) {
     })
   }
   return null
+}
+
+async function readImageDimensions(file) {
+  if (typeof file?.size === 'number' && file.size > MAX_DIMENSION_PROBE_BYTES) {
+    return { width: 0, height: 0 }
+  }
+  let revokeUrl = null
+  try {
+    if (typeof createImageBitmap === 'function') {
+      const source = await createImageBitmap(file).catch(() => null)
+      if (source) {
+        const info = { width: source.width || 0, height: source.height || 0 }
+        source.close?.()
+        return info
+      }
+    }
+    if (typeof Image === 'function' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      const img = await new Promise((resolve) => {
+        const el = new Image()
+        revokeUrl = URL.createObjectURL(file)
+        el.onload = () => resolve(el)
+        el.onerror = () => resolve(null)
+        el.src = revokeUrl
+      })
+      if (img) return { width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0 }
+    }
+  } catch {
+    // 尺寸读取失败时返回 0,展示端按自然比例渲染
+  } finally {
+    if (revokeUrl) URL.revokeObjectURL(revokeUrl)
+  }
+  return { width: 0, height: 0 }
+}
+
+// 原图上传:只校验与读取尺寸,不对图片做任何重编码或压缩。
+export async function readImageFile(file, limits = IMAGE_PIPELINE_DEFAULTS) {
+  const validation = validateImageFile(file, limits)
+  if (!validation.ok) return { ok: false, error: validation.error }
+  const { width, height } = await readImageDimensions(file)
+  return {
+    ok: true,
+    blob: file,
+    contentType: file.type || 'application/octet-stream',
+    width,
+    height,
+    fallback: true,
+  }
 }
 
 export async function downscaleImageFile(file, limits = IMAGE_PIPELINE_DEFAULTS) {

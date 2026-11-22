@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('./supabase', () => ({ supabase: {} }))
 
-const { MESSAGE_MEDIA_BUCKET, buildMediaPath, pairFolder } = await import('./messageMedia')
+const { MESSAGE_MEDIA_BUCKET, buildMediaPath, extensionForMime, pairFolder } = await import('./messageMedia')
 
 describe('pairFolder', () => {
   it('与顺序无关且用 __ 连接', () => {
@@ -27,5 +27,14 @@ describe('buildMediaPath', () => {
 
   it('桶名固定为 message_media', () => {
     expect(MESSAGE_MEDIA_BUCKET).toBe('message_media')
+  })
+
+  it('按原图 MIME 生成扩展名', () => {
+    expect(buildMediaPath('a__b', 1, 'r', extensionForMime('image/png'))).toBe('a__b/1-r.png')
+    expect(buildMediaPath('a__b', 1, 'r', extensionForMime('image/jpeg'))).toBe('a__b/1-r.jpg')
+    expect(extensionForMime('image/webp; charset=binary')).toBe('webp')
+    expect(extensionForMime('application/octet-stream')).toBe('jpg')
+    expect(extensionForMime('')).toBe('jpg')
+    expect(buildMediaPath('a__b', 1, 'r', '../x')).toBe('a__b/1-r.x')
   })
 })
