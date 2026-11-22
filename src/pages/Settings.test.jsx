@@ -10,27 +10,39 @@ const storeState = vi.hoisted(() => ({
   currentUser: { id: 'u1', nickname: '我' },
   authUser: null,
   profile: { nickname: '我' },
+  blockedIds: [],
 }))
 const storeMocks = vi.hoisted(() => ({
   purgeAccount: vi.fn(),
   logout: vi.fn(),
   setCloudProfile: vi.fn(),
+  setBlockedFor: vi.fn(),
+  avatarColor: vi.fn(() => '#000'),
 }))
 
 vi.mock('../store', () => ({
   useStore: () => ({
     currentUser: storeState.currentUser,
     authUser: storeState.authUser,
+    avatarColor: storeMocks.avatarColor,
+    blockedIds: storeState.blockedIds,
     profile: storeState.profile,
+    setBlockedFor: storeMocks.setBlockedFor,
     setCloudProfile: storeMocks.setCloudProfile,
     purgeAccount: storeMocks.purgeAccount,
     logout: storeMocks.logout,
   }),
 }))
 
-const profileMocks = vi.hoisted(() => ({ updateProfileSignature: vi.fn() }))
+const profileMocks = vi.hoisted(() => ({
+  updateProfileSignature: vi.fn(),
+  fetchProfilesByIds: vi.fn(),
+}))
 
-vi.mock('../lib/profiles', () => ({ updateProfileSignature: profileMocks.updateProfileSignature }))
+vi.mock('../lib/profiles', () => ({
+  updateProfileSignature: profileMocks.updateProfileSignature,
+  fetchProfilesByIds: profileMocks.fetchProfilesByIds,
+}))
 
 const dataExportMock = vi.hoisted(() => ({
   buildMediaArchive: vi.fn(),
@@ -84,7 +96,9 @@ beforeEach(() => {
   storeState.currentUser = { id: 'u1', nickname: '我' }
   storeState.authUser = null
   storeState.profile = { nickname: '我' }
+  storeState.blockedIds = []
   vi.clearAllMocks()
+  profileMocks.fetchProfilesByIds.mockResolvedValue({ ok: true, profiles: [] })
   ringtoneStoreMock.loadCustomRingtone.mockResolvedValue(null)
   ringtoneStoreMock.saveCustomRingtone.mockImplementation(async (file) => ({ name: file.name, size: file.size }))
   ringtoneStoreMock.removeCustomRingtone.mockResolvedValue()
@@ -142,7 +156,7 @@ describe('Settings 设置页', () => {
     expect(screen.getByText('界面显示')).toBeTruthy()
     expect(screen.getByText('主题、字体大小调整')).toBeTruthy()
     expect(screen.getByText('账号安全')).toBeTruthy()
-    expect(screen.getByText('修改密码、注销账号')).toBeTruthy()
+    expect(screen.getByText('修改密码、黑名单、注销账号')).toBeTruthy()
     expect(screen.getByText('其他设置')).toBeTruthy()
     expect(screen.getByText('个性签名等更多偏好')).toBeTruthy()
   })
@@ -379,6 +393,22 @@ describe('Settings 设置页', () => {
     fireEvent.submit(screen.getByTestId('settings-save-password').closest('form'))
     expect(screen.getByTestId('settings-notice')).toBeTruthy()
     expect(screen.getByText('演示账号不支持修改密码，请登录云端账号后使用')).toBeTruthy()
+  })
+
+  it('账号安全面板展示黑名单并支持移除', async () => {
+    useCloudAccount()
+    storeState.blockedIds = ['u2']
+    profileMocks.fetchProfilesByIds.mockResolvedValue({
+      ok: true,
+      profiles: [{ id: 'u2', nickname: '小黑', username: 'hei' }],
+    })
+    setup()
+    openView(2)
+
+    expect(screen.getByTestId('blacklist-section')).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('blacklist-nickname').textContent).toBe('小黑'))
+    fireEvent.click(screen.getByText('移除'))
+    expect(storeMocks.setBlockedFor).toHaveBeenCalledWith('u2', false)
   })
 
   it('账号安全支持按邮箱/ID 举报并打开举报面板', () => {
