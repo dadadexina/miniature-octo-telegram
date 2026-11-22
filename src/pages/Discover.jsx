@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Avatar from '../components/Avatar'
+import ImageViewer from '../components/ImageViewer'
 import MomentCover from '../components/MomentCover'
 import { CommentIcon, ThumbIcon } from '../components/MomentIcons'
 import PullIndicator from '../components/PullIndicator'
-import ReportSheet from '../components/ReportSheet'
 import { isUuid } from '../lib/messages'
 import { downscaleMomentImage } from '../lib/momentImage'
 import usePullToRefresh from '../lib/usePullToRefresh'
@@ -22,7 +22,6 @@ import {
   uploadMomentImage,
 } from '../lib/moments'
 import { fetchProfilesByIds } from '../lib/profiles'
-import { submitReport } from '../lib/reports'
 import { loadLocalSignature } from '../lib/signature'
 import { useStore } from '../store'
 import { formatRelativeTime } from '../utils'
@@ -55,7 +54,7 @@ function CloudDiscover() {
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState('')
   const [publishing, setPublishing] = useState(false)
-  const [reportMoment, setReportMoment] = useState(null)
+  const [viewerUrl, setViewerUrl] = useState('')
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState({})
   const [commentText, setCommentText] = useState({})
@@ -315,13 +314,21 @@ function CloudDiscover() {
                     </p>
                   ) : null}
                   {moment.imageUrl ? (
-                    <img
-                      data-testid="moment-image"
-                      src={moment.imageUrl}
-                      alt="动态图片"
-                      loading="lazy"
-                      className="mt-2 max-h-[320px] w-auto max-w-[240px] border border-eink-divider object-cover"
-                    />
+                    <button
+                      type="button"
+                      data-testid="moment-image-open"
+                      aria-label="查看动态原图"
+                      className="mt-2 block cursor-zoom-in text-left"
+                      onClick={() => setViewerUrl(moment.imageUrl)}
+                    >
+                      <img
+                        data-testid="moment-image"
+                        src={moment.imageUrl}
+                        alt="动态图片"
+                        loading="lazy"
+                        className="max-h-[320px] w-auto max-w-[240px] border border-eink-divider object-cover"
+                      />
+                    </button>
                   ) : null}
                   <div className="mt-2.5 flex items-center gap-3 text-[12px] text-eink-faint">
                     <span>{formatRelativeTime(moment.createdAt)}</span>
@@ -355,16 +362,7 @@ function CloudDiscover() {
                       >
                         删除
                       </button>
-                    ) : (
-                      <button
-                        type="button"
-                        data-testid="report-moment"
-                        className="font-medium text-eink-sub"
-                        onClick={() => setReportMoment(moment)}
-                      >
-                        举报
-                      </button>
-                    )}
+                    ) : null}
                   </div>
                   {momentLikes.length ? (
                     <div className="mt-1.5 border-t border-eink-divider pt-1.5 text-[12px] leading-5 text-eink-sub">
@@ -426,24 +424,7 @@ function CloudDiscover() {
         ) : null}
       </div>
 
-      {reportMoment ? (
-        <ReportSheet
-          title="举报这条动态，我们会尽快核实处理。"
-          onClose={() => setReportMoment(null)}
-          onSubmit={async (reason, detail) => {
-            const result = await submitReport({
-              reporterId: meId,
-              targetType: 'moment',
-              targetId: reportMoment.id,
-              targetUserId: reportMoment.authorId,
-              reason,
-              detail,
-            })
-            if (result.ok) setError('已提交举报，感谢你的反馈')
-            return result
-          }}
-        />
-      ) : null}
+      {viewerUrl ? <ImageViewer url={viewerUrl} onClose={() => setViewerUrl('')} /> : null}
 
       {open ? (
         <div className="fixed inset-0 z-40 flex items-end bg-black/60" onClick={() => !publishing && setOpen(false)}>

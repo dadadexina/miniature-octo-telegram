@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
+import ReportSheet from '../components/ReportSheet'
 import { scheduleAccountDeletion } from '../lib/accountDeletion'
 import useSwipeBack from '../hooks/useSwipeBack'
 import {
@@ -25,6 +26,7 @@ import { isUuid } from '../lib/messages'
 import { saveMomentCover } from '../lib/momentCover'
 import { NOTIFICATION_SOUNDS, playNotificationSound } from '../lib/notificationSounds'
 import { updateProfileSignature } from '../lib/profiles'
+import { submitReport } from '../lib/reports'
 import {
   currentPushSubscription,
   disablePush,
@@ -69,6 +71,16 @@ const VIEW_TITLES = {
   display: '界面显示',
   security: '账号安全',
   other: '其他设置',
+}
+
+const REPORT_TARGET_LIMIT = 120
+
+function detectReportKind(value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return '邮箱'
+  if (/^\+?\d[\d\s-]{4,19}$/.test(text)) return '手机号'
+  return '用户 ID'
 }
 
 const NOTIFY_ITEMS = [
@@ -125,6 +137,8 @@ export default function Settings() {
   const [pushBusy, setPushBusy] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
   const [archiveBusy, setArchiveBusy] = useState(false)
+  const [reportTarget, setReportTarget] = useState('')
+  const [reportSheetOpen, setReportSheetOpen] = useState(false)
   const fileRef = useRef(null)
   const ringtoneFileRef = useRef(null)
   const previewRef = useRef(null)
@@ -998,6 +1012,66 @@ export default function Settings() {
               </div>
             </form>
 
+            <form
+              className="mt-6 border-y border-eink-divider bg-eink-bar"
+              data-testid="settings-report"
+              onSubmit={(e) => {
+                e.preventDefault()
+                const target = reportTarget.trim()
+                if (!target) {
+                  setNotice('请输入举报对象')
+                  return
+                }
+                if (!cloudAccount) {
+                  setNotice('演示账号不支持举报，请登录云端账号后使用')
+                  return
+                }
+                if (target === currentUser?.id || target === email || target === phone) {
+                  setNotice('不能举报自己')
+                  return
+                }
+                setReportSheetOpen(true)
+              }}
+            >
+              <div className="px-4 py-3.5">
+                <p className="text-[16px] text-eink-text">举报</p>
+                <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                  输入被举报用户的 ID、邮箱或手机号，选择原因后提交，我们会尽快核实处理。
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <input
+                    data-testid="settings-report-target"
+                    type="text"
+                    inputMode="search"
+                    autoComplete="off"
+                    maxLength={REPORT_TARGET_LIMIT}
+                    className="h-10 min-w-0 flex-1 border border-eink-line/30 bg-eink-paper px-3 text-[15px] outline-none"
+                    placeholder="ID / 邮箱 / 手机号"
+                    value={reportTarget}
+                    onChange={(e) =>
+                      setReportTarget(inputValue(e, (v) => truncateChars(v, REPORT_TARGET_LIMIT)))
+                    }
+                    onCompositionEnd={(e) =>
+                      setReportTarget(inputValue(e, (v) => truncateChars(v, REPORT_TARGET_LIMIT)))
+                    }
+                  />
+                  <button
+                    type="submit"
+                    data-testid="settings-report-next"
+                    className="h-10 shrink-0 border border-eink-ink px-4 text-[14px] text-eink-ink active:bg-[#E7E5DD] disabled:opacity-60"
+                    disabled={!reportTarget.trim()}
+                  >
+                    举报
+                  </button>
+                </div>
+                {reportTarget.trim() ? (
+                  <p data-testid="settings-report-kind" className="mt-2 text-[12px] text-eink-sub">
+                    将按{detectReportKind(reportTarget)}举报：{reportTarget.trim()}
+                  </p>
+                ) : null}
+              </div>
+            </form>
+
             <div className="mt-8 border-y border-eink-divider bg-eink-bar">
               <div className="px-4 py-3.5">
                 <p className="text-[16px] text-eink-text">导出我的数据</p>
@@ -1117,6 +1191,30 @@ export default function Settings() {
         onChange={onUploadRingtone}
         data-testid="settings-ringtone-input"
       />
+
+      {reportSheetOpen ? (
+        <ReportSheet
+          title={`举报「${reportTarget.trim()}」，我们会尽快核实处理。`}
+          onClose={() => setReportSheetOpen(false)}
+          onSubmit={async (reason, detail) => {
+            const target = reportTarget.trim()
+            const result = await submitReport({
+              reporterId: currentUser.id,
+              targetType: 'user',
+              targetId: target,
+              targetUserId: isUuid(target) ? target : '',
+              reason,
+              detail,
+            })
+            if (result.ok) {
+              setReportSheetOpen(false)
+              setReportTarget('')
+              setNotice('已提交举报，感谢你的反馈')
+            }
+            return result
+          }}
+        />
+      ) : null}
 
       {notice ? (
         <div

@@ -1,9 +1,42 @@
 const MAX_DIMENSION_PROBE_BYTES = 15 * 1024 * 1024
+const HEIC_MIME_TYPES = new Set([
+  'image/heic',
+  'image/heif',
+  'image/heic-sequence',
+  'image/heif-sequence',
+])
+const HEIC_EXTENSION = /\.(heic|heif)$/i
 
 export const IMAGE_PIPELINE_DEFAULTS = {
   maxSourceBytes: 10 * 1024 * 1024,
   maxSide: 1280,
   jpegQuality: 0.8,
+}
+
+export function isHeicFile(file) {
+  if (!file) return false
+  if (HEIC_MIME_TYPES.has(String(file.type || '').toLowerCase())) return true
+  return HEIC_EXTENSION.test(String(file.name || ''))
+}
+
+async function convertHeicToJpeg(file) {
+  const mod = await import('heic2any')
+  const heic2any = mod.default || mod
+  const output = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 })
+  return Array.isArray(output) ? output[0] : output
+}
+
+async function toBrowserReadable(file) {
+  if (!isHeicFile(file)) {
+    return { ok: true, blob: file, contentType: file.type || 'image/jpeg', converted: false }
+  }
+  try {
+    const blob = await convertHeicToJpeg(file)
+    if (!blob) return { ok: false, error: 'HEIC 图片转换失败，请改用 JPG 或 PNG 格式' }
+    return { ok: true, blob, contentType: 'image/jpeg', converted: true }
+  } catch {
+    return { ok: false, error: 'HEIC 图片转换失败，请改用 JPG 或 PNG 格式' }
+  }
 }
 
 export function validateImageFile(file, limits = IMAGE_PIPELINE_DEFAULTS) {
@@ -61,20 +94,25 @@ async function readImageDimensions(file) {
 export async function readImageFile(file, limits = IMAGE_PIPELINE_DEFAULTS) {
   const validation = validateImageFile(file, limits)
   if (!validation.ok) return { ok: false, error: validation.error }
-  const { width, height } = await readImageDimensions(file)
+  const prepared = await toBrowserReadable(file)
+  if (!prepared.ok) return prepared
+  const { width, height } = await readImageDimensions(prepared.blob)
   return {
     ok: true,
-    blob: file,
-    contentType: file.type || 'application/octet-stream',
+    blob: prepared.blob,
+    contentType: prepared.contentType,
     width,
     height,
-    fallback: true,
+    fallback: !prepared.converted,
   }
 }
 
 export async function downscaleImageFile(file, limits = IMAGE_PIPELINE_DEFAULTS) {
   const validation = validateImageFile(file, limits)
   if (!validation.ok) return { ok: false, error: validation.error }
+  const prepared = await toBrowserReadable(file)
+  if (!prepared.ok) return prepared
+  const sourceFile = prepared.blob
 
   try {
     const canvas =
@@ -83,8 +121,8 @@ export async function downscaleImageFile(file, limits = IMAGE_PIPELINE_DEFAULTS)
     if (!ctx) {
       return {
         ok: true,
-        blob: file,
-        contentType: file.type || 'image/jpeg',
+        blob: sourceFile,
+        contentType: prepared.contentType,
         width: 0,
         height: 0,
         fallback: true,
@@ -92,12 +130,12 @@ export async function downscaleImageFile(file, limits = IMAGE_PIPELINE_DEFAULTS)
     }
 
     let source =
-      typeof createImageBitmap === 'function' ? await createImageBitmap(file).catch(() => null) : null
+      typeof createImageBitmap === 'function' ? await createImageBitmap(sourceFile).catch(() => null) : null
     let revokeUrl = null
     if (!source && typeof Image === 'function' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
       source = await new Promise((resolve) => {
         const img = new Image()
-        revokeUrl = URL.createObjectURL(file)
+        revokeUrl = URL.createObjectURL(sourceFile)
         img.onload = () => resolve(img)
         img.onerror = () => resolve(null)
         img.src = revokeUrl
@@ -107,8 +145,8 @@ export async function downscaleImageFile(file, limits = IMAGE_PIPELINE_DEFAULTS)
       if (revokeUrl) URL.revokeObjectURL(revokeUrl)
       return {
         ok: true,
-        blob: file,
-        contentType: file.type || 'image/jpeg',
+        blob: sourceFile,
+        contentType: prepared.contentType,
         width: 0,
         height: 0,
         fallback: true,
@@ -127,8 +165,8 @@ export async function downscaleImageFile(file, limits = IMAGE_PIPELINE_DEFAULTS)
     if (blob) return { ok: true, blob, contentType: 'image/jpeg', width: canvas.width, height: canvas.height }
     return {
       ok: true,
-      blob: file,
-      contentType: file.type || 'image/jpeg',
+      blob: sourceFile,
+      contentType: prepared.contentType,
       width: canvas.width,
       height: canvas.height,
       fallback: true,

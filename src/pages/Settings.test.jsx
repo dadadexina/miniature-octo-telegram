@@ -381,6 +381,28 @@ describe('Settings 设置页', () => {
     expect(screen.getByText('演示账号不支持修改密码，请登录云端账号后使用')).toBeTruthy()
   })
 
+  it('账号安全支持按邮箱/ID 举报并打开举报面板', () => {
+    useCloudAccount()
+    setup()
+    openView(2)
+
+    const input = screen.getByTestId('settings-report-target')
+    fireEvent.change(input, { target: { value: 'bob@example.com' } })
+    expect(screen.getByTestId('settings-report-kind').textContent).toContain('邮箱')
+
+    fireEvent.click(screen.getByTestId('settings-report-next'))
+    expect(screen.getByTestId('report-sheet')).toBeTruthy()
+    expect(screen.getByText(/举报「bob@example.com」/)).toBeTruthy()
+  })
+
+  it('演示账号举报时给出登录提示', () => {
+    setup()
+    openView(2)
+    fireEvent.change(screen.getByTestId('settings-report-target'), { target: { value: '12345' } })
+    fireEvent.click(screen.getByTestId('settings-report-next'))
+    expect(screen.getByTestId('settings-notice').textContent).toContain('演示账号不支持举报')
+  })
+
   it('云端账号直接提交无法修改密码', () => {
     useCloudAccount()
     setup()

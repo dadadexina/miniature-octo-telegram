@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
+import ImageViewer from '../components/ImageViewer'
 import MomentCover from '../components/MomentCover'
 import { CommentIcon, ThumbIcon } from '../components/MomentIcons'
 import NavBar from '../components/NavBar'
@@ -54,6 +55,7 @@ function CloudFriendMoments() {
   const [denied, setDenied] = useState(false)
   const [expanded, setExpanded] = useState({})
   const [commentText, setCommentText] = useState({})
+  const [viewerUrl, setViewerUrl] = useState('')
 
   const load = useCallback(
     async ({ append = false, before = null } = {}) => {
@@ -241,13 +243,21 @@ function CloudFriendMoments() {
                     </p>
                   ) : null}
                   {moment.imageUrl ? (
-                    <img
-                      data-testid="friend-moment-image"
-                      src={moment.imageUrl}
-                      alt="动态图片"
-                      loading="lazy"
-                      className="mt-2 max-h-[320px] w-auto max-w-[240px] border border-eink-divider object-cover"
-                    />
+                    <button
+                      type="button"
+                      data-testid="friend-moment-image-open"
+                      aria-label="查看动态原图"
+                      className="mt-2 block cursor-zoom-in text-left"
+                      onClick={() => setViewerUrl(moment.imageUrl)}
+                    >
+                      <img
+                        data-testid="friend-moment-image"
+                        src={moment.imageUrl}
+                        alt="动态图片"
+                        loading="lazy"
+                        className="max-h-[320px] w-auto max-w-[240px] border border-eink-divider object-cover"
+                      />
+                    </button>
                   ) : null}
                   <div className="mt-2.5 flex items-center gap-3 text-[12px] text-eink-faint">
                     <span>{formatRelativeTime(moment.createdAt)}</span>
@@ -333,6 +343,8 @@ function CloudFriendMoments() {
         ) : null}
         <div className="h-6" />
       </div>
+
+      {viewerUrl ? <ImageViewer url={viewerUrl} onClose={() => setViewerUrl('')} /> : null}
     </div>
   )
 }

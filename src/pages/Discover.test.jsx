@@ -96,6 +96,32 @@ describe('Discover 朋友圈页', () => {
     await waitFor(() => expect(fetchMoments).toHaveBeenCalledTimes(2))
   })
 
+  it('单击动态图片打开原图查看器', async () => {
+    fetchMoments.mockResolvedValue({
+      ok: true,
+      moments: [{ id: 'm1', authorId: ME, content: '', imageUrl: 'https://example.com/p.jpg', createdAt: Date.now() }],
+      hasMore: false,
+      oldest: null,
+    })
+    setup()
+    fireEvent.click(await screen.findByTestId('moment-image-open'))
+    expect(screen.getByTestId('image-viewer')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('image-viewer-close'))
+    expect(screen.queryByTestId('image-viewer')).toBeNull()
+  })
+
+  it('动态下方不再提供举报入口', async () => {
+    fetchMoments.mockResolvedValue({
+      ok: true,
+      moments: [{ id: 'm2', authorId: '22222222-2222-4222-8222-222222222222', content: '他人动态', imageUrl: '', createdAt: Date.now() }],
+      hasMore: false,
+      oldest: null,
+    })
+    setup()
+    await screen.findByText('他人动态')
+    expect(screen.queryByTestId('report-moment')).toBeNull()
+  })
+
   it('渲染动态正文时带上字体缩放标记', async () => {
     fetchMoments.mockResolvedValue({
       ok: true,

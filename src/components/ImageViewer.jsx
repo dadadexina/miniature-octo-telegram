@@ -153,9 +153,6 @@ export default function ImageViewer({ url, onClose }) {
         onClick={(e) => e.stopPropagation()}
         onDoubleClick={onDoubleClick}
       />
-      <span className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 text-[12px] text-white/70">
-        双指缩放 · 双击放大 · 点击空白关闭
-      </span>
       <button
         type="button"
         data-testid="image-viewer-close"
