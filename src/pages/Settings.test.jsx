@@ -32,6 +32,16 @@ const profileMocks = vi.hoisted(() => ({ updateProfileSignature: vi.fn() }))
 
 vi.mock('../lib/profiles', () => ({ updateProfileSignature: profileMocks.updateProfileSignature }))
 
+const dataExportMock = vi.hoisted(() => ({
+  collectUserData: vi.fn(),
+  downloadTextFile: vi.fn(),
+  exportFileName: vi.fn(),
+  serializeExport: vi.fn(),
+  summarizeExport: vi.fn(),
+}))
+
+vi.mock('../lib/dataExport', () => dataExportMock)
+
 const authMock = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
   reauthenticate: vi.fn(),
@@ -79,6 +89,11 @@ beforeEach(() => {
   authMock.reauthenticate.mockResolvedValue({ error: null })
   authMock.updateUser.mockResolvedValue({ error: null })
   profileMocks.updateProfileSignature.mockResolvedValue({ ok: true, profile: { nickname: '我' } })
+  dataExportMock.collectUserData.mockResolvedValue({ ok: true, payload: { counts: {}, storage: {} } })
+  dataExportMock.downloadTextFile.mockReturnValue(true)
+  dataExportMock.exportFileName.mockReturnValue('zhimo-export.json')
+  dataExportMock.serializeExport.mockReturnValue('{}')
+  dataExportMock.summarizeExport.mockReturnValue({ total: 4, mediaCount: 2 })
 })
 
 afterEach(() => {
@@ -414,5 +429,45 @@ describe('Settings 设置页', () => {
       expect.objectContaining({ signature: '云上见' }),
       true
     )
+  })
+
+  it('云端账号可导出个人数据并提示结果', async () => {
+    useCloudAccount()
+    setup()
+    openView(2)
+
+    fireEvent.click(screen.getByTestId('settings-export-data'))
+
+    await waitFor(() =>
+      expect(dataExportMock.collectUserData).toHaveBeenCalledWith(
+        expect.anything(),
+        CLOUD_USER_ID,
+        { email: 'alice@example.com' }
+      )
+    )
+    expect(dataExportMock.downloadTextFile).toHaveBeenCalledWith('zhimo-export.json', '{}')
+    expect(screen.getByTestId('settings-notice').textContent).toContain('导出完成：4 条记录、2 个媒体文件清单')
+  })
+
+  it('导出失败时展示错误提示且不触发下载', async () => {
+    useCloudAccount()
+    dataExportMock.collectUserData.mockResolvedValue({ ok: false, error: 'messages: denied' })
+    setup()
+    openView(2)
+
+    fireEvent.click(screen.getByTestId('settings-export-data'))
+
+    await waitFor(() => expect(screen.getByTestId('settings-notice').textContent).toContain('messages: denied'))
+    expect(dataExportMock.downloadTextFile).not.toHaveBeenCalled()
+  })
+
+  it('演示账号导出时提示无云端数据', () => {
+    setup()
+    openView(2)
+
+    fireEvent.click(screen.getByTestId('settings-export-data'))
+
+    expect(screen.getByTestId('settings-notice').textContent).toContain('演示账号没有云端数据可导出')
+    expect(dataExportMock.collectUserData).not.toHaveBeenCalled()
   })
 })

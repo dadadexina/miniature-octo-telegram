@@ -9,6 +9,13 @@ import {
   saveSettings,
   vibrateNow,
 } from '../lib/appSettings'
+import {
+  collectUserData,
+  downloadTextFile,
+  exportFileName,
+  serializeExport,
+  summarizeExport,
+} from '../lib/dataExport'
 import { goBackOr } from '../lib/navigation'
 import { isUuid } from '../lib/messages'
 import { saveMomentCover } from '../lib/momentCover'
@@ -100,6 +107,7 @@ export default function Settings() {
   const [notificationPermission, setNotificationPermission] = useState(readNotificationPermission)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [exportBusy, setExportBusy] = useState(false)
   const fileRef = useRef(null)
   const ringtoneFileRef = useRef(null)
   const previewRef = useRef(null)
@@ -378,6 +386,32 @@ export default function Settings() {
     setCodeSent(false)
     setCooldown(0)
     setNotice('密码已更新')
+  }
+
+  const onExportData = async () => {
+    if (!cloudAccount) {
+      setNotice('演示账号没有云端数据可导出，请登录云端账号后使用')
+      return
+    }
+    setExportBusy(true)
+    try {
+      const result = await collectUserData(supabase, currentUser.id, { email })
+      if (!result.ok) {
+        setNotice(result.error || '导出失败，请稍后重试')
+        return
+      }
+      const fileName = exportFileName(currentUser.id)
+      if (!downloadTextFile(fileName, serializeExport(result.payload))) {
+        setNotice('当前环境不支持下载文件')
+        return
+      }
+      const { total, mediaCount } = summarizeExport(result.payload)
+      setNotice(`导出完成：${total} 条记录、${mediaCount} 个媒体文件清单，文件名 ${fileName}`)
+    } catch {
+      setNotice('导出失败，请稍后重试')
+    } finally {
+      setExportBusy(false)
+    }
   }
 
   const onDeleteAccount = async () => {
@@ -790,6 +824,24 @@ export default function Settings() {
                 </button>
               </div>
             </form>
+
+            <div className="mt-8 border-y border-eink-divider bg-eink-bar">
+              <div className="px-4 py-3.5">
+                <p className="text-[16px] text-eink-text">导出我的数据</p>
+                <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                  打包下载资料、消息、朋友圈、好友与偏好设置的 JSON 文件，包含媒体文件路径清单，不含图片文件本体。
+                </p>
+                <button
+                  type="button"
+                  data-testid="settings-export-data"
+                  className="mt-3 h-10 w-full border border-eink-ink text-[15px] text-eink-ink active:bg-[#E7E5DD] disabled:opacity-60"
+                  onClick={onExportData}
+                  disabled={exportBusy}
+                >
+                  {exportBusy ? '正在打包...' : '下载数据文件'}
+                </button>
+              </div>
+            </div>
 
             <div className="mt-8 px-4 pb-8">
               <button
