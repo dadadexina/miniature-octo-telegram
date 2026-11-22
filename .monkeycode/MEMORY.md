@@ -184,3 +184,15 @@ This file records user instructions, preferences, and teachings for reference in
   - 完成/新增功能后，先 `npm run lint`、`npm run test`、`npm run build` 全部通过，再 commit 并 push 到 `origin/main`
   - 推送前先 `git status`/`git diff` 确认只包含本次改动，推送后在回复中说明 commit 与结果
   - 若当次用户指定分支或 PR 流程，以当次指示为准
+
+[staging 环境隔离与 e2e 约束]
+- Date: 2026-11-22
+- Context: Discovered by Agent while 拆分 production/staging 并切换 CI e2e
+- Category: Environment Configuration
+- Instructions:
+  - staging Supabase 项目 ref `ajwkmlpzgvdekjvypuve`（`https://ajwkmlpzgvdekjvypuve.supabase.co`，ap-northeast-2），已执行基线 SQL；Auth `site_url=http://localhost:5173`、`uri_allow_list` 含该域，staging 开启 `mailer_autoconfirm`
+  - GitHub Secrets `VITE_SUPABASE_*` 与 `E2E_USER_A/B_*` 均指向 staging；本地 `.env.local` 指向 staging，`.env.production.local`（gitignore）指向生产
+  - e2e 用户名必须匹配 `^[A-Za-z0-9]{8,15}$` 且含字母和数字，否则 `profiles_fill_public_id` 触发器会替换为随机 ID
+  - `scripts/export-cloud-sql.mjs` 拼接必须用函数替换 `.replaceAll(k, () => v)`，否则替换串里的 `$$` 会被折叠成 `$` 破坏 dollar-quote
+  - avatar-sync 实时头像用例默认跳过，`E2E_AVATAR_SYNC=1` 才运行
+  - 生产函数 ACL 需保持仅 `authenticated` 可执行四个关系判定函数
