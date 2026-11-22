@@ -1,6 +1,7 @@
 # 交付整改任务清单
 
 - 基线：`main @ 42a16d8`，版本 1.0.0，0 git tag
+- 当前：`main @ 8476261`；仓库已转私有（2026-11-22）；用于自动化的两个 Supabase PAT 已吊销
 - 来源：四份审计（前端体验 / 后端安全 / 工程交付 / 产品路线）+ 既有 `delivery-checklist.md` 核实
 - 原则：先复核再动手；改动前先 `git status`/`git diff`；每项完成需 `npm run lint`（0 errors）、`npm run test`、`npm run build` 全绿，涉及 SQL 同步 `src/lib/sql.js` 并提醒执行 `CLOUD_SQL`
 - 负责标注：`我` = Agent 可直接做；`用户` = 需用户操作/授权；`共同` = 需先决策再实施
@@ -11,7 +12,7 @@
 
 - [x] **0.1 朋友圈点赞/评论是否落库** —— 结论：**已落库**。`src/lib/moments.js:105-151` 的 `likeMoment`/`unlikeMoment`/`addMomentComment`/`deleteMomentComment` 写 `moment_likes`/`moment_comments`，`fetchMomentInteractions` 读回；前端审计“纯前端未落库”不成立。仅需确认 UI 全走云端路径（本地演示降级除外）。
 - [x] **0.2 通话链路真实度** —— 结论：**真实 WebRTC**。`src/lib/call.js:34-49` 配 STUN + OpenRelay TURN，`src/hooks/useVoiceCall.js:194` 用 `new RTCPeerConnection`；全仓无 `peerjs` 代码引用。`roadmap-to-production.md` 的“PeerJS 演示”已过时。沙箱出网白名单不含 openrelay，实际接通需真机双端验证。
-- [ ] **0.3 备份与恢复现状**：`backup.yml` 已存在（每日 pg_dump → AES 加密 → artifact 30 天，含恢复命令注释）。确认 Secrets 是否仍在、补一次**恢复演练记录**（报告原称“0 备份”不准确）。负责：我
+- [ ] **0.3 备份与恢复现状**：`backup.yml` 已存在（每日 pg_dump → AES 加密 → artifact 30 天，含恢复命令注释）。Secrets 是否仍在待确认，**恢复演练**未做（需一次性数据库连接串）。负责：我
 - [x] **0.4 `can_view_moment` 是否排除拉黑** —— 结论：**未排除**。`src/lib/schema_v2.js:181-188` 仅判 `author_id = auth.uid() or are_contacts(...)`，拉黑不解除好友关系，故拉黑后仍可见。需修复（见 3.2）。
 - [x] **0.5 `friends` 是否有 `owner_id <> friend_id` 约束** —— 结论：**缺失**。`src/lib/friends.js` 的 `FRIENDS_SQL` 仅 `unique(owner_id, friend_id)`。需加约束（见 3.3）。
 - [x] **0.6 `message_media` 桶公开性** —— 结论：**私有桶**。`src/lib/schema_v2.js:59` 建桶 `public = false`，读取走配对目录 RLS。无需改。
@@ -33,14 +34,14 @@
   - 方案 A（轻量，推荐）：保留 `CLOUD_SQL` 真源，新增 `supabase/migrations/` 存每次变更的带时间戳 `.sql` 只读快照，用 `supabase db diff` 校验生产与真源一致。风险低，不动现有控制台执行流程。
   - 方案 B（标准）：正式改用 Supabase CLI migrations，`CLOUD_SQL` 变为迁移拼接产物，重写部署与文档流程。改动大。
   - 负责：用户决策
-- [x] **2.1 落地所选方案** —— 已完成：`supabase/migrations/0001_baseline.sql` 基线快照（commit `13548eb`，已含 0.4/0.5/3.4 变更）、`supabase/README.md` 流程说明、CI `verify` job 校验快照与源码同步。负责：共同
+- [x] **2.1 落地所选方案** —— 已完成：`supabase/migrations/0001_baseline.sql` 基线快照（含 0.4/0.5/3.4 变更，`78a85a6` 重新生成）、`supabase/README.md` 流程说明、CI `verify` job 校验快照与源码同步。负责：共同
 - [ ] **2.2 迁移执行纳入 CI 校验**（仅 B 需要）：PR 上 `supabase db diff` 无漂移方可合并。负责：我
 
 ## 3. 安全与合规（P0，代码可做）
 
 - [x] **3.1 注销清理 Storage 媒体** —— 已完成并部署（commit `f2d4ccc`，函数 v3）：先删 `avatars/<uid>/`、`moments/<uid>/` 前缀与 `messages.attachments.path` 指向的 `message_media` 文件，再删账号；清理失败则中止。实测无令牌与无效令牌请求均返回 401。
-- [x] **3.2 朋友圈拉黑隔离** —— 已完成（commit `feb1970`）：`can_view_moment` 增加双向拉黑排除；需重跑 `CLOUD_SQL` 生效。
-- [x] **3.3 好友自约束** —— 已完成（commit `feb1970`）：`friends` 增加 `friends_no_self` 约束 + 幂等补丁；需重跑 `CLOUD_SQL` 生效。
+- [x] **3.2 朋友圈拉黑隔离** —— 已完成（commit `feb1970`）：`can_view_moment` 增加双向拉黑排除；生产已重跑 `CLOUD_SQL` 并验证策略为拉黑排除版本。
+- [x] **3.3 好友自约束** —— 已完成（commit `feb1970`）：`friends` 增加 `friends_no_self` 约束 + 幂等补丁；生产已重跑并验证约束存在。
 - [x] **3.4 关系函数权限收紧** —— 已完成：`src/lib/schema_v2.js` 与基线快照对四个函数加 `revoke execute ... from public, anon` + `grant ... to authenticated`；生产已执行，验证 `proacl` 仅含 `postgres` 与 `authenticated`。负责：我
 - [x] **3.5 私有桶复核** —— 无需改：`message_media` 已是私有桶（`schema_v2.js:59`）。
 

@@ -165,17 +165,6 @@ This file records user instructions, preferences, and teachings for reference in
   - 排序连接的配对键注意 delete 策略也应对双方开放(split 1 或 split 2 命中 auth.uid()),只判 split 1 会造成仅字典序小的一方可删
   - 渲染私有对象一律 `createSignedUrl(path, expiresIn)`(消息图 900s),签名结果不入库;每次挂载组件重新签
 
-[沙箱出网白名单不含 peerjs.com,WebRTC 真实接通需外部网络验证]
-- Date: 2026-11-20
-- Context: Discovered by Agent while 接入 PeerJS 语音通话后做双端联调
-- Category: Environment Configuration
-- Instructions:
-  - 本沙箱出网为白名单制:github/api、npm、supabase、vercel 可达,`0.peerjs.com` TCP 443 直接超时(浏览器 `wss://0.peerjs.com` 报 "closed before established")
-  - 因此 PeerJS 云信令的**成功链路**(振铃→接听→音频)无法在沙箱内验证,只能用失败链路脚本验证 UI 与错误提示
-  - 验证脚本:`/tmp/opencode/call-failpath.mjs`(支持 `CALL_BASE`,5 项断言);真实接通需用户在普通网络双开浏览器验证
-  - 代码已支持 `VITE_PEER_HOST/PORT/PATH/KEY/SECURE` 切自建 PeerServer,换服务器无需改业务代码
-  - 通话可用的前提:双方均为云端登录账号且各自停留在与对方的聊天页(当前版本 Peer 仅在 ChatDetail 内创建)
-
 [功能完成后推送 GitHub]
 - Date: 2026-11-21
 - Context: 用户要求下次完成或新增功能后，由 Agent 推送到 GitHub 仓库
@@ -185,14 +174,16 @@ This file records user instructions, preferences, and teachings for reference in
   - 推送前先 `git status`/`git diff` 确认只包含本次改动，推送后在回复中说明 commit 与结果
   - 若当次用户指定分支或 PR 流程，以当次指示为准
 
-[staging 环境隔离与 e2e 约束]
+[环境配置与部署约束]
 - Date: 2026-11-22
-- Context: Discovered by Agent while 拆分 production/staging 并切换 CI e2e
+- Context: Discovered by Agent while 拆分 production/staging、切换 CI e2e、转私有仓库
 - Category: Environment Configuration
 - Instructions:
-  - staging Supabase 项目 ref `ajwkmlpzgvdekjvypuve`（`https://ajwkmlpzgvdekjvypuve.supabase.co`，ap-northeast-2），已执行基线 SQL；Auth `site_url=http://localhost:5173`、`uri_allow_list` 含该域，staging 开启 `mailer_autoconfirm`
-  - GitHub Secrets `VITE_SUPABASE_*` 与 `E2E_USER_A/B_*` 均指向 staging；本地 `.env.local` 指向 staging，`.env.production.local`（gitignore）指向生产
-  - e2e 用户名必须匹配 `^[A-Za-z0-9]{8,15}$` 且含字母和数字，否则 `profiles_fill_public_id` 触发器会替换为随机 ID
-  - `scripts/export-cloud-sql.mjs` 拼接必须用函数替换 `.replaceAll(k, () => v)`，否则替换串里的 `$$` 会被折叠成 `$` 破坏 dollar-quote
-  - avatar-sync 实时头像用例默认跳过，`E2E_AVATAR_SYNC=1` 才运行
-  - 生产函数 ACL 需保持仅 `authenticated` 可执行四个关系判定函数
+  - 生产 Supabase ref `ljlvqnhzewzxpyhgumnp`（ap-northeast-1，org `dlqxyvklimrwdexpspei`）；staging ref `ajwkmlpzgvdekjvypuve`（ap-northeast-2，org `cuiinllsqxcslytifwxz`），已执行基线 SQL；staging Auth `site_url=http://localhost:5173`、`uri_allow_list` 含该域，开启 `mailer_autoconfirm`
+  - 沙箱出网白名单：github/api、npm、supabase、vercel；`api.supabase.com` 需 `curl -4`；openrelay/peerjs 不可达，WebRTC 成功链路需真实网络双端验证
+  - GitHub Secrets `VITE_SUPABASE_*` 与 `E2E_USER_A/B_*` 指向 staging；本地 `.env.local` 指 staging，`.env.production.local`（gitignore）指生产
+  - e2e 用户名须匹配 `^[A-Za-z0-9]{8,15}$` 且含字母数字，否则 `profiles_fill_public_id` 会替换为随机 ID
+  - `scripts/export-cloud-sql.mjs` 必须用函数替换 `.replaceAll(k, () => v)`，否则替换串中的 `$$` 折叠为 `$` 破坏 dollar-quote
+  - avatar-sync 实时头像用例默认跳过，`E2E_AVATAR_SYNC=1` 才运行；生产函数 ACL 仅 `authenticated` 可执行四个关系判定函数
+  - 仓库已于 2026-11-22 转私有，Actions 改为消耗私有仓库分钟配额；两个 Vercel 项目需确认 GitHub App 对私有仓库的访问授权
+  - 用于自动化的两个 Supabase PAT 已被用户吊销；后续 Management API 操作需用户提供新 PAT
