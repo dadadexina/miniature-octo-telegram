@@ -11,31 +11,25 @@ function scaleOf(el) {
 }
 
 describe('ImageViewer 缩放查看器', () => {
-  it('展示原图并支持关闭按钮', () => {
+  it('展示原图,单击图片收回', () => {
     const onClose = vi.fn()
     render(<ImageViewer url="https://example.com/a.jpg" onClose={onClose} />)
     expect(screen.getByTestId('image-viewer-img').getAttribute('src')).toBe('https://example.com/a.jpg')
-    fireEvent.click(screen.getByTestId('image-viewer-close'))
+    fireEvent.click(screen.getByTestId('image-viewer-img'))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('点击空白关闭,点击图片不关闭', () => {
+  it('不再渲染右上角关闭按钮,点击空白仍可收回', () => {
     const onClose = vi.fn()
     render(<ImageViewer url="https://example.com/a.jpg" onClose={onClose} />)
-    fireEvent.click(screen.getByTestId('image-viewer-img'))
-    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('image-viewer-close')).toBeNull()
     fireEvent.click(screen.getByTestId('image-viewer'))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('双击在原始与放大之间切换', () => {
-    render(<ImageViewer url="https://example.com/a.jpg" onClose={() => {}} />)
-    const img = screen.getByTestId('image-viewer-img')
-    expect(scaleOf(img)).toBe(1)
-    fireEvent.doubleClick(img)
-    expect(scaleOf(img)).toBeGreaterThan(1)
-    fireEvent.doubleClick(img)
-    expect(scaleOf(img)).toBe(1)
+  it('展开时挂载入场动画容器', () => {
+    const { container } = render(<ImageViewer url="https://example.com/a.jpg" onClose={() => {}} />)
+    expect(container.querySelector('.image-viewer-enter')).toBeTruthy()
   })
 
   it('双指拉开放大、捏合缩小', () => {

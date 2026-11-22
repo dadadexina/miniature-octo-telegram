@@ -327,3 +327,24 @@ html textarea {
 [data-font-scale='large'] .moment-text {
   font-size: 17px;
 }
+
+@keyframes image-viewer-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.image-viewer-enter {
+  animation: image-viewer-in 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image-viewer-enter {
+    animation: none;
+  }
+}

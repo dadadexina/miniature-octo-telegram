@@ -2,8 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 
 const MIN_SCALE = 0.5
 const MAX_SCALE = 5
-const DOUBLE_TAP_MS = 300
-const DOUBLE_TAP_SCALE = 2.5
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value))
@@ -16,8 +14,7 @@ function touchDistance(a, b) {
 export default function ImageViewer({ url, onClose }) {
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 })
   const viewRef = useRef(view)
-  const gesture = useRef({ mode: 'none', startScale: 1, startDistance: 1, startX: 0, startY: 0, originX: 0, originY: 0, lastTap: 0 })
-  const lastTouchAt = useRef(0)
+  const gesture = useRef({ mode: 'none', startScale: 1, startDistance: 1, startX: 0, startY: 0, originX: 0, originY: 0 })
 
   const applyView = (next) => {
     viewRef.current = next
@@ -33,15 +30,6 @@ export default function ImageViewer({ url, onClose }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [url, onClose])
 
-  const toggleZoom = () => {
-    const current = viewRef.current
-    applyView(
-      current.scale > 1.01
-        ? { scale: 1, x: 0, y: 0 }
-        : { scale: DOUBLE_TAP_SCALE, x: 0, y: 0 }
-    )
-  }
-
   const onTouchStart = (e) => {
     const g = gesture.current
     if (e.touches.length >= 2) {
@@ -51,18 +39,11 @@ export default function ImageViewer({ url, onClose }) {
         mode: 'pinch',
         startScale: viewRef.current.scale,
         startDistance: touchDistance(a, b) || 1,
-        lastTap: 0,
       }
       return
     }
     if (e.touches.length === 1) {
       const t = e.touches[0]
-      const now = Date.now()
-      if (now - g.lastTap < DOUBLE_TAP_MS) {
-        toggleZoom()
-        gesture.current = { ...g, mode: 'none', lastTap: 0 }
-        return
-      }
       gesture.current = {
         ...g,
         mode: 'pan',
@@ -70,7 +51,6 @@ export default function ImageViewer({ url, onClose }) {
         startY: t.clientY,
         originX: viewRef.current.x,
         originY: viewRef.current.y,
-        lastTap: now,
       }
     }
   }
@@ -97,7 +77,6 @@ export default function ImageViewer({ url, onClose }) {
   }
 
   const onTouchEnd = (e) => {
-    lastTouchAt.current = Date.now()
     if (e.touches.length === 0) {
       gesture.current.mode = 'none'
       return
@@ -115,11 +94,6 @@ export default function ImageViewer({ url, onClose }) {
     }
   }
 
-  const onDoubleClick = () => {
-    if (Date.now() - lastTouchAt.current < 500) return
-    toggleZoom()
-  }
-
   const onWheel = (e) => {
     const current = viewRef.current
     const next = clamp(current.scale * (e.deltaY < 0 ? 1.12 : 0.89), MIN_SCALE, MAX_SCALE)
@@ -133,7 +107,7 @@ export default function ImageViewer({ url, onClose }) {
   return (
     <div
       data-testid="image-viewer"
-      className="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden bg-black/90"
+      className="fixed inset-0 z-[70] overflow-hidden bg-black/90"
       style={{ touchAction: 'none' }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose?.()
@@ -143,28 +117,20 @@ export default function ImageViewer({ url, onClose }) {
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      <img
-        data-testid="image-viewer-img"
-        src={url}
-        alt="图片大图"
-        draggable={false}
-        className="max-h-full max-w-full select-none object-contain"
-        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
-        onClick={(e) => e.stopPropagation()}
-        onDoubleClick={onDoubleClick}
-      />
-      <button
-        type="button"
-        data-testid="image-viewer-close"
-        aria-label="关闭图片"
-        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center border border-white/40 text-[20px] leading-none text-white/80 active:bg-white/10"
-        onClick={(e) => {
-          e.stopPropagation()
-          onClose?.()
-        }}
-      >
-        ×
-      </button>
+      <div className="image-viewer-enter pointer-events-none absolute inset-0 flex items-center justify-center">
+        <img
+          data-testid="image-viewer-img"
+          src={url}
+          alt="图片大图"
+          draggable={false}
+          className="pointer-events-auto max-h-full max-w-full select-none object-contain will-change-transform"
+          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
+          onClick={(e) => {
+            e.stopPropagation()
+            onClose?.()
+          }}
+        />
+      </div>
     </div>
   )
 }

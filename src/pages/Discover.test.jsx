@@ -106,7 +106,7 @@ describe('Discover 朋友圈页', () => {
     setup()
     fireEvent.click(await screen.findByTestId('moment-image-open'))
     expect(screen.getByTestId('image-viewer')).toBeTruthy()
-    fireEvent.click(screen.getByTestId('image-viewer-close'))
+    fireEvent.click(screen.getByTestId('image-viewer-img'))
     expect(screen.queryByTestId('image-viewer')).toBeNull()
   })
 
