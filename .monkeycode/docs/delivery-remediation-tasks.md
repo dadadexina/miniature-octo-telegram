@@ -15,7 +15,7 @@
 - [x] **0.4 `can_view_moment` 是否排除拉黑** —— 结论：**未排除**。`src/lib/schema_v2.js:181-188` 仅判 `author_id = auth.uid() or are_contacts(...)`，拉黑不解除好友关系，故拉黑后仍可见。需修复（见 3.2）。
 - [x] **0.5 `friends` 是否有 `owner_id <> friend_id` 约束** —— 结论：**缺失**。`src/lib/friends.js` 的 `FRIENDS_SQL` 仅 `unique(owner_id, friend_id)`。需加约束（见 3.3）。
 - [x] **0.6 `message_media` 桶公开性** —— 结论：**私有桶**。`src/lib/schema_v2.js:59` 建桶 `public = false`，读取走配对目录 RLS。无需改。
-- [ ] **0.7 关系函数 PUBLIC EXECUTE 权限**：查 `are_contacts/can_view_profile/can_message/can_view_moment` 的 `proacl`，必要时 `revoke execute from public`。需 psql 连生产（`当前工作区/.monkeycode/secrets/db-url.txt`）。负责：我
+- [x] **0.7 关系函数 PUBLIC EXECUTE 权限** —— 结论：**PUBLIC 可执行**（四个函数 `proacl` 均为 `null`，即默认 PUBLIC EXECUTE，且均为 `SECURITY DEFINER`）。已通过 Management API 收紧（见 3.4），验证后 `proacl` 为 `{postgres=X/postgres,authenticated=X/postgres}`。负责：我
 
 ## 1. 环境隔离（P0，报告一致项）
 
@@ -41,7 +41,7 @@
 - [x] **3.1 注销清理 Storage 媒体** —— 已完成（commit `f2d4ccc`）：先删 `avatars/<uid>/`、`moments/<uid>/` 前缀与 `messages.attachments.path` 指向的 `message_media` 文件，再删账号；清理失败则中止。需重新部署 Edge Function 生效。
 - [x] **3.2 朋友圈拉黑隔离** —— 已完成（commit `feb1970`）：`can_view_moment` 增加双向拉黑排除；需重跑 `CLOUD_SQL` 生效。
 - [x] **3.3 好友自约束** —— 已完成（commit `feb1970`）：`friends` 增加 `friends_no_self` 约束 + 幂等补丁；需重跑 `CLOUD_SQL` 生效。
-- [ ] **3.4 关系函数权限收紧**：若 0.7 显示 PUBLIC 可执行，`revoke execute ... from public` 后按需 `grant to authenticated`。负责：我（依赖 0.7）
+- [x] **3.4 关系函数权限收紧** —— 已完成：`src/lib/schema_v2.js` 与基线快照对四个函数加 `revoke execute ... from public, anon` + `grant ... to authenticated`；生产已执行，验证 `proacl` 仅含 `postgres` 与 `authenticated`。负责：我
 - [x] **3.5 私有桶复核** —— 无需改：`message_media` 已是私有桶（`schema_v2.js:59`）。
 
 ## 4. 交付体验与合规文案（P0，代码可做）
