@@ -6,6 +6,7 @@ import CopySql from '../components/CopySql'
 import NavBar from '../components/NavBar'
 import { formatRegistrationDate, genderLabel } from '../lib/profileMeta'
 import { fetchProfilesByIds } from '../lib/profiles'
+import { scheduleAccountDeletion } from '../lib/accountDeletion'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../store'
 
@@ -43,18 +44,18 @@ export default function Profile() {
   const onDeleteAccount = async () => {
     setDeleting(true)
     setDeleteHint('')
-    const { data, error } = await supabase.functions.invoke('delete-account')
-    if (error || (data && data.error)) {
+    const result = await scheduleAccountDeletion(currentUser.id)
+    if (!result.ok) {
       setDeleting(false)
-      setDeleteHint(error?.message || data?.error || '注销失败，请稍后重试')
+      setDeleteHint(result.error || '注销申请失败，请稍后重试')
       return
     }
     try {
       await supabase.auth.signOut()
     } catch {
-      // 账号已在服务端删除,本地会话失效属预期
+      // 提交成功后即使退出失败也要清理本地会话
     }
-    // 清空内存状态与全部本地缓存,保证同邮箱重新注册时是全新空白账号
+    // 清空内存状态与本地缓存，7 天内重新登录可撤销注销
     purgeAccount()
     navigate('/login', { replace: true })
   }
@@ -168,7 +169,7 @@ export default function Profile() {
               disabled={deleting}
               onClick={onDeleteAccount}
             >
-              {deleting ? '注销中...' : '确认注销'}
+              {deleting ? '提交中...' : '确认申请'}
             </button>
             <button
               type="button"

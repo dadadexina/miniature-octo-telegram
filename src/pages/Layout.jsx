@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useNavigate } from 'react-router-dom'
 import AuthBar from '../components/AuthBar'
+import PendingDeletionGate from '../components/PendingDeletionGate'
 import TabBar from '../components/TabBar'
 import useNotificationDigest from '../hooks/useNotificationDigest'
 import { supabase } from '../lib/supabase'
@@ -20,6 +21,7 @@ export default function Layout() {
   return (
     <div className="flex h-full flex-col bg-eink-paper">
       <AuthBar email={currentUser.email} onSignOut={onSignOut} />
+      <PendingDeletionGate />
       {offline ? (
         <div data-testid="offline-banner" className="shrink-0 bg-eink-ink py-1 text-center text-[12px] text-eink-paper">
           网络已断开，恢复后将自动同步

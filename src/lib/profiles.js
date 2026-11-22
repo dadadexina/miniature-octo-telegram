@@ -37,6 +37,7 @@ export function mapProfile(row) {
     idChangeCount: Number(row.id_change_count || 0),
     idChangedAt: row.id_changed_at || '',
     createdAt: row.created_at || '',
+    deletedAt: row.deleted_at || '',
     matchedBy: row.matched_by || '',
     raw: row,
   }

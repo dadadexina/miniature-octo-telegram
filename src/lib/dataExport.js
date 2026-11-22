@@ -24,11 +24,16 @@ const EXPORT_QUERIES = [
     order: 'created_at',
   },
   { key: 'blocks', table: 'blocks', filter: (q, id) => q.eq('blocker_id', id), order: 'created_at' },
-  { key: 'messagesSent', table: 'messages', filter: (q, id) => q.eq('sender_id', id), order: 'id' },
+  {
+    key: 'messagesSent',
+    table: 'messages',
+    filter: (q, id) => q.eq('sender_id', id).not('deleted_for', 'cs', `{${id}}`),
+    order: 'id',
+  },
   {
     key: 'messagesReceived',
     table: 'messages',
-    filter: (q, id) => q.eq('receiver_id', id),
+    filter: (q, id) => q.eq('receiver_id', id).not('deleted_for', 'cs', `{${id}}`),
     order: 'id',
   },
   {

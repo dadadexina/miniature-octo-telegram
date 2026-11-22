@@ -338,16 +338,12 @@ describe('friendRequests 好友请求', () => {
     supabase.from.mockReset()
   })
 
-  it('deletePairMessages 按会话双方删除全部消息', async () => {
-    const chain = okChain({ error: null })
-    supabase.from.mockImplementationOnce(() => chain)
+  it('deletePairMessages 调用双向软删函数', async () => {
+    supabase.rpc.mockResolvedValue({ error: null })
     const res = await deletePairMessages('me', 'alice')
     expect(res.ok).toBe(true)
-    expect(supabase.from).toHaveBeenCalledWith('messages')
-    expect(chain.or).toHaveBeenCalledWith(
-      'and(sender_id.eq.me,receiver_id.eq.alice),and(sender_id.eq.alice,receiver_id.eq.me)'
-    )
-    supabase.from.mockReset()
+    expect(supabase.rpc).toHaveBeenCalledWith('soft_delete_pair_messages', { peer_id: 'alice' })
+    supabase.rpc.mockReset()
   })
 
   it('deletePairMessages 拒绝自己与自己', async () => {

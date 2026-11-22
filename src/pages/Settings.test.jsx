@@ -342,6 +342,20 @@ describe('Settings 设置页', () => {
     expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)).fontScale).toBe('large')
   })
 
+  it('其他设置展示客服邮箱', () => {
+    setup()
+    openView(3)
+    expect(screen.getByTestId('settings-support').getAttribute('href')).toBe('mailto:4494507@qq.com')
+  })
+
+  it('注销提示 7 天冷静期', () => {
+    useCloudAccount()
+    setup()
+    openView(2)
+    fireEvent.click(screen.getByTestId('settings-delete-account'))
+    expect(screen.getByTestId('settings-confirm-delete').textContent).toContain('7 天后自动删除')
+  })
+
   it('退出所有设备需二次确认并调用全局退出', async () => {
     useCloudAccount()
     setup()

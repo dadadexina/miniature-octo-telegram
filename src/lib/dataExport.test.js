@@ -16,12 +16,16 @@ function createClient({ tables = {}, storage = {}, failTable = '', failBucket = 
   const calls = []
   const client = {
     from(table) {
-      const state = { table, filters: [], order: null, ranged: null }
+      const state = { table, filters: [], nots: [], order: null, ranged: null }
       calls.push(state)
       const chain = {
         select: () => chain,
         eq: (column, value) => {
           state.filters.push([column, value])
+          return chain
+        },
+        not: (column, operator, value) => {
+          state.nots.push([column, operator, value])
           return chain
         },
         order: (column, options) => {
@@ -32,7 +36,8 @@ function createClient({ tables = {}, storage = {}, failTable = '', failBucket = 
           state.ranged = [from, to]
           if (failTable === table) return { data: null, error: { message: 'boom' } }
           const rows = (tables[table] || []).filter((row) =>
-            state.filters.every(([column, value]) => row[column] === value)
+            state.filters.every(([column, value]) => row[column] === value) &&
+            state.nots.every(([column, , value]) => !(row[column] || []).includes(value.slice(1, -1)))
           )
           return { data: rows.slice(from, to + 1), error: null }
         },

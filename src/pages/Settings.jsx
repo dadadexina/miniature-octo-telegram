@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
+import { scheduleAccountDeletion } from '../lib/accountDeletion'
 import useSwipeBack from '../hooks/useSwipeBack'
 import {
   loadSettings,
@@ -467,17 +468,17 @@ export default function Settings() {
 
   const onDeleteAccount = async () => {
     setDeleting(true)
-    const { data, error } = await supabase.functions.invoke('delete-account')
-    if (error || data?.error) {
+    const result = await scheduleAccountDeletion(currentUser.id)
+    if (!result.ok) {
       setDeleting(false)
       setConfirmDelete(false)
-      setNotice(error?.message || data?.error || '注销失败，请稍后重试')
+      setNotice(result.error || '注销申请失败，请稍后重试')
       return
     }
     try {
       await supabase.auth.signOut()
     } catch {
-      // 账号已在服务端删除，本地会话失效属预期
+      // 提交成功后即使退出失败也要清理本地会话
     }
     setDeleting(false)
     setConfirmDelete(false)
@@ -985,12 +986,11 @@ export default function Settings() {
                 type="button"
                 data-testid="settings-delete-account"
                 className="mt-6 h-11 w-full border border-eink-ink text-[15px] text-eink-ink active:bg-[#E7E5DD]"
-                className="h-11 w-full border border-eink-ink text-[15px] text-eink-ink active:bg-[#E7E5DD]"
                 onClick={() => (cloudAccount ? setConfirmDelete(true) : setNotice('演示账号无需注销'))}
               >
                 注销账号
               </button>
-              <p className="mt-2 text-center text-[12px] text-eink-sub">注销后云端数据不可恢复。</p>
+              <p className="mt-2 text-center text-[12px] leading-5 text-eink-sub">提交后 7 天内登录可撤销，逾期自动删除且不可恢复。</p>
             </div>
           </div>
         ) : null}
@@ -1033,6 +1033,12 @@ export default function Settings() {
             <p className="mt-3 px-4 text-[12px] leading-5 text-eink-sub">
               签名会保存在云端并同步到其他设备；云端未升级时会先保存在本机。
             </p>
+            <div className="mt-6 border-y border-eink-divider bg-eink-bar">
+              <a href="mailto:4494507@qq.com" data-testid="settings-support" className="block px-4 py-3.5">
+                <span className="block text-[16px] text-eink-text">联系客服</span>
+                <span className="mt-0.5 block text-[12px] text-eink-sub">举报、申诉与使用问题：4494507@qq.com</span>
+              </a>
+            </div>
           </div>
         ) : null}
       </div>
@@ -1119,7 +1125,7 @@ export default function Settings() {
             data-testid="settings-confirm-delete"
           >
             <p className="text-[14px] leading-6 text-eink-text">
-              注销账号会删除云端数据且不可恢复，确定继续？
+              提交后账号将在 7 天后自动删除，期间登录可撤销。确定继续？
             </p>
             <div className="mt-4 flex gap-2">
               <button
@@ -1136,7 +1142,7 @@ export default function Settings() {
                 onClick={onDeleteAccount}
                 disabled={deleting}
               >
-                {deleting ? '注销中...' : '确认注销'}
+                {deleting ? '提交中...' : '确认申请'}
               </button>
             </div>
           </div>

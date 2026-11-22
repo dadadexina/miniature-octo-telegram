@@ -127,8 +127,8 @@ export async function searchThreadMessages({ userId, peerId, query, limit = 50 }
 
 export async function deletePairMessages(meId, peerId) {
   if (!meId || !peerId || meId === peerId) return { ok: false, error: '参数错误' }
-  const pair = `and(sender_id.eq.${meId},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${meId})`
-  const { error } = await supabase.from('messages').delete().or(pair)
+  // 双向软删：双方会话同时隐藏，消息行保留供审计与恢复，重登后不再重现
+  const { error } = await supabase.rpc('soft_delete_pair_messages', { peer_id: peerId })
   if (error) {
     return { ok: false, error: error.message, permission: isPermissionError(error) }
   }
@@ -144,6 +144,7 @@ export async function fetchThread(meId, peerId, options = {}) {
     .from('messages')
     .select('*')
     .or(`and(sender_id.eq.${meId},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${meId})`)
+    .not('deleted_for', 'cs', `{${meId}}`)
     .order('created_at', { ascending: false })
     .limit(limit)
   if (before) query = query.lt('created_at', before)
@@ -166,6 +167,7 @@ export async function fetchInbox(meId, limit = INBOX_LIMIT) {
     .from('messages')
     .select('*')
     .or(`sender_id.eq.${meId},receiver_id.eq.${meId}`)
+    .not('deleted_for', 'cs', `{${meId}}`)
     .order('created_at', { ascending: false })
     .limit(limit)
   if (error) {

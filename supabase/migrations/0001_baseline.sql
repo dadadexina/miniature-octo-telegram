@@ -921,3 +921,31 @@ using (reporter_id = auth.uid());
 
 revoke all on public.reports from anon;
 grant select, insert on public.reports to authenticated;
+
+-- ============ 好友会话双向软删 ============
+
+alter table public.messages add column if not exists deleted_for uuid[] not null default '{}';
+create index if not exists messages_deleted_for_idx on public.messages using gin (deleted_for);
+
+drop function if exists public.soft_delete_pair_messages(uuid);
+create or replace function public.soft_delete_pair_messages(peer_id uuid)
+returns integer language plpgsql security definer set search_path = public as $fn$
+declare me uuid := auth.uid(); affected integer;
+begin
+  if me is null or peer_id is null or me = peer_id then return 0; end if;
+  update public.messages
+     set deleted_for = (
+       select array_agg(distinct ids) from unnest(deleted_for || array[me, peer_id]) as ids
+     )
+   where (sender_id = me and receiver_id = peer_id)
+      or (sender_id = peer_id and receiver_id = me);
+  get diagnostics affected = row_count;
+  return affected;
+end $fn$;
+
+revoke execute on function public.soft_delete_pair_messages(uuid) from public, anon;
+grant execute on function public.soft_delete_pair_messages(uuid) to authenticated;
+
+-- ============ 注销冷静期 ============
+
+alter table public.profiles add column if not exists deleted_at timestamptz;
