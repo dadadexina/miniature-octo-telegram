@@ -9,6 +9,7 @@ import LongTextBody from '../components/LongTextBody'
 import ReportSheet from '../components/ReportSheet'
 import SignedImage from '../components/SignedImage'
 import useKeyboardInset from '../hooks/useKeyboardInset'
+import useLongPress from '../hooks/useLongPress'
 import useSwipeBack from '../hooks/useSwipeBack'
 import { goBackOr } from '../lib/navigation'
 import {
@@ -84,6 +85,14 @@ export default function ChatDetail() {
   const replyTimer = useRef(null)
   const keepScrollRef = useRef(false)
   const keyboardInset = useKeyboardInset()
+  const {
+    begin: beginMsgLongPress,
+    move: moveMsgLongPress,
+    end: endMsgLongPress,
+    consume: consumeMsgLongPress,
+    isSuppressed: isLongPressSuppressed,
+    contextMenu: onMsgContextMenu,
+  } = useLongPress({ onLongPress: (msg) => setActiveMsgId(msg.id) })
   const { startCall } = useCallCenter()
   const peer = getUser(peerId) || (peerId ? { id: peerId, nickname: '用户', publicId: '' } : null)
   const cloudReady = Boolean(currentUser) && isUuid(currentUser.id) && isUuid(peerId)
@@ -690,11 +699,23 @@ export default function ChatDetail() {
                   {showTime ? <TimeDivider time={msg.time} /> : null}
                   <div
                     className={`mb-3 flex items-start gap-2 ${mine ? 'flex-row-reverse' : ''}`}
+                    onClickCapture={(e) => {
+                      if (!isLongPressSuppressed()) return
+                      e.stopPropagation()
+                      e.preventDefault()
+                    }}
                     onClick={(e) => {
                       // 阻止冒泡到列表容器(容器 onClick 会将 activeMsgId 置空)
                       e.stopPropagation()
-                      setActiveMsgId(activeMsgId === msg.id ? null : msg.id)
+                      if (consumeMsgLongPress()) return
+                      if (activeMsgId === msg.id) setActiveMsgId(null)
                     }}
+                    onPointerDown={(e) => beginMsgLongPress(e, msg)}
+                    onPointerMove={moveMsgLongPress}
+                    onPointerUp={endMsgLongPress}
+                    onPointerCancel={endMsgLongPress}
+                    onPointerLeave={endMsgLongPress}
+                    onContextMenu={(e) => onMsgContextMenu(e, msg)}
                   >
                     {mine ? (
                       <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />

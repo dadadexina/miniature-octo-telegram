@@ -46,7 +46,8 @@ async function clickCloudMessage(page, stamp) {
   await expect(page.getByTestId('pending-sending')).toHaveCount(0, { timeout: 20000 })
   const row = page.locator('[data-msg-id]').filter({ hasText: stamp }).last()
   await expect(row).toBeVisible({ timeout: 20000 })
-  await row.click()
+  // 长按展开消息操作面板（单击不再触发）
+  await row.click({ delay: 650 })
 }
 
 test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
@@ -104,7 +105,7 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
     // A 端通过 realtime 收到对端读水位,显示已读
     await expect(pageA.getByTestId('read-receipt').first()).toHaveText('已读', { timeout: 30000 })
 
-    // A 撤回:点击消息展开操作面板
+    // A 撤回:长按消息展开操作面板
     await clickCloudMessage(pageA, stamp)
     await expect(pageA.getByTestId('msg-actions')).toBeVisible({ timeout: 10000 })
     await pageA.getByTestId('recall-action').click()
