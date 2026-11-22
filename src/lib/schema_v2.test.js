@@ -17,6 +17,14 @@ describe('UPGRADE_SQL 幂等性', () => {
     expect(UPGRADE_SQL).toContain('bl.blocker_id = m.author_id and bl.blocked_id = auth.uid()')
   })
 
+  it('can_message 容忍单边好友(历史脏数据)', () => {
+    const fn = UPGRADE_SQL.slice(UPGRADE_SQL.indexOf('create or replace function public.can_message'))
+    const body = fn.slice(0, fn.indexOf('$fn$;'))
+    expect(body).toContain('public.are_contacts(a, b)')
+    expect(body).toContain("r.status = 'accepted'")
+    expect(body).toContain('f.owner_id = a and f.friend_id = b')
+  })
+
   it('关系判定函数仅授权 authenticated', () => {
     const signatures = [
       'public.are_contacts(uuid, uuid)',
