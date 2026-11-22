@@ -38,7 +38,7 @@
 
 ## 3. 安全与合规（P0，代码可做）
 
-- [x] **3.1 注销清理 Storage 媒体** —— 已完成（commit `f2d4ccc`）：先删 `avatars/<uid>/`、`moments/<uid>/` 前缀与 `messages.attachments.path` 指向的 `message_media` 文件，再删账号；清理失败则中止。需重新部署 Edge Function 生效。
+- [x] **3.1 注销清理 Storage 媒体** —— 已完成并部署（commit `f2d4ccc`，函数 v3）：先删 `avatars/<uid>/`、`moments/<uid>/` 前缀与 `messages.attachments.path` 指向的 `message_media` 文件，再删账号；清理失败则中止。实测无令牌与无效令牌请求均返回 401。
 - [x] **3.2 朋友圈拉黑隔离** —— 已完成（commit `feb1970`）：`can_view_moment` 增加双向拉黑排除；需重跑 `CLOUD_SQL` 生效。
 - [x] **3.3 好友自约束** —— 已完成（commit `feb1970`）：`friends` 增加 `friends_no_self` 约束 + 幂等补丁；需重跑 `CLOUD_SQL` 生效。
 - [x] **3.4 关系函数权限收紧** —— 已完成：`src/lib/schema_v2.js` 与基线快照对四个函数加 `revoke execute ... from public, anon` + `grant ... to authenticated`；生产已执行，验证 `proacl` 仅含 `postgres` 与 `authenticated`。负责：我
