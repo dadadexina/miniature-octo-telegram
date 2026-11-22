@@ -691,7 +691,9 @@ export default function ChatDetail() {
                 )
               }
               const read = mine && peerReadTs > 0 && peerReadTs >= msg.time
-              const imageOnly = msg.attachments?.type === 'image' && !String(msg.text || '').trim()
+              const hasImage = msg.attachments?.type === 'image'
+              const hasText = Boolean(String(msg.text || '').trim())
+              const showBubble = !hasImage || hasText || Boolean(msg.replyToId)
               return (
                 <div
                   key={msg.id}
@@ -732,14 +734,16 @@ export default function ChatDetail() {
                         <Avatar name={user.nickname} color={avatarColor(user.id)} size={40} src={user.avatarUrl || ''} />
                       </Link>
                     )}
-                    <div className={`flex max-w-[78%] flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                      <Bubble mine={mine} bare={imageOnly}>
-                        {msg.replyToId ? <QuoteStrip mine={mine} quote={resolveQuote(msg.replyToId)} /> : null}
-                        {msg.attachments?.type === 'image' ? (
-                          <SignedImage attachment={msg.attachments} onView={setViewerUrl} />
-                        ) : null}
-                        <LongTextBody text={msg.text} />
-                      </Bubble>
+                    <div className={`flex max-w-[78%] flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}>
+                      {hasImage ? (
+                        <SignedImage attachment={msg.attachments} onView={setViewerUrl} />
+                      ) : null}
+                      {showBubble ? (
+                        <Bubble mine={mine}>
+                          {msg.replyToId ? <QuoteStrip mine={mine} quote={resolveQuote(msg.replyToId)} /> : null}
+                          <LongTextBody text={msg.text} />
+                        </Bubble>
+                      ) : null}
                       {read ? (
                         <span data-testid="read-receipt" className="mt-0.5 px-1 text-[11px] text-eink-faint">
                           已读
@@ -816,21 +820,23 @@ export default function ChatDetail() {
               <div key={item.tmpId} data-testid={item.status === 'failed' ? 'pending-failed' : 'pending-sending'}>
                 <div className="mb-3 flex flex-row-reverse items-start gap-2">
                   <Avatar name={meName} color={avatarColor(currentUser.id)} size={40} src={currentUser.avatarUrl || ''} />
-                  <div className="flex max-w-[78%] flex-col items-end">
-                    <div className="relative mr-1 max-w-full opacity-70">
-                      <span className="bubble-tail bubble-tail-mine" />
-                      <div className="chat-bubble-text break-words whitespace-pre-wrap rounded-none bg-eink-ink px-2.5 py-[7px] text-[16px] leading-[22px] text-eink-paper">
-                        {item.reply ? <QuoteStrip mine quote={item.reply} /> : null}
-                        {item.image ? (
-                          <img
-                            src={item.image}
-                            alt=""
-                            className="mb-1 max-w-full object-contain opacity-80"
-                            style={{ width: 160 }}
-                          />
-                        ) : null}
-                        <LongTextBody text={item.text} />
-                      </div>
+                  <div className="flex max-w-[78%] flex-col items-end gap-1">
+                    <div className="flex max-w-full flex-col items-end gap-1 opacity-70">
+                      {item.image ? (
+                        <img
+                          data-testid="pending-image"
+                          src={item.image}
+                          alt=""
+                          className="max-w-full object-contain"
+                          style={{ width: 160 }}
+                        />
+                      ) : null}
+                      {item.text || item.reply ? (
+                        <Bubble mine>
+                          {item.reply ? <QuoteStrip mine quote={item.reply} /> : null}
+                          <LongTextBody text={item.text} />
+                        </Bubble>
+                      ) : null}
                     </div>
                     {item.status === 'failed' ? (
                       <div className="mt-1 flex items-center gap-2 px-1">
@@ -864,7 +870,7 @@ export default function ChatDetail() {
         {attach ? (
           <div
             data-testid="attach-preview"
-            className="flex items-center gap-2 border-b border-eink-divider px-2 py-1.5"
+            className="flex items-center gap-2 px-2 pt-1.5"
           >
             {attach.status === 'processing' ? (
               <span className="text-[12px] text-eink-sub">处理图片中...</span>
@@ -1005,10 +1011,7 @@ function pickReply() {
   return REPLIES[Math.floor(Math.random() * REPLIES.length)]
 }
 
-function Bubble({ mine, bare = false, children }) {
-  if (bare) {
-    return <div className="relative max-w-full">{children}</div>
-  }
+function Bubble({ mine, children }) {
   return (
     <div className={`relative max-w-full ${mine ? 'mr-1' : 'ml-1'}`}>
       <span className={`bubble-tail ${mine ? 'bubble-tail-mine' : 'bubble-tail-peer'}`} />

@@ -32,7 +32,7 @@ export default function SignedImage({ attachment, onView }) {
     return (
       <span
         data-testid="media-failed"
-        className="mt-1 inline-block border border-eink-divider bg-eink-bar px-3 py-2 text-[12px] text-eink-sub"
+        className="inline-block border border-eink-divider bg-eink-bar px-3 py-2 text-[12px] text-eink-sub"
       >
         图片加载失败
       </span>
@@ -44,7 +44,7 @@ export default function SignedImage({ attachment, onView }) {
       <div
         data-testid="media-loading"
         style={size ? { width: size.width, height: size.height } : { width: 168, height: 168 }}
-        className="mt-1 animate-pulse bg-eink-line/40"
+        className="animate-pulse bg-eink-line/40"
       />
     )
   }
@@ -58,7 +58,7 @@ export default function SignedImage({ attachment, onView }) {
       width={size?.width}
       height={size?.height}
       style={size ? { width: size.width, height: size.height } : { maxHeight: 240 }}
-      className="mt-1 max-w-full cursor-zoom-in object-contain"
+      className="max-w-full cursor-zoom-in object-contain"
       onClick={() => onView?.(url)}
     />
   )

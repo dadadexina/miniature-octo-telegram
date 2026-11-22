@@ -1,0 +1,186 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import ChatDetail from './ChatDetail'
+import { readImageFile } from '../lib/imagePipeline'
+import { uploadMessageBlob } from '../lib/messageMedia'
+
+const ME = '11111111-1111-4111-8111-111111111111'
+const PEER = '22222222-2222-4222-8222-222222222222'
+const PEER_USER = { id: PEER, nickname: '小红', publicId: '23456', avatarUrl: '' }
+
+const storeHolder = {
+  inbox: [],
+  drafts: {},
+}
+
+const stableMocks = {
+  messagesWith: () => [],
+  sendMessage: vi.fn(),
+  receiveMessage: vi.fn(),
+  avatarColor: () => '#191919',
+  logout: vi.fn(),
+  mergeInbox: vi.fn(),
+  openPeer: vi.fn(),
+  readReceiptOf: () => 0,
+  isBlocked: () => false,
+  setBlockedFor: vi.fn(),
+  setDraft: vi.fn(),
+}
+const meUser = { id: ME, nickname: '小明', avatarUrl: '' }
+
+vi.mock('../store', () => ({
+  useStore: () => ({
+    currentUser: meUser,
+    profile: meUser,
+    getUser: (id) => (id === PEER ? PEER_USER : null),
+    ...stableMocks,
+    inbox: storeHolder.inbox,
+    syncTick: 0,
+    drafts: storeHolder.drafts,
+    displayNameOf: () => PEER_USER.nickname,
+  }),
+}))
+
+vi.mock('../lib/messages', () => ({
+  canRecall: () => false,
+  fetchHiddenIds: vi.fn(() => Promise.resolve({ ok: true, ids: [] })),
+  fetchThread: vi.fn(() =>
+    Promise.resolve({ ok: true, messages: storeHolder.inbox, hasMore: false, oldest: null })
+  ),
+  hideMessage: vi.fn(),
+  insertMessageWithFriendHeal: vi.fn(),
+  isPairMessage: (msg, me, peer) =>
+    (msg.fromId === me && msg.toId === peer) || (msg.fromId === peer && msg.toId === me),
+  isUuid: (id) => /^[0-9a-f]{8}-/.test(String(id)),
+  recallMessage: vi.fn(),
+  searchThreadMessages: vi.fn(() => Promise.resolve({ ok: true, messages: [] })),
+}))
+
+vi.mock('../lib/imagePipeline', () => ({
+  readImageFile: vi.fn(),
+}))
+
+vi.mock('../lib/messageMedia', () => ({
+  MESSAGE_MEDIA_LIMITS: { maxSourceBytes: 25 * 1024 * 1024 },
+  uploadMessageBlob: vi.fn(),
+}))
+
+vi.mock('../lib/supabase', () => {
+  const makeChannel = () => {
+    const ch = {
+      presenceState: () => ({}),
+      track: vi.fn(() => Promise.resolve()),
+      untrack: vi.fn(() => Promise.resolve()),
+      subscribe: vi.fn(() => ch),
+      on: vi.fn(() => ch),
+    }
+    return ch
+  }
+  return {
+    supabase: {
+      channel: vi.fn(makeChannel),
+      removeChannel: vi.fn(),
+      auth: { signOut: vi.fn(() => Promise.resolve()) },
+    },
+  }
+})
+
+vi.mock('../components/AuthBar', () => ({ default: () => <div data-testid="auth-bar" /> }))
+vi.mock('../components/Avatar', () => ({ default: () => <div data-testid="avatar" /> }))
+vi.mock('../components/CopySql', () => ({ default: () => <div data-testid="copy-sql" /> }))
+vi.mock('../components/LongTextBody', () => ({
+  default: ({ text }) => (text ? <span>{text}</span> : null),
+}))
+vi.mock('../components/SignedImage', () => ({
+  default: ({ attachment }) => <img data-testid="signed-image" data-path={attachment?.path || ''} alt="" />,
+}))
+
+function setup() {
+  render(
+    <MemoryRouter initialEntries={[`/chat/${PEER}`]}>
+      <Routes>
+        <Route path="/chat/:peerId" element={<ChatDetail />} />
+      </Routes>
+    </MemoryRouter>
+  )
+}
+
+beforeEach(() => {
+  storeHolder.inbox = []
+  storeHolder.drafts = {}
+  readImageFile.mockReset()
+  uploadMessageBlob.mockReset()
+  URL.createObjectURL = vi.fn(() => 'blob:preview-image')
+  Element.prototype.scrollIntoView = vi.fn()
+})
+
+afterEach(cleanup)
+
+describe('ChatDetail 图片消息不额外套气泡边框', () => {
+  it('图片与文字一起发送时，图片独立展示，文字在自己的气泡内', async () => {
+    storeHolder.inbox = [
+      {
+        id: 'm-img-text',
+        fromId: ME,
+        toId: PEER,
+        text: '配文',
+        time: Date.now(),
+        attachments: { type: 'image', path: 'chat/p1.jpg', width: 120, height: 120 },
+      },
+    ]
+    setup()
+
+    const image = await screen.findByTestId('signed-image')
+    const bubble = screen.getByText('配文').closest('.chat-bubble-text')
+    expect(bubble).toBeTruthy()
+    expect(bubble.contains(image)).toBe(false)
+    expect(image.closest('.chat-bubble-text')).toBeNull()
+  })
+
+  it('纯图片消息不渲染文字气泡', async () => {
+    storeHolder.inbox = [
+      {
+        id: 'm-img-only',
+        fromId: ME,
+        toId: PEER,
+        text: '',
+        time: Date.now(),
+        attachments: { type: 'image', path: 'chat/p2.jpg', width: 120, height: 120 },
+      },
+    ]
+    setup()
+
+    const image = await screen.findByTestId('signed-image')
+    expect(image.closest('.chat-bubble-text')).toBeNull()
+    expect(document.querySelectorAll('.chat-bubble-text')).toHaveLength(0)
+  })
+
+  it('图片上传中不显示气泡边框，文字单独成气泡', async () => {
+    storeHolder.drafts = { [PEER]: '图片说明' }
+    readImageFile.mockResolvedValue({
+      ok: true,
+      blob: new Blob(['image'], { type: 'image/png' }),
+      width: 120,
+      height: 120,
+    })
+    uploadMessageBlob.mockReturnValue(new Promise(() => {}))
+    setup()
+
+    const input = screen.getByTestId('attach-input')
+    fireEvent.change(input, { target: { files: [new File(['image'], 'photo.png', { type: 'image/png' })] } })
+
+    await screen.findByAltText('附件预览')
+    expect(screen.getByTestId('attach-preview').className).not.toContain('border')
+    const send = screen.getByRole('button', { name: '发送' })
+    await waitFor(() => expect(send.disabled).toBe(false))
+    fireEvent.click(send)
+
+    const pending = await screen.findByTestId('pending-image')
+    expect(pending.closest('.chat-bubble-text')).toBeNull()
+    const bubble = screen.getByText('图片说明').closest('.chat-bubble-text')
+    expect(bubble).toBeTruthy()
+    expect(bubble.contains(pending)).toBe(false)
+  })
+})
