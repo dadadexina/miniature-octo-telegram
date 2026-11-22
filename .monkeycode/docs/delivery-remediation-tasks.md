@@ -53,11 +53,11 @@
 
 ## 5. 部署健壮性（P1）
 
-- [ ] **5.1 `vercel.json` 改 `npm ci`**：`installCommand` 由 `npm install` 改 `npm ci`。负责：我
-- [ ] **5.2 修正 catch-all 状态码**：SPA rewrite 对未知资源返回正确状态，避免错误页/SEO/监控失真（区分静态资源 404 与路由 200）。负责：我
-- [ ] **5.3 安全响应头**：加 `X-Content-Type-Options`、`Referrer-Policy`、基础 `Content-Security-Policy`（先 report-only）。负责：我
-- [ ] **5.4 健康检查端点**：新增轻量 `/health` 或 `health.json`，纳入部署后冒烟。负责：我
-- [ ] **5.5 CI 并发控制**：`ci.yml` 加 `concurrency`，避免同分支重复运行。负责：我
+- [x] **5.1 `vercel.json` 改 `npm ci`** —— 已完成（commit `b19a240`）。
+- [ ] **5.2 修正 catch-all 状态码**：SPA rewrite 对未知资源返回正确状态。需先在 Vercel 预览验证改法，避免破坏 SPA 路由。负责：我（待验证）
+- [x] **5.3 安全响应头** —— 已完成基础三项（commit `b19a240`）；CSP 待后续以 report-only 引入。
+- [x] **5.4 健康检查端点** —— 已完成：`public/health.json`（commit `b19a240`），构建产物 `dist/health.json`。
+- [x] **5.5 CI 并发控制** —— 已完成（commit `b19a240`）。
 
 ## 6. 产品功能（P1/F2，择机）
 
