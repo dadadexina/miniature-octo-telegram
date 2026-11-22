@@ -20,6 +20,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: node scripts/export-cloud-sql.mjs
+      - run: git diff --exit-code supabase/migrations/0001_baseline.sql
       - run: npm test
       - run: npm run build
 

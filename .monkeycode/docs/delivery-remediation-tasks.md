@@ -29,11 +29,11 @@
 
 > 现状：无 `supabase/migrations/`，DDL 以 `src/lib/schema_v2.js` 的 `CLOUD_SQL` 幂等脚本为单一真源（`roadmap-to-production.md` 第 45 行明确此设计）。引入 migrations 会推翻既有运维方式，需用户选型。
 
-- [ ] **2.0 选定方案**（二选一）：
+- [x] **2.0 选定方案** —— 已选方案 A（保留 `CLOUD_SQL` 真源 + `supabase/migrations/` 快照），二选一子项保留备查：
   - 方案 A（轻量，推荐）：保留 `CLOUD_SQL` 真源，新增 `supabase/migrations/` 存每次变更的带时间戳 `.sql` 只读快照，用 `supabase db diff` 校验生产与真源一致。风险低，不动现有控制台执行流程。
   - 方案 B（标准）：正式改用 Supabase CLI migrations，`CLOUD_SQL` 变为迁移拼接产物，重写部署与文档流程。改动大。
   - 负责：用户决策
-- [ ] **2.1 落地所选方案**：按 2.0 选型执行；若 A，补首个基线快照 + diff 校验脚本 + README 说明。负责：共同
+- [x] **2.1 落地所选方案** —— 已完成：`supabase/migrations/0001_baseline.sql` 基线快照（commit `13548eb`，已含 0.4/0.5/3.4 变更）、`supabase/README.md` 流程说明、CI `verify` job 校验快照与源码同步。负责：共同
 - [ ] **2.2 迁移执行纳入 CI 校验**（仅 B 需要）：PR 上 `supabase db diff` 无漂移方可合并。负责：我
 
 ## 3. 安全与合规（P0，代码可做）
