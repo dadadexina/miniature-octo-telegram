@@ -1,35 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import Avatar from '../components/Avatar'
-import ImageViewer from '../components/ImageViewer'
-import MomentCover from '../components/MomentCover'
-import { CommentIcon, ThumbIcon } from '../components/MomentIcons'
-import PullIndicator from '../components/PullIndicator'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import DiscoverGlobe from '../components/DiscoverGlobe'
 import { isUuid } from '../lib/messages'
 import { downscaleMomentImage } from '../lib/momentImage'
-import usePullToRefresh from '../lib/usePullToRefresh'
-import {
-  addMomentComment,
-  createMoment,
-  deleteMoment,
-  deleteMomentComment,
-  fetchMomentInteractions,
-  fetchMoments,
-  likeMoment,
-  momentStoragePath,
-  removeMomentImage,
-  unlikeMoment,
-  uploadMomentImage,
-} from '../lib/moments'
+import { createMoment, fetchMoments, uploadMomentImage } from '../lib/moments'
 import { fetchProfilesByIds } from '../lib/profiles'
-import { loadLocalSignature } from '../lib/signature'
 import { useStore } from '../store'
-import { formatRelativeTime } from '../utils'
-
-function mergeByKey(prev, incoming, keyOf) {
-  const seen = new Set(prev.map(keyOf))
-  return [...prev, ...incoming.filter((item) => !seen.has(keyOf(item)))]
-}
 
 let feedCache = null
 
@@ -37,36 +13,114 @@ function cacheFor(userId) {
   return feedCache && feedCache.userId === userId ? feedCache : null
 }
 
-export default function Discover() {
-  const { currentUser } = useStore()
-  if (!currentUser) return null
-  return isUuid(currentUser.id) ? <CloudDiscover /> : <LocalDiscover />
+function formatWeekLabel() {
+  const now = new Date()
+  const day = now.getDay() || 7
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - day + 1)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  return `${monday.getMonth() + 1}.${monday.getDate()}—${sunday.getMonth() + 1}.${sunday.getDate()}`
 }
 
-function CloudDiscover() {
-  const { currentUser, profile, avatarColor, getUser, upsertUsers, syncTick, displayNameOf } = useStore()
+function buildPeople({ meId, friends, feed, getUser, displayNameOf, avatarColor }) {
+  const map = new Map()
+  ;(friends || []).forEach((friend) => {
+    if (!friend?.id || friend.id === meId) return
+    map.set(friend.id, {
+      id: friend.id,
+      name: displayNameOf(friend.id) || friend.nickname || '朋友',
+      avatarUrl: friend.avatarUrl || '',
+      color: avatarColor(friend.id),
+    })
+  })
+  ;(feed || []).forEach((moment) => {
+    const id = moment.authorId
+    if (!id || id === meId || map.has(id)) return
+    const user = getUser(id)
+    map.set(id, {
+      id,
+      name: displayNameOf(id) || user?.nickname || '朋友',
+      avatarUrl: user?.avatarUrl || '',
+      color: avatarColor(id),
+    })
+  })
+  return [...map.values()]
+}
+
+function buildRoutes({ meId, feed, getUser, displayNameOf, avatarColor }) {
+  const seen = new Set()
+  const routes = []
+  const sorted = [...(feed || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+  for (const moment of sorted) {
+    const authorId = moment.authorId
+    if (!authorId || authorId === meId || seen.has(authorId)) continue
+    const user = getUser(authorId)
+    seen.add(authorId)
+    routes.push({
+      ...moment,
+      name: displayNameOf(authorId) || user?.nickname || '朋友',
+      avatarUrl: user?.avatarUrl || '',
+      color: avatarColor(authorId),
+    })
+    if (routes.length === 3) break
+  }
+  return routes
+}
+
+export default function Discover() {
+  const navigate = useNavigate()
+  const { currentUser } = useStore()
+  if (!currentUser) return null
+  const onReply = (peerId) => navigate(`/chat/${peerId}`)
+  return isUuid(currentUser.id) ? <CloudDiscover onReply={onReply} /> : <LocalDiscover onReply={onReply} />
+}
+
+function DiscoverHeader({ weekLabel, onWrite }) {
+  return (
+    <header className="sticky top-0 z-20 flex h-11 shrink-0 items-center border-b border-eink-divider bg-eink-bar px-3">
+      <div className="w-16 truncate text-[10px] tracking-tight text-eink-faint">{weekLabel}</div>
+      <h1 className="flex-1 truncate text-center text-[17px] font-medium">你的地球</h1>
+      <div className="flex w-16 justify-end">
+        <button
+          type="button"
+          data-testid="discover-write"
+          className="text-[13px] font-medium text-eink-ink underline underline-offset-4"
+          onClick={onWrite}
+        >
+          写一页
+        </button>
+      </div>
+    </header>
+  )
+}
+
+function CloudDiscover({ onReply }) {
+  const {
+    currentUser,
+    profile,
+    avatarColor,
+    getUser,
+    upsertUsers,
+    syncTick,
+    displayNameOf,
+    friendsOf,
+  } = useStore()
   const meName = profile?.nickname || currentUser.nickname
   const meId = currentUser.id
-  const meSignature = profile?.signature || loadLocalSignature(meId)
   const initialCache = cacheFor(meId)
   const [feed, setFeed] = useState(() => initialCache?.feed || [])
-  const [likes, setLikes] = useState(() => initialCache?.likes || [])
-  const [comments, setComments] = useState(() => initialCache?.comments || [])
-  const [hasMore, setHasMore] = useState(() => initialCache?.hasMore || false)
-  const [oldestAt, setOldestAt] = useState(() => initialCache?.oldestAt || null)
   const [loading, setLoading] = useState(() => !initialCache)
-  const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState('')
   const [publishing, setPublishing] = useState(false)
-  const [viewerUrl, setViewerUrl] = useState('')
-  const [error, setError] = useState('')
-  const [expanded, setExpanded] = useState({})
-  const [commentText, setCommentText] = useState({})
+  const [loadError, setLoadError] = useState('')
+  const [formError, setFormError] = useState('')
   const fileRef = useRef(null)
   const hydratedRef = useRef(new Set())
+  const weekLabel = useMemo(() => formatWeekLabel(), [])
 
   const hydrateAuthors = useCallback(
     async (moments) => {
@@ -94,54 +148,29 @@ function CloudDiscover() {
     [getUser, upsertUsers]
   )
 
-  const load = useCallback(
-    async ({ append = false, before = null } = {}) => {
-      setBusy(true)
-      const res = await fetchMoments({ before })
-      if (!res.ok) {
-        setBusy(false)
-        setLoading(false)
-        setError(res.error || '读取动态失败')
-        return
-      }
-      setFeed((prev) =>
-        append ? [...prev, ...res.moments.filter((m) => !prev.some((x) => x.id === m.id))] : res.moments
-      )
-      setHasMore(res.hasMore)
-      if (res.oldest) setOldestAt(res.oldest)
-      if (!res.moments.length && !append) {
-        setLikes([])
-        setComments([])
-      }
-      const ids = res.moments.map((m) => m.id).filter(Boolean)
-      if (ids.length) {
-        const inter = await fetchMomentInteractions(ids)
-        if (inter.ok) {
-          if (append) {
-            setLikes((prev) => mergeByKey(prev, inter.likes, (l) => `${l.momentId}:${l.userId}`))
-            setComments((prev) => mergeByKey(prev, inter.comments, (c) => c.id))
-          } else {
-            setLikes(inter.likes)
-            setComments(inter.comments)
-          }
-        }
-      }
-      setBusy(false)
+  const load = useCallback(async () => {
+    const res = await fetchMoments({ limit: 50 })
+    if (!res.ok) {
       setLoading(false)
-      setError('')
-      await hydrateAuthors(res.moments)
-    },
-    [hydrateAuthors]
-  )
-
-  const { scrollRef, pull, refreshing, threshold, handlers } = usePullToRefresh({ onRefresh: () => load() })
-
-  useEffect(() => {
-    feedCache = { userId: meId, feed, likes, comments, hasMore, oldestAt }
-  }, [meId, feed, likes, comments, hasMore, oldestAt])
+      setLoadError(res.error || '读取近况失败')
+      return
+    }
+    setFeed(res.moments)
+    setLoading(false)
+    setLoadError('')
+    await hydrateAuthors(res.moments)
+  }, [hydrateAuthors])
 
   useEffect(() => {
+    feedCache = { userId: meId, feed }
+  }, [meId, feed])
+
+  useEffect(() => {
+    // setState 均在 await fetchMoments 之后发生，不会同步级联渲染
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load()
+    // 同步触发后静默刷新，避免覆盖缓存的直接呈现
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meId, syncTick])
 
   useEffect(() => {
@@ -152,20 +181,35 @@ function CloudDiscover() {
     }
   }, [open])
 
-  const nameOf = (userId) => {
-    if (userId === meId) return meName
-    return displayNameOf(userId) || getUser(userId)?.nickname || '用户'
+  const friends = useMemo(() => friendsOf(meId), [friendsOf, meId])
+  const people = useMemo(
+    () => buildPeople({ meId, friends, feed, getUser, displayNameOf, avatarColor }),
+    [meId, friends, feed, getUser, displayNameOf, avatarColor]
+  )
+  const routes = useMemo(
+    () => buildRoutes({ meId, feed, getUser, displayNameOf, avatarColor }),
+    [meId, feed, getUser, displayNameOf, avatarColor]
+  )
+
+  const pickImage = (file) => {
+    if (!file) return
+    setImageFile(file)
+    try {
+      setImagePreview(URL.createObjectURL(file))
+    } catch {
+      setImagePreview('')
+    }
   }
 
-  const submit = async (e) => {
-    e.preventDefault()
+  const submit = async (event) => {
+    event.preventDefault()
     const content = text.trim()
     if (!content && !imageFile) {
-      setError('请输入内容或选择图片')
+      setFormError('请输入内容或选择图片')
       return
     }
     setPublishing(true)
-    setError('')
+    setFormError('')
     try {
       let imageUrl = ''
       if (imageFile) {
@@ -178,7 +222,7 @@ function CloudDiscover() {
       const res = await createMoment({ authorId: meId, content, imageUrl })
       if (!res.ok) throw new Error(res.error || '发布失败')
     } catch (err) {
-      setError(err?.message || '发布失败')
+      setFormError(err?.message || '发布失败')
       setPublishing(false)
       return
     }
@@ -188,278 +232,56 @@ function CloudDiscover() {
     setImageFile(null)
     setImagePreview('')
     await load()
-    requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }))
-  }
-
-  const toggleLike = async (moment) => {
-    const liked = likes.some((l) => l.momentId === moment.id && l.userId === meId)
-    const prevLikes = likes
-    setLikes(
-      liked
-        ? likes.filter((l) => !(l.momentId === moment.id && l.userId === meId))
-        : [...likes, { momentId: moment.id, userId: meId }]
-    )
-    const res = liked ? await unlikeMoment(moment.id, meId) : await likeMoment(moment.id, meId)
-    if (!res.ok) {
-      setLikes(prevLikes)
-      setError(res.error || '操作失败')
-    }
-  }
-
-  const submitComment = async (momentId, e) => {
-    e.preventDefault()
-    const content = (commentText[momentId] || '').trim()
-    if (!content) return
-    const prevComments = comments
-    const tempId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    setComments((prev) => [
-      ...prev,
-      { id: tempId, momentId, userId: meId, content, createdAt: Date.now() },
-    ])
-    setCommentText((prev) => ({ ...prev, [momentId]: '' }))
-    const res = await addMomentComment({ momentId, userId: meId, content })
-    if (!res.ok) {
-      setComments(prevComments)
-      setCommentText((prev) => ({ ...prev, [momentId]: content }))
-      setError(res.error || '评论失败')
-      return
-    }
-    if (res.comment) setComments((prev) => prev.map((c) => (c.id === tempId ? res.comment : c)))
-  }
-
-  const removeComment = async (comment) => {
-    const prevComments = comments
-    setComments((prev) => prev.filter((c) => c.id !== comment.id))
-    if (String(comment.id).startsWith('local-')) return
-    const res = await deleteMomentComment(comment.id)
-    if (!res.ok) {
-      setComments(prevComments)
-      setError(res.error || '删除失败')
-    }
-  }
-
-  const removeMoment = async (moment) => {
-    const path = momentStoragePath(moment.imageUrl)
-    setFeed((prev) => prev.filter((m) => m.id !== moment.id))
-    const res = await deleteMoment(moment.id)
-    if (path) removeMomentImage(path)
-    if (!res.ok) {
-      setError(res.error || '删除失败')
-      await load()
-    }
-  }
-
-  const pickImage = (file) => {
-    if (!file) return
-    setImageFile(file)
-    try {
-      setImagePreview(URL.createObjectURL(file))
-    } catch {
-      setImagePreview('')
-    }
   }
 
   return (
-    <div className="flex h-full flex-col bg-white">
-      <header className="sticky top-0 z-20 flex h-11 shrink-0 items-center border-b border-eink-divider bg-eink-bar px-3">
-        <div className="w-16" />
-        <h1 className="flex-1 truncate text-center text-[17px] font-medium">纸墨信笺</h1>
-        <div className="flex w-16 justify-end">
-          <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => setOpen(true)} aria-label="发布">
-            <CameraIcon />
-          </button>
-        </div>
-      </header>
-
-      <div
-        ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto no-scrollbar"
-        data-testid="moments-scroll"
-        {...handlers}
-      >
-        <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} testId="moments-pull-indicator" />
-        <MomentCover
-          userId={meId}
-          name={meName}
-          avatarSrc={profile?.avatarUrl || currentUser.avatarUrl || ''}
-          avatarColor={avatarColor(meId)}
-          signature={meSignature}
-          editable={false}
-          raised
+    <div className="flex h-full flex-col bg-eink-paper">
+      <DiscoverHeader
+        weekLabel={weekLabel}
+        onWrite={() => {
+          setFormError('')
+          setOpen(true)
+        }}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
+        <p className="px-6 pt-3 text-center text-[11px] leading-5 text-eink-sub">
+          {meName} 的地球上，只有你认识的人
+        </p>
+        <DiscoverGlobe
+          people={people}
+          routes={routes}
+          meId={meId}
+          loading={loading}
+          error={loadError}
+          emptyText="本周还没有朋友写信。你可以先写一页。"
+          onReply={onReply}
         />
-
-        <div className="h-4" />
-
-        {error ? <p className="px-4 py-2 text-[12px] text-eink-sub">{error}</p> : null}
-
-        {loading ? (
-          <p className="px-6 py-12 text-center text-[14px] text-eink-sub">正在读取动态...</p>
-        ) : feed.length === 0 ? (
-          <p data-testid="moments-empty" className="px-6 py-12 text-center text-[14px] text-eink-sub">
-            还没有动态，发布第一条吧
-          </p>
-        ) : (
-          feed.map((moment) => {
-            const author = getUser(moment.authorId) || { id: moment.authorId, nickname: '用户', avatarUrl: '' }
-            const authorName = nameOf(moment.authorId)
-            const momentLikes = likes.filter((l) => l.momentId === moment.id)
-            const momentComments = comments.filter((c) => c.momentId === moment.id)
-            const liked = momentLikes.some((l) => l.userId === meId)
-            const canDeleteComment = (c) => c.userId === meId || moment.authorId === meId
-            return (
-              <article key={moment.id} data-testid="moment-item" className="flex gap-3 border-b border-eink-divider px-3 py-3.5">
-                <Link
-                  to={moment.authorId === meId ? '/me' : `/friend/${moment.authorId}`}
-                  data-testid="moment-author-avatar"
-                  aria-label={`查看${authorName}的资料`}
-                  className="shrink-0"
-                >
-                  <Avatar name={authorName} color={avatarColor(author.id)} size={42} src={author.avatarUrl || ''} />
-                </Link>
-                <div className="min-w-0 flex-1 pr-2">
-                  <div className="text-[15px] font-medium text-eink-ink">{authorName}</div>
-                  {moment.content ? (
-                    <p className="moment-text mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-[#191919]">
-                      {moment.content}
-                    </p>
-                  ) : null}
-                  {moment.imageUrl ? (
-                    <button
-                      type="button"
-                      data-testid="moment-image-open"
-                      aria-label="查看动态原图"
-                      className="mt-2 block cursor-zoom-in text-left"
-                      onClick={() => setViewerUrl(moment.imageUrl)}
-                    >
-                      <img
-                        data-testid="moment-image"
-                        src={moment.imageUrl}
-                        alt="动态图片"
-                        loading="lazy"
-                        className="max-h-[320px] w-auto max-w-[240px] border border-eink-divider object-cover"
-                      />
-                    </button>
-                  ) : null}
-                  <div className="mt-2.5 flex items-center gap-3 text-[12px] text-eink-faint">
-                    <span>{formatRelativeTime(moment.createdAt)}</span>
-                    <button
-                      type="button"
-                      data-testid="like-btn"
-                      className={`flex items-center gap-1 font-medium ${liked ? 'text-eink-ink' : 'text-eink-sub'}`}
-                      onClick={() => toggleLike(moment)}
-                    >
-                      <ThumbIcon filled={liked} />
-                      <span>
-                        {liked ? '取消赞' : '赞'}
-                        {momentLikes.length ? ` ${momentLikes.length}` : ''}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="comment-btn"
-                      className="flex items-center gap-1 font-medium text-eink-sub"
-                      onClick={() => setExpanded((prev) => ({ ...prev, [moment.id]: !prev[moment.id] }))}
-                    >
-                      <CommentIcon />
-                      <span>评论{momentComments.length ? ` ${momentComments.length}` : ''}</span>
-                    </button>
-                    {moment.authorId === meId ? (
-                      <button
-                        type="button"
-                        data-testid="delete-moment"
-                        className="font-medium text-eink-sub"
-                        onClick={() => removeMoment(moment)}
-                      >
-                        删除
-                      </button>
-                    ) : null}
-                  </div>
-                  {momentLikes.length ? (
-                    <div className="mt-1.5 border-t border-eink-divider pt-1.5 text-[12px] leading-5 text-eink-sub">
-                      赞：{momentLikes.map((l) => nameOf(l.userId)).join('，')}
-                    </div>
-                  ) : null}
-                  {momentComments.map((c) => (
-                    <div key={c.id} data-testid="moment-comment" className="mt-1 text-[13px] leading-5 text-[#191919]">
-                      <span className="font-medium text-eink-sub">{nameOf(c.userId)}</span>
-                      <span className="text-eink-faint">：</span>
-                      <span className="break-words">{c.content}</span>
-                      {canDeleteComment(c) ? (
-                        <button
-                          type="button"
-                          className="ml-2 text-[12px] text-eink-faint underline underline-offset-2"
-                          onClick={() => removeComment(c)}
-                        >
-                          删除
-                        </button>
-                      ) : null}
-                    </div>
-                  ))}
-                  {expanded[moment.id] ? (
-                    <form className="mt-2 flex items-center gap-2" onSubmit={(e) => submitComment(moment.id, e)}>
-                      <input
-                        className="h-8 min-w-0 flex-1 border border-eink-line/25 bg-eink-bar px-2 text-[14px] outline-none"
-                        placeholder="说点什么..."
-                        maxLength={500}
-                        value={commentText[moment.id] || ''}
-                        onChange={(e) => setCommentText((prev) => ({ ...prev, [moment.id]: e.target.value }))}
-                        autoFocus
-                      />
-                      <button
-                        type="submit"
-                        className="h-8 shrink-0 bg-eink-ink px-3 text-[13px] text-eink-paper active:bg-eink-pressed"
-                      >
-                        发送
-                      </button>
-                    </form>
-                  ) : null}
-                </div>
-              </article>
-            )
-          })
-        )}
-
-        {!loading && hasMore ? (
-          <div className="flex justify-center py-4">
-            <button
-              type="button"
-              data-testid="moments-more"
-              className="border border-eink-divider bg-eink-bar px-4 py-1.5 text-[13px] text-eink-sub disabled:opacity-60"
-              disabled={busy}
-              onClick={() => load({ append: true, before: oldestAt })}
-            >
-              {busy ? '正在加载...' : '查看更早的动态'}
-            </button>
-          </div>
-        ) : null}
       </div>
-
-      {viewerUrl ? <ImageViewer url={viewerUrl} onClose={() => setViewerUrl('')} /> : null}
 
       {open ? (
         <div className="fixed inset-0 z-40 flex items-end bg-black/60" onClick={() => !publishing && setOpen(false)}>
           <form
-            className="safe-bottom w-full rounded-t-none border-t-2 border-eink-ink bg-eink-bar px-4 pb-5 pt-3"
-            onClick={(e) => e.stopPropagation()}
+            className="safe-bottom w-full border-t-2 border-eink-ink bg-eink-bar px-4 pb-5 pt-3"
+            onClick={(event) => event.stopPropagation()}
             onSubmit={submit}
           >
             <div className="mb-3 flex items-center justify-between">
               <button type="button" className="px-1 text-[15px] text-eink-sub" onClick={() => setOpen(false)}>
                 取消
               </button>
-              <span className="text-[16px] font-medium">发布动态</span>
+              <span className="text-[16px] font-medium">写一页</span>
               <button type="submit" className="px-1 text-[15px] font-medium text-eink-ink" disabled={publishing}>
-                {publishing ? '发布中...' : '发表'}
+                {publishing ? '寄出中...' : '寄出'}
               </button>
             </div>
             <textarea
-              className="h-28 w-full resize-none rounded-none border border-eink-divider bg-eink-paper p-3 text-[15px] outline-none"
-              placeholder="这一刻的想法..."
+              className="h-32 w-full resize-none border border-eink-divider bg-eink-paper p-3 text-[16px] leading-7 outline-none"
+              placeholder="这一周，想留下什么？"
               maxLength={2000}
               value={text}
-              onChange={(e) => {
-                setText(e.target.value)
-                setError('')
+              onChange={(event) => {
+                setText(event.target.value)
+                setFormError('')
               }}
               autoFocus
             />
@@ -470,7 +292,7 @@ function CloudDiscover() {
                 className="border border-eink-divider bg-eink-surface px-3 py-1.5 text-[13px] text-eink-sub active:bg-eink-pressed"
                 onClick={() => fileRef.current?.click()}
               >
-                {imageFile ? '更换图片' : '添加图片'}
+                {imageFile ? '更换图片' : '附一张图'}
               </button>
               {imageFile ? (
                 <button
@@ -489,17 +311,17 @@ function CloudDiscover() {
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => pickImage(e.target.files?.[0])}
+                onChange={(event) => pickImage(event.target.files?.[0])}
               />
             </div>
             {imagePreview ? (
               <img
                 src={imagePreview}
                 alt="待发布图片预览"
-                className="mt-2 max-h-[160px] w-auto max-w-[160px] border border-eink-divider object-cover"
+                className="mt-2 max-h-[160px] w-auto max-w-[160px] border border-eink-divider object-cover grayscale"
               />
             ) : null}
-            {error ? <p className="mt-2 text-[13px] font-medium text-eink-ink">{error}</p> : null}
+            {formError ? <p className="mt-2 text-[13px] font-medium text-eink-ink">{formError}</p> : null}
           </form>
         </div>
       ) : null}
@@ -536,7 +358,7 @@ function PhotoGrid({ count, seed = '' }) {
         return (
           <div
             key={i}
-            className="relative aspect-square overflow-hidden rounded-none"
+            className="relative aspect-square overflow-hidden"
             style={{ background: `linear-gradient(145deg, ${from}, ${to})` }}
           >
             <span className="absolute inset-0 flex items-center justify-center text-[12px] text-white/80">
@@ -549,127 +371,101 @@ function PhotoGrid({ count, seed = '' }) {
   )
 }
 
-function LocalDiscover() {
-  const { currentUser, momentsFeed, publishMoment, getUser, avatarColor, profile, displayNameOf } = useStore()
+function LocalDiscover({ onReply }) {
+  const {
+    currentUser,
+    momentsFeed,
+    publishMoment,
+    getUser,
+    avatarColor,
+    profile,
+    displayNameOf,
+    friendsOf,
+  } = useStore()
+  const meId = currentUser.id
   const meName = profile?.nickname || currentUser.nickname
-  const meSignature = profile?.signature || loadLocalSignature(currentUser.id)
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [images, setImages] = useState(4)
-  const [error, setError] = useState('')
-  const listRef = useRef(null)
-  const feed = momentsFeed()
+  const [formError, setFormError] = useState('')
+  const weekLabel = useMemo(() => formatWeekLabel(), [])
+  const feed = momentsFeed().map((moment) => ({
+    id: moment.id,
+    authorId: moment.userId,
+    content: moment.text,
+    imageUrl: '',
+    imageCount: moment.images,
+    createdAt: moment.time,
+  }))
+  const friends = friendsOf(meId)
+  const people = buildPeople({ meId, friends, feed, getUser, displayNameOf, avatarColor })
+  const routes = buildRoutes({ meId, feed, getUser, displayNameOf, avatarColor })
 
   useEffect(() => {
-    if (!open) return undefined
     const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    if (open) document.body.style.overflow = 'hidden'
     return () => {
       document.body.style.overflow = prev
     }
   }, [open])
 
-  const submit = (e) => {
-    e.preventDefault()
+  const submit = (event) => {
+    event.preventDefault()
     const result = publishMoment({ text, images })
     if (!result.ok) {
-      setError(result.error)
+      setFormError(result.error)
       return
     }
     setText('')
     setImages(4)
-    setError('')
+    setFormError('')
     setOpen(false)
-    requestAnimationFrame(() => {
-      listRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-    })
   }
 
   return (
-    <div className="flex h-full flex-col bg-white">
-      <header className="sticky top-0 z-20 flex h-11 shrink-0 items-center border-b border-eink-divider bg-eink-bar px-3">
-        <div className="w-16" />
-        <h1 className="flex-1 truncate text-center text-[17px] font-medium">纸墨信笺</h1>
-        <div className="flex w-16 justify-end">
-          <button type="button" className="flex h-9 w-9 items-center justify-center" onClick={() => setOpen(true)} aria-label="发布">
-            <CameraIcon />
-          </button>
-        </div>
-      </header>
-
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
-        <MomentCover
-          userId={currentUser.id}
-          name={meName}
-          avatarSrc={profile?.avatarUrl || currentUser.avatarUrl || ''}
-          avatarColor={avatarColor(currentUser.id)}
-          signature={meSignature}
-          editable={false}
-          raised
-        />
-
-        <div className="h-4" />
-
-        <p className="mx-3 mb-2 border border-eink-divider bg-eink-bar px-3 py-1.5 text-center text-[12px] text-eink-sub">
-          演示数据 · 登录云端账号后同步真实朋友圈
+    <div className="flex h-full flex-col bg-eink-paper">
+      <DiscoverHeader weekLabel={weekLabel} onWrite={() => setOpen(true)} />
+      <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
+        <p className="px-6 pt-3 text-center text-[11px] leading-5 text-eink-sub">
+          {meName} 的地球上，只有你认识的人
         </p>
-
-        {feed.length === 0 ? (
-          <p className="px-6 py-12 text-center text-[14px] text-eink-sub">还没有动态，发布第一条吧</p>
-        ) : (
-          feed.map((moment) => {
-            const author = getUser(moment.userId)
-            if (!author) return null
-            const authorName = author.id === currentUser.id ? meName : displayNameOf(author.id) || author.nickname
-            return (
-              <article key={moment.id} className="flex gap-3 border-b border-eink-divider px-3 py-3.5">
-                <Link
-                  to={author.id === currentUser.id ? '/me' : `/friend/${author.id}`}
-                  data-testid="moment-author-avatar"
-                  aria-label={`查看${authorName}的资料`}
-                  className="shrink-0"
-                >
-                  <Avatar name={authorName} color={avatarColor(author.id)} size={42} src={author.avatarUrl || ''} />
-                </Link>
-                <div className="min-w-0 flex-1 pr-2">
-                  <div className="text-[15px] font-medium text-eink-ink">{authorName}</div>
-                  {moment.text ? (
-                    <p className="moment-text mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-[#191919]">
-                      {moment.text}
-                    </p>
-                  ) : null}
-                  <PhotoGrid count={moment.images} seed={moment.id} />
-                  <div className="mt-2.5 text-[12px] text-eink-faint">{formatRelativeTime(moment.time)}</div>
-                </div>
-              </article>
-            )
-          })
-        )}
+        <DiscoverGlobe
+          people={people}
+          routes={routes}
+          meId={meId}
+          loading={false}
+          error=""
+          emptyText="还没有信。你可以先写一页。"
+          onReply={onReply}
+        />
+        <p className="mx-4 mb-6 border border-eink-divider bg-eink-bar px-3 py-1.5 text-center text-[12px] text-eink-sub">
+          演示数据 · 登录云端账号后同步真实近况
+        </p>
       </div>
 
       {open ? (
         <div className="fixed inset-0 z-40 flex items-end bg-black/60" onClick={() => setOpen(false)}>
           <form
-            className="safe-bottom w-full rounded-t-none border-t-2 border-eink-ink bg-eink-bar px-4 pb-5 pt-3"
-            onClick={(e) => e.stopPropagation()}
+            className="safe-bottom w-full border-t-2 border-eink-ink bg-eink-bar px-4 pb-5 pt-3"
+            onClick={(event) => event.stopPropagation()}
             onSubmit={submit}
           >
             <div className="mb-3 flex items-center justify-between">
               <button type="button" className="px-1 text-[15px] text-eink-sub" onClick={() => setOpen(false)}>
                 取消
               </button>
-              <span className="text-[16px] font-medium">发布动态</span>
+              <span className="text-[16px] font-medium">写一页</span>
               <button type="submit" className="px-1 text-[15px] font-medium text-eink-ink">
-                发表
+                寄出
               </button>
             </div>
             <textarea
-              className="h-28 w-full resize-none rounded-none border border-eink-divider bg-eink-paper p-3 outline-none"
-              placeholder="这一刻的想法..."
+              className="h-32 w-full resize-none border border-eink-divider bg-eink-paper p-3 text-[16px] leading-7 outline-none"
+              placeholder="这一周，想留下什么？"
               value={text}
-              onChange={(e) => {
-                setText(e.target.value)
-                setError('')
+              onChange={(event) => {
+                setText(event.target.value)
+                setFormError('')
               }}
               autoFocus
             />
@@ -680,7 +476,7 @@ function LocalDiscover() {
                   <button
                     key={n}
                     type="button"
-                    className={`h-8 w-8 rounded-none ${images === n ? 'bg-eink-ink text-eink-paper' : 'border border-eink-divider bg-eink-surface text-eink-sub'}`}
+                    className={`h-8 w-8 ${images === n ? 'bg-eink-ink text-eink-paper' : 'border border-eink-divider bg-eink-surface text-eink-sub'}`}
                     onClick={() => setImages(n)}
                   >
                     {n}
@@ -689,19 +485,10 @@ function LocalDiscover() {
               </div>
             </div>
             {images > 0 ? <PhotoGrid count={images} seed="preview" /> : null}
-            {error ? <p className="mt-2 text-[13px] font-medium text-eink-ink">{error}</p> : null}
+            {formError ? <p className="mt-2 text-[13px] font-medium text-eink-ink">{formError}</p> : null}
           </form>
         </div>
       ) : null}
     </div>
-  )
-}
-
-function CameraIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <path d="M9 7.2 10.1 5.5h3.8L15 7.2h2.2A2.3 2.3 0 0 1 19.5 9.5v7.2A2.3 2.3 0 0 1 17.2 19H6.8A2.3 2.3 0 0 1 4.5 16.7V9.5A2.3 2.3 0 0 1 6.8 7.2H9Z" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="12" cy="13" r="3.1" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
   )
 }

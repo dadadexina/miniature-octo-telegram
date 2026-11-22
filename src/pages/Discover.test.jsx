@@ -1,37 +1,43 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Discover from './Discover'
-import { fetchMomentInteractions, fetchMoments } from '../lib/moments'
+import { createMoment, fetchMoments } from '../lib/moments'
 import { fetchProfilesByIds } from '../lib/profiles'
 
 const ME = '11111111-1111-4111-8111-111111111111'
+const FRIEND_A = '22222222-2222-4222-8222-222222222222'
+
+const users = vi.hoisted(() => ({
+  '11111111-1111-4111-8111-111111111111': { id: '11111111-1111-4111-8111-111111111111', nickname: '我', avatarUrl: '' },
+  '22222222-2222-4222-8222-222222222222': { id: '22222222-2222-4222-8222-222222222222', nickname: '阿哲', avatarUrl: '' },
+}))
+const storeState = vi.hoisted(() => ({ friends: [] }))
 
 vi.mock('../store', () => ({
   useStore: () => ({
-    currentUser: { id: '11111111-1111-4111-8111-111111111111', nickname: '我', avatarUrl: '' },
+    currentUser: users['11111111-1111-4111-8111-111111111111'],
     profile: { nickname: '我', avatarUrl: '', signature: '见字如面' },
     avatarColor: () => '#191919',
-    getUser: () => null,
+    getUser: (id) => users[id] || null,
     upsertUsers: vi.fn(),
     syncTick: 0,
-    displayNameOf: () => '',
+    displayNameOf: (id) => users[id]?.nickname || '',
+    friendsOf: () => storeState.friends,
+    momentsFeed: () => [],
+    publishMoment: vi.fn(() => ({ ok: true })),
   }),
 }))
 
 vi.mock('../lib/moments', () => ({
   fetchMoments: vi.fn(),
-  fetchMomentInteractions: vi.fn(),
   createMoment: vi.fn(),
-  deleteMoment: vi.fn(),
-  likeMoment: vi.fn(),
-  unlikeMoment: vi.fn(),
-  addMomentComment: vi.fn(),
-  deleteMomentComment: vi.fn(),
-  momentStoragePath: () => '',
-  removeMomentImage: vi.fn(),
   uploadMomentImage: vi.fn(),
+}))
+
+vi.mock('../lib/momentImage', () => ({
+  downscaleMomentImage: vi.fn(),
 }))
 
 vi.mock('../lib/profiles', () => ({
@@ -42,95 +48,104 @@ vi.mock('../components/Avatar', () => ({
   default: ({ name }) => <div data-testid="avatar">{(name || '?').slice(0, 1)}</div>,
 }))
 
-beforeEach(() => {
-  localStorage.clear()
-  fetchMoments.mockReset()
-  fetchProfilesByIds.mockReset()
-  fetchProfilesByIds.mockResolvedValue({ ok: true, profiles: [] })
-  fetchMoments.mockResolvedValue({ ok: true, moments: [], hasMore: false, oldest: null })
-  fetchMomentInteractions.mockReset()
-  fetchMomentInteractions.mockResolvedValue({ ok: true, likes: [], comments: [] })
-})
-
-afterEach(cleanup)
+function ChatProbe() {
+  const { peerId } = useParams()
+  return <div data-testid="chat-page">{peerId}</div>
+}
 
 function setup() {
   render(
-    <MemoryRouter>
-      <Discover />
+    <MemoryRouter initialEntries={['/discover']}>
+      <Routes>
+        <Route path="/discover" element={<Discover />} />
+        <Route path="/chat/:peerId" element={<ChatProbe />} />
+      </Routes>
     </MemoryRouter>
   )
 }
 
-describe('Discover 朋友圈页', () => {
-  it('移除刷新按钮与封面相机入口，保留下拉刷新指示器', async () => {
+beforeEach(() => {
+  localStorage.clear()
+  storeState.friends = [users[FRIEND_A]]
+  fetchMoments.mockReset()
+  fetchProfilesByIds.mockReset()
+  createMoment.mockReset()
+  fetchMoments.mockResolvedValue({ ok: true, moments: [], hasMore: false, oldest: null })
+  fetchProfilesByIds.mockResolvedValue({ ok: true, profiles: [] })
+  createMoment.mockResolvedValue({ ok: true })
+})
+
+afterEach(cleanup)
+
+describe('Discover 地球页', () => {
+  it('展示关系地球并移除信息流互动', async () => {
     setup()
-    await screen.findByTestId('moments-empty')
-    expect(screen.queryByTestId('moments-refresh')).toBeNull()
-    expect(screen.queryByTestId('change-cover')).toBeNull()
-    expect(screen.getByTestId('moments-cover').dataset.raised).toBe('true')
-    expect(screen.getByTestId('moments-pull-indicator')).toBeTruthy()
+    expect(await screen.findByTestId('relationship-globe')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '你的地球' })).toBeTruthy()
+    expect(screen.getByTestId('discover-write')).toBeTruthy()
+    await screen.findByTestId('routes-empty')
+    expect(screen.queryByTestId('like-btn')).toBeNull()
+    expect(screen.queryByTestId('comment-btn')).toBeNull()
+    expect(screen.queryByTestId('moments-pull-indicator')).toBeNull()
+    expect(screen.queryByTestId('moments-cover')).toBeNull()
   })
 
-  it('顶部标题为纸墨信笺，头像无圆形白底并展示个性签名', async () => {
+  it('本周航线只展示每位朋友最新的一页', async () => {
+    fetchMoments.mockResolvedValue({
+      ok: true,
+      moments: [
+        { id: 'm1', authorId: FRIEND_A, content: '新的一页', imageUrl: '', createdAt: Date.now() },
+        { id: 'm2', authorId: FRIEND_A, content: '旧的一页', imageUrl: '', createdAt: Date.now() - 86400000 },
+        { id: 'm3', authorId: ME, content: '我自己的动态', imageUrl: '', createdAt: Date.now() },
+      ],
+      hasMore: false,
+      oldest: null,
+    })
     setup()
-    await screen.findByTestId('moments-empty')
-    expect(screen.getByRole('heading', { name: '纸墨信笺' })).toBeTruthy()
-    const link = screen.getByTestId('moments-avatar-link')
-    expect(link.className).not.toContain('rounded-full')
-    expect(link.className).not.toContain('ring-')
-    expect(screen.getByTestId('moments-signature').textContent).toBe('见字如面')
+
+    const cards = await screen.findAllByTestId('route-card')
+    expect(cards).toHaveLength(1)
+    expect(screen.getByText('新的一页')).toBeTruthy()
+    expect(screen.queryByText('旧的一页')).toBeNull()
+    expect(screen.queryByText('我自己的动态')).toBeNull()
   })
 
-  it('在顶部下拉松手后重新拉取动态', async () => {
+  it('点击航线打开信笺并可回信进入单聊', async () => {
+    fetchMoments.mockResolvedValue({
+      ok: true,
+      moments: [{ id: 'm1', authorId: FRIEND_A, content: '最近搬了新家', imageUrl: '', createdAt: Date.now() }],
+      hasMore: false,
+      oldest: null,
+    })
     setup()
-    await screen.findByTestId('moments-empty')
-    expect(fetchMoments).toHaveBeenCalledTimes(1)
 
-    const scroller = screen.getByTestId('moments-scroll')
-    fireEvent.touchStart(scroller, { touches: [{ clientY: 0 }] })
-    fireEvent.touchMove(scroller, { touches: [{ clientY: 200 }] })
-    expect(screen.getByTestId('moments-pull-indicator').textContent).toBe('松手刷新')
+    fireEvent.click(await screen.findByTestId('route-card'))
+    const sheet = screen.getByTestId('moment-sheet')
+    expect(sheet).toBeTruthy()
+    expect(within(sheet).getByText('最近搬了新家')).toBeTruthy()
 
-    fireEvent.touchEnd(scroller, { changedTouches: [{ clientY: 200 }] })
+    fireEvent.click(screen.getByTestId('moment-reply'))
+    await waitFor(() => expect(screen.getByTestId('chat-page').textContent).toBe(FRIEND_A))
+  })
+
+  it('写一页后调用发布接口并刷新航线', async () => {
+    setup()
+    await screen.findByTestId('routes-empty')
+    fireEvent.click(screen.getByTestId('discover-write'))
+    fireEvent.change(screen.getByPlaceholderText('这一周，想留下什么？'), {
+      target: { value: '这周去看海了' },
+    })
+    fireEvent.click(screen.getByText('寄出'))
+
+    await waitFor(() =>
+      expect(createMoment).toHaveBeenCalledWith({ authorId: ME, content: '这周去看海了', imageUrl: '' })
+    )
     await waitFor(() => expect(fetchMoments).toHaveBeenCalledTimes(2))
   })
 
-  it('单击动态图片打开原图查看器', async () => {
-    fetchMoments.mockResolvedValue({
-      ok: true,
-      moments: [{ id: 'm1', authorId: ME, content: '', imageUrl: 'https://example.com/p.jpg', createdAt: Date.now() }],
-      hasMore: false,
-      oldest: null,
-    })
+  it('读取失败时展示提示', async () => {
+    fetchMoments.mockResolvedValue({ ok: false, error: '没有权限', moments: [] })
     setup()
-    fireEvent.click(await screen.findByTestId('moment-image-open'))
-    expect(screen.getByTestId('image-viewer')).toBeTruthy()
-    fireEvent.click(screen.getByTestId('image-viewer-img'))
-    expect(screen.queryByTestId('image-viewer')).toBeNull()
-  })
-
-  it('动态下方不再提供举报入口', async () => {
-    fetchMoments.mockResolvedValue({
-      ok: true,
-      moments: [{ id: 'm2', authorId: '22222222-2222-4222-8222-222222222222', content: '他人动态', imageUrl: '', createdAt: Date.now() }],
-      hasMore: false,
-      oldest: null,
-    })
-    setup()
-    await screen.findByText('他人动态')
-    expect(screen.queryByTestId('report-moment')).toBeNull()
-  })
-
-  it('渲染动态正文时带上字体缩放标记', async () => {
-    fetchMoments.mockResolvedValue({
-      ok: true,
-      moments: [{ id: 'm1', authorId: ME, content: '第一条动态', imageUrl: '', createdAt: Date.now() }],
-      hasMore: false,
-      oldest: null,
-    })
-    setup()
-    const text = await screen.findByText('第一条动态')
-    expect(text.className).toContain('moment-text')
+    expect((await screen.findByTestId('routes-error')).textContent).toBe('没有权限')
   })
 })
