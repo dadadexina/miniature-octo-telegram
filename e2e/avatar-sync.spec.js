@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { ensureFriendship } from './friends'
 
 test.describe.configure({ timeout: 180_000, mode: 'serial' })
 
@@ -61,6 +62,7 @@ test.describe('好友头像同步', () => {
     const pageB = await ctxB.newPage()
     await login(pageA, A)
     await login(pageB, B)
+    await ensureFriendship(pageA, pageB, A, B)
 
     await pageA.goto('/contacts')
     const entryA = friendEntry(pageA, B.username)

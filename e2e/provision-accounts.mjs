@@ -105,7 +105,7 @@ async function provision(tag) {
   if (!access) throw new Error('account not confirmed / login failed')
   console.log(`[${tag}] confirmed, login ok`)
 
-  const username = tag === 'A' ? rand('e2e_a_') : rand('e2e_b_')
+  const username = tag === 'A' ? rand('e2ea') : rand('e2eb')
   const prof = await j(`${SUPA_URL}/rest/v1/profiles`, {
     method: 'POST',
     headers: {

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { ensureFriendship } from './friends'
 
 test.describe.configure({ timeout: 120_000, mode: 'serial' })
 
@@ -22,47 +23,6 @@ async function login(page, user) {
   await page.getByPlaceholder('至少 6 位').fill(user.password)
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await expect(page).toHaveURL(/\/chats$/, { timeout: 30000 })
-}
-
-// v2 好友关系为「请求 → 验证」双向流程;幂等处理已是好友/请求已存在的情况
-async function ensureFriendship(pageA, pageB) {
-  await pageA.goto('/contacts')
-  const search = pageA.getByPlaceholder('搜索 ID / 邮箱 / 手机号')
-  await search.fill(B.username)
-  await search.press('Enter')
-  const results = pageA.getByTestId('search-results')
-  await expect(results).toBeVisible({ timeout: 20000 })
-  const addBtn = results.getByTestId('search-result-add').first()
-  if (await addBtn.isVisible().catch(() => false)) {
-    await addBtn.click()
-    await expect(pageA.getByText(/好友请求已发送|已发送过好友请求/).first()).toBeVisible({ timeout: 15000 })
-  }
-
-  // B 端接受请求(若存在);realtime 可能尚未订阅,未出现时重新加载页面
-  for (let i = 0; i < 3; i += 1) {
-    await pageB.goto('/contacts')
-    const acceptBtn = pageB.getByTestId('accept-request').first()
-    const hasAccept = await acceptBtn
-      .waitFor({ state: 'visible', timeout: 8000 })
-      .then(() => true)
-      .catch(() => false)
-    if (hasAccept) {
-      await acceptBtn.click()
-      await expect(pageB.getByText('已添加好友').first()).toBeVisible({ timeout: 15000 })
-      break
-    }
-    const alreadyFriend = pageB
-      .getByTestId('friend-entry')
-      .filter({ hasText: `ID: ${A.username}` })
-      .first()
-    if ((await alreadyFriend.count()) > 0) break
-  }
-
-  // A 端确认好友入口出现(挂载刷新 + realtime)
-  await pageA.goto('/contacts')
-  await expect(
-    pageA.getByTestId('friend-entry').filter({ hasText: `ID: ${B.username}` }).first()
-  ).toBeVisible({ timeout: 30000 })
 }
 
 async function openChatByUsername(page, username) {
@@ -111,7 +71,7 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
     await login(pageA, A)
     await login(pageB, B)
 
-    await ensureFriendship(pageA, pageB)
+    await ensureFriendship(pageA, pageB, A, B)
     await openChatByUsername(pageA, B.username)
     await sendMessage(pageA, `来自A ${stamp}`)
 
@@ -132,7 +92,7 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
     const pageB = await ctxB.newPage()
     await login(pageA, A)
     await login(pageB, B)
-    await ensureFriendship(pageA, pageB)
+    await ensureFriendship(pageA, pageB, A, B)
 
     await openChatByUsername(pageA, B.username)
     await sendMessage(pageA, stamp)
@@ -165,7 +125,7 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
     const pageB = await ctxB.newPage()
     await login(pageA, A)
     await login(pageB, B)
-    await ensureFriendship(pageA, pageB)
+    await ensureFriendship(pageA, pageB, A, B)
 
     await openChatByUsername(pageA, B.username)
     await sendMessage(pageA, stamp)
@@ -194,7 +154,7 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
     const pageB = await ctxB.newPage()
     await login(pageA, A)
     await login(pageB, B)
-    await ensureFriendship(pageA, pageB)
+    await ensureFriendship(pageA, pageB, A, B)
 
     await openChatByUsername(pageA, B.username)
     await pageA.getByTestId('chat-menu').click()
@@ -231,7 +191,7 @@ test.describe('云端双人聊天流（需 E2E_USER_A/B 凭据）', () => {
     const pageB = await ctxB.newPage()
     await login(pageA, A)
     await login(pageB, B)
-    await ensureFriendship(pageA, pageB)
+    await ensureFriendship(pageA, pageB, A, B)
 
     await openChatByUsername(pageA, B.username)
     await sendMessage(pageA, stamp)
