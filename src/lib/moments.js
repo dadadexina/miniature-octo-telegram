@@ -1,4 +1,5 @@
 import { isPermissionError } from './profiles'
+import { truncateChars } from './text'
 import { supabase } from './supabase'
 
 export const MOMENT_PAGE_SIZE = 20
@@ -82,7 +83,7 @@ export async function createMoment({ authorId, content, imageUrl = '' }) {
   try {
     const { data, error } = await supabase
       .from('moments')
-      .insert({ author_id: authorId, content: text.slice(0, 2000), image_url: imageUrl || null })
+      .insert({ author_id: authorId, content: truncateChars(text, 2000), image_url: imageUrl || null })
       .select('*')
       .single()
     if (error) return { ok: false, error: error.message, permission: isPermissionError(error) }
@@ -125,7 +126,7 @@ export async function unlikeMoment(momentId, userId) {
 }
 
 export async function addMomentComment({ momentId, userId, content }) {
-  const text = String(content || '').trim().slice(0, 500)
+  const text = truncateChars(String(content || '').trim(), 500)
   if (!text) return { ok: false, error: '评论不能为空' }
   try {
     const { data, error } = await supabase

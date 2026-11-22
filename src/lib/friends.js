@@ -1,4 +1,5 @@
 import { isMissingColumn, isPermissionError } from './profiles'
+import { truncateChars } from './text'
 import { supabase } from './supabase'
 
 export const REMARK_MAX = 20
@@ -123,7 +124,7 @@ revoke execute on function public.heal_friend_pair(uuid) from public, anon;
 grant execute on function public.heal_friend_pair(uuid) to authenticated;`
 
 export function normalizeRemark(value) {
-  return String(value || '').trim().slice(0, REMARK_MAX)
+  return truncateChars(String(value || '').trim(), REMARK_MAX)
 }
 
 export function mapFriend(row) {

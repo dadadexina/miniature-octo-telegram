@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { clearAccountStorage } from './lib/accountCleanup'
+import { truncateChars } from './lib/text'
 import { notifyIncoming } from './lib/appSettings'
 import { blockUser, fetchMyBlocks, unblockUser } from './lib/blocks'
 import { deleteFriend, fetchFriends, normalizeRemark, repairFriendEdgeFromAccepted, updateFriendRemark, upsertFriend } from './lib/friends'
@@ -651,7 +652,7 @@ export function StoreProvider({ children }) {
             )
             const sender = stateRef.current.users.find((u) => u.id === fromId)
             notifyIncoming({
-              body: String(body).slice(0, 40) || '[新消息]',
+              body: truncateChars(String(body), 40) || '[新消息]',
               fromId,
               fromName: meta?.remark || sender?.nickname || '',
               muted: Boolean(convPrefsRef.current[fromId]?.muted),

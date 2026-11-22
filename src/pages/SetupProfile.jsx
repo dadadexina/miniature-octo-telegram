@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { inputValue } from '../lib/input'
 import { insertProfile, isUniqueViolation, usernameTaken } from '../lib/profiles'
 import { isValidPublicId, publicIdError, randomPublicId } from '../lib/publicId'
 import { useStore } from '../store'
@@ -90,9 +91,10 @@ export default function SetupProfile({ userId, fetchError }) {
             placeholder="8-15 位字母和数字"
             value={username}
             onChange={(e) => {
-              setUsername(e.target.value.replace(/[^A-Za-z0-9]/g, ''))
+              setUsername(inputValue(e, (v) => v.replace(/[^A-Za-z0-9]/g, '')))
               setError('')
             }}
+            onCompositionEnd={(e) => setUsername(inputValue(e, (v) => v.replace(/[^A-Za-z0-9]/g, '')))}
           />
           <button
             type="button"

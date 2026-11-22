@@ -1,4 +1,5 @@
 import { isPermissionError } from './profiles'
+import { truncateChars } from './text'
 import { supabase } from './supabase'
 
 export const REPORT_REASONS = [
@@ -19,7 +20,7 @@ export function normalizeReport(input) {
   const targetId = String(input?.targetId || '').trim()
   const targetUserId = String(input?.targetUserId || '').trim()
   const reason = String(input?.reason || '').trim()
-  const detail = String(input?.detail || '').trim().slice(0, DETAIL_LIMIT)
+  const detail = truncateChars(String(input?.detail || '').trim(), DETAIL_LIMIT)
   if (!reporterId || !targetId || !TARGET_TYPES.has(targetType) || !REASON_VALUES.has(reason)) return null
   return { reporterId, targetType, targetId, targetUserId, reason, detail }
 }

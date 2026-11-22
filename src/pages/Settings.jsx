@@ -20,6 +20,7 @@ import {
   summarizeExport,
 } from '../lib/dataExport'
 import { goBackOr } from '../lib/navigation'
+import { inputValue } from '../lib/input'
 import { isUuid } from '../lib/messages'
 import { saveMomentCover } from '../lib/momentCover'
 import { NOTIFICATION_SOUNDS, playNotificationSound } from '../lib/notificationSounds'
@@ -51,6 +52,7 @@ import {
   normalizeSignature,
   saveLocalSignature,
 } from '../lib/signature'
+import { charLength, truncateChars } from '../lib/text'
 import { THEMES } from '../lib/themes'
 import { useStore } from '../store'
 
@@ -966,7 +968,8 @@ export default function Settings() {
                     className="h-10 min-w-0 flex-1 border border-eink-line/30 bg-eink-paper px-3 text-[15px] outline-none"
                     placeholder="6 位邮箱/手机验证码"
                     value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onChange={(e) => setCode(inputValue(e, (v) => v.replace(/\D/g, '').slice(0, 6)))}
+                    onCompositionEnd={(e) => setCode(inputValue(e, (v) => v.replace(/\D/g, '').slice(0, 6)))}
                   />
                   <button
                     type="button"
@@ -1062,15 +1065,16 @@ export default function Settings() {
                   id="profile-signature"
                   data-testid="settings-signature-input"
                   rows={3}
-                  maxLength={SIGNATURE_MAX}
                   className="mt-3 w-full resize-none border border-eink-line/30 bg-eink-paper px-3 py-2 text-[15px] leading-6 outline-none"
                   placeholder="写一句签名，例如：见字如面。"
                   value={signature}
-                  onChange={(e) => setSignature(normalizeSignature(e.target.value))}
+                  onChange={(e) => setSignature(inputValue(e, (v) => truncateChars(v, SIGNATURE_MAX)))}
+                  onCompositionEnd={(e) => setSignature(inputValue(e, (v) => truncateChars(v, SIGNATURE_MAX)))}
+                  onBlur={() => setSignature((prev) => normalizeSignature(prev))}
                 />
                 <div className="mt-1 flex items-center justify-between">
                   <span className="text-[12px] text-eink-sub">
-                    {signature.length}/{SIGNATURE_MAX}
+                    {charLength(signature)}/{SIGNATURE_MAX}
                   </span>
                   <button
                     type="submit"

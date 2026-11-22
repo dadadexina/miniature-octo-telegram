@@ -1,3 +1,5 @@
+import { truncateChars } from './lib/text'
+
 export function formatTime(ts) {
   if (!ts) return ''
   const d = new Date(ts)
@@ -55,5 +57,6 @@ export function quoteExcerpt(text, max = 40) {
   const flat = String(text)
     .replace(/\s+/g, ' ')
     .trim()
-  return flat.length > max ? `${flat.slice(0, max)}…` : flat
+  const chars = truncateChars(flat, max)
+  return chars === flat ? flat : `${chars}…`
 }

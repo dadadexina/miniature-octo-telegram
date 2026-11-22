@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { truncateChars } from '../lib/text'
 
 export default function Avatar({ name = '', color = '#191919', size = 40, badge = 0, src = '' }) {
-  const text = (name || '?').slice(0, 1)
+  const text = truncateChars(name || '?', 1)
   const [brokenSrc, setBrokenSrc] = useState('')
 
   const showImage = Boolean(src) && brokenSrc !== src

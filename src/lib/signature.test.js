@@ -20,6 +20,12 @@ describe('normalizeSignature', () => {
     expect(normalizeSignature('字'.repeat(40))).toHaveLength(SIGNATURE_MAX)
   })
 
+  it('按字符簇截断,不劈开 emoji', () => {
+    const result = normalizeSignature('😀'.repeat(SIGNATURE_MAX + 5))
+    expect(Array.from(result)).toHaveLength(SIGNATURE_MAX)
+    expect(result.includes('\uFFFD')).toBe(false)
+  })
+
   it('空值返回空串', () => {
     expect(normalizeSignature(null)).toBe('')
     expect(normalizeSignature(undefined)).toBe('')

@@ -4,6 +4,7 @@ import Avatar from '../components/Avatar'
 import NavBar from '../components/NavBar'
 import useSwipeBack from '../hooks/useSwipeBack'
 import { downscaleAvatar, validateAvatarFile } from '../lib/avatarImage'
+import { inputValue } from '../lib/input'
 import { goBackOr } from '../lib/navigation'
 import { DEFAULT_GENDER, GENDER_OPTIONS, formatRegistrationDate } from '../lib/profileMeta'
 import {
@@ -275,9 +276,10 @@ export default function EditProfile() {
             value={idDraft}
             disabled={!idChangeAllowed}
             onChange={(e) => {
-              setIdDraft(e.target.value.replace(/[^A-Za-z0-9]/g, ''))
+              setIdDraft(inputValue(e, (v) => v.replace(/[^A-Za-z0-9]/g, '')))
               setError('')
             }}
+            onCompositionEnd={(e) => setIdDraft(inputValue(e, (v) => v.replace(/[^A-Za-z0-9]/g, '')))}
           />
         </label>
         <p className="mt-2 text-[12px] leading-5 text-eink-sub">
@@ -302,9 +304,10 @@ export default function EditProfile() {
             data-testid="profile-phone-input"
             value={phone}
             onChange={(e) => {
-              setPhone(e.target.value.replace(/[^0-9]/g, ''))
+              setPhone(inputValue(e, (v) => v.replace(/[^0-9]/g, '')))
               setError('')
             }}
+            onCompositionEnd={(e) => setPhone(inputValue(e, (v) => v.replace(/[^0-9]/g, '')))}
           />
         </label>
         <div className="mt-5 space-y-3 border-y border-eink-divider py-4">

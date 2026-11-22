@@ -1,3 +1,5 @@
+import { truncateChars } from './text'
+
 export const SIGNATURE_MAX = 30
 
 const KEY_PREFIX = 'eink:signature:v1:'
@@ -7,10 +9,10 @@ function storageKey(userId) {
 }
 
 export function normalizeSignature(value) {
-  return String(value || '')
+  const flat = String(value || '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, SIGNATURE_MAX)
+  return truncateChars(flat, SIGNATURE_MAX)
 }
 
 export function loadLocalSignature(userId) {

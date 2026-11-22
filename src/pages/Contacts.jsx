@@ -162,7 +162,7 @@ export default function Contacts() {
                 className="h-full w-full bg-transparent text-[14px] outline-none"
                 placeholder="搜索 ID / 邮箱 / 手机号"
                 value={keyword}
-                onChange={(e) => setKeyword(e.target.value.replace(/\s/g, ''))}
+                onChange={(e) => setKeyword(e.target.value)}
               />
               {keyword ? (
                 <button type="button" className="ml-1 text-[12px] text-eink-sub" onClick={clearSearch}>

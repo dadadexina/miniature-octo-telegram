@@ -449,7 +449,7 @@ describe('Settings 设置页', () => {
 
     const input = screen.getByTestId('settings-signature-input')
     fireEvent.change(input, { target: { value: '  见字如面  ' } })
-    expect(input.value).toBe('见字如面')
+    expect(input.value).toBe('  见字如面  ')
 
     fireEvent.change(input, { target: { value: '一'.repeat(40) } })
     expect(input.value).toHaveLength(30)
