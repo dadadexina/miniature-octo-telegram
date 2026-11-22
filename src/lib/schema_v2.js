@@ -192,6 +192,16 @@ returns boolean language sql stable security definer set search_path = public as
   )
 $fn$;
 
+-- 收紧关系判定函数:仅登录用户可执行,匿名角色不可直接调用
+revoke execute on function public.are_contacts(uuid, uuid) from public, anon;
+grant execute on function public.are_contacts(uuid, uuid) to authenticated;
+revoke execute on function public.can_view_profile(uuid, uuid) from public, anon;
+grant execute on function public.can_view_profile(uuid, uuid) to authenticated;
+revoke execute on function public.can_message(uuid, uuid) from public, anon;
+grant execute on function public.can_message(uuid, uuid) to authenticated;
+revoke execute on function public.can_view_moment(uuid) from public, anon;
+grant execute on function public.can_view_moment(uuid) to authenticated;
+
 -- ============ client_errors 防刷（BEFORE 触发器超限静默丢弃） ============
 
 create or replace function public.client_errors_throttle()
