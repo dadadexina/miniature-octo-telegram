@@ -9,6 +9,8 @@ import {
   mapTheme,
 } from '../lib/mapGlobe'
 import {
+  bearingDegrees,
+  compassLabel,
   coordPlace,
   formatAccuracy,
   formatDistance,
@@ -16,7 +18,9 @@ import {
   getCurrentLocation,
   haversineKm,
   locationPermissionState,
+  navigationUrl,
   parseLatLngQuery,
+  walkMinutes,
   watchLocation,
 } from '../lib/geo'
 import { mergePlaceResults, searchPlacesOnline } from '../lib/geocode'
@@ -244,9 +248,9 @@ export default function DiscoverGlobe({
     const from = myPosRef.current || meRef.current.coords
     try {
       if (from && Number.isFinite(from.lat) && Number.isFinite(from.lng)) {
-        const near = haversineKm(from, destination) < 1.5
-        if (near) {
-          map.easeTo({ center: [destination.lng, destination.lat], zoom: 16, duration: 1000 })
+        const km = haversineKm(from, destination)
+        if (km < 0.03) {
+          map.easeTo({ center: [destination.lng, destination.lat], zoom: 17, duration: 700 })
         } else {
           map.fitBounds(
             [
@@ -254,9 +258,9 @@ export default function DiscoverGlobe({
               [Math.max(from.lng, destination.lng), Math.max(from.lat, destination.lat)],
             ],
             {
-              padding: { top: 130, bottom: 150, left: 60, right: 60 },
-              maxZoom: 15,
-              duration: 1000,
+              padding: { top: 70, bottom: 210, left: 40, right: 40 },
+              maxZoom: 16.5,
+              duration: 700,
             }
           )
         }
@@ -681,11 +685,19 @@ export default function DiscoverGlobe({
   const distanceKm = destination ? haversineKm(effectiveCoords, destination) : 0
   const geoMessage =
     geoState === 'denied' || geoState === 'error' || geoState === 'unsupported' ? geoError : ''
+  const bearing =
+    destination && effectiveCoords ? bearingDegrees(effectiveCoords, destination) : null
+  const heading = bearing === null ? '' : compassLabel(bearing)
+  const walkMin = destination ? walkMinutes(distanceKm) : 0
+  const arrived = Boolean(destination && effectiveCoords && distanceKm < 0.03)
   const routeStatus = effectiveCoords
-    ? `距目的地 ${formatDistance(distanceKm)} · 沿红色虚线前往`
+    ? arrived
+      ? '已到达目的地附近'
+      : `距目的地 ${formatDistance(distanceKm)} · 步行约 ${walkMin} 分钟 · 向${heading}`
     : geoState === 'loading'
       ? '正在获取我的位置...'
       : geoError || '未获取到我的位置'
+  const mapsHref = destination ? navigationUrl(destination) : ''
 
   return (
     <div className="relative h-full overflow-hidden bg-eink-paper text-eink-ink">
@@ -725,7 +737,7 @@ export default function DiscoverGlobe({
         type="button"
         data-testid="globe-search-toggle"
         aria-label="搜索地名、商户或经纬度"
-        className="absolute bottom-[112px] right-2 z-30 flex h-8 w-8 items-center justify-center border border-eink-line/30 bg-eink-bar/95 text-eink-ink shadow-sm active:bg-eink-surface"
+        className="absolute bottom-24 right-14 z-30 flex h-8 w-8 items-center justify-center border border-eink-line/30 bg-eink-bar/95 text-eink-ink shadow-sm active:bg-eink-surface"
         onClick={() => setSearchOpen(true)}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -858,15 +870,18 @@ export default function DiscoverGlobe({
       {destination ? (
         <div
           data-testid="globe-route-info"
-          className="absolute bottom-36 left-2 right-16 z-20 flex items-center gap-2 border border-eink-line/30 bg-eink-bar/95 px-3 py-2 text-[11px] shadow-sm"
+          className="absolute bottom-36 left-2 right-14 z-20 border border-eink-line/30 bg-eink-bar/95 px-3 py-2 text-[11px] shadow-sm"
         >
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-eink-ink">前往 {destination.name}</p>
-            <p data-testid="globe-route-status" className="mt-0.5 text-[10px] text-eink-sub tabular-nums">
-              {routeStatus}
-            </p>
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="min-w-0 truncate text-eink-ink">导航前往 {destination.name}</p>
+            <span className="shrink-0 text-[9px] tracking-[0.08em] text-eink-faint">
+              {arrived ? '已到达' : '导航中'}
+            </span>
           </div>
-          <div className="flex shrink-0 flex-col gap-1">
+          <p data-testid="globe-route-status" className="mt-0.5 text-[10px] text-eink-sub tabular-nums">
+            {routeStatus}
+          </p>
+          <div className="mt-1.5 flex items-center gap-1.5">
             {!effectiveCoords ? (
               <button
                 type="button"
@@ -874,22 +889,33 @@ export default function DiscoverGlobe({
                 className="border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
                 onClick={() => locate()}
               >
-                重试
+                重试定位
               </button>
+            ) : null}
+            {mapsHref ? (
+              <a
+                data-testid="globe-open-maps"
+                href={mapsHref}
+                target="_blank"
+                rel="noreferrer"
+                className="border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
+              >
+                系统地图
+              </a>
             ) : null}
             <button
               type="button"
               data-testid="globe-route-clear"
-              className="border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
+              className="ml-auto border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
               onClick={() => setDestination(null)}
             >
-              结束
+              结束导航
             </button>
           </div>
         </div>
       ) : null}
 
-      <div className="absolute bottom-20 left-2 z-20 max-w-[80%] border border-eink-divider bg-eink-bar/95 px-2 py-1.5 text-[10px] shadow-sm">
+      <div className="absolute bottom-20 left-2 z-20 max-w-[70%] border border-eink-divider bg-eink-bar/95 px-2 py-1.5 text-[10px] shadow-sm">
         <div className="flex items-center gap-2">
           <span className="tracking-[0.08em] text-eink-faint">我的位置</span>
           <button

@@ -161,8 +161,12 @@ describe('Discover 关系网页', () => {
     fireEvent.click(result)
     const info = await screen.findByTestId('globe-route-info')
     await waitFor(() => expect(info.textContent).toContain('距目的地'))
-    expect(info.textContent).toContain('前往 外滩')
-    expect(screen.getByTestId('globe-route-clear')).toBeTruthy()
+    expect(info.textContent).toContain('导航前往 外滩')
+    expect(screen.getByTestId('globe-route-status').textContent).toContain('步行约')
+    expect(screen.getByTestId('globe-route-status').textContent).toContain('向')
+    const maps = screen.getByTestId('globe-open-maps')
+    expect(maps.getAttribute('href')).toContain('uri.amap.com/navigation?to=121.490000,31.240000')
+    expect(screen.getByTestId('globe-route-clear').textContent).toBe('结束导航')
   })
 
   it('授权后持续接收实时定位并更新坐标', async () => {
@@ -217,5 +221,33 @@ describe('Discover 关系网页', () => {
     await waitFor(() => expect(status.textContent).toContain('定位权限被拒绝'))
     expect(screen.getByTestId('globe-route-locate')).toBeTruthy()
     expect(status.textContent).not.toContain('正在获取我的位置')
+  })
+
+  it('到达目的地附近时提示已到达', async () => {
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: {
+        getCurrentPosition: (success) =>
+          success({
+            coords: { latitude: 31.2304, longitude: 121.4737, accuracy: 4 },
+            timestamp: Date.now(),
+          }),
+        watchPosition: () => 3,
+        clearWatch: () => {},
+      },
+    })
+    searchMock.mockResolvedValue({
+      ok: true,
+      places: [{ id: 'osm:3', name: '目的地', lat: 31.2304, lng: 121.4737, kind: 'poi' }],
+    })
+    setup()
+    fireEvent.click(await screen.findByTestId('globe-locate-allow'))
+    await waitFor(() => expect(screen.getByTestId('globe-coords').textContent).toContain('31.230400'))
+    fireEvent.click(screen.getByTestId('globe-search-toggle'))
+    fireEvent.change(screen.getByTestId('globe-search-input'), { target: { value: '目的地' } })
+    fireEvent.click(await screen.findByTestId('globe-place-result'))
+    const info = await screen.findByTestId('globe-route-info')
+    await waitFor(() => expect(info.textContent).toContain('已到达目的地附近'))
+    expect(info.textContent).toContain('已到达')
   })
 })

@@ -151,3 +151,38 @@ export function coordPlace(lat, lng, digits = 6) {
     source: 'coords',
   }
 }
+
+export function bearingDegrees(a, b) {
+  if (!a || !b) return 0
+  const lat1 = Number(a.lat) * DEG
+  const lat2 = Number(b.lat) * DEG
+  const dLng = (Number(b.lng) - Number(a.lng)) * DEG
+  if (![lat1, lat2, dLng].every(Number.isFinite)) return 0
+  const y = Math.sin(dLng) * Math.cos(lat2)
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
+  return (Math.atan2(y, x) / DEG + 360) % 360
+}
+
+const COMPASS_LABELS = ['北', '东北', '东', '东南', '南', '西南', '西', '西北']
+
+export function compassLabel(degrees) {
+  const value = Number(degrees)
+  if (!Number.isFinite(value)) return ''
+  return COMPASS_LABELS[Math.round(((value % 360) + 360) % 360 / 45) % 8]
+}
+
+export function walkMinutes(km, speedKmh = 4.8) {
+  const value = Number(km)
+  const speed = Number(speedKmh)
+  if (!Number.isFinite(value) || value <= 0) return 0
+  if (!Number.isFinite(speed) || speed <= 0) return 0
+  return Math.max(1, Math.round((value / speed) * 60))
+}
+
+export function navigationUrl(destination) {
+  if (!destination || !Number.isFinite(destination.lat) || !Number.isFinite(destination.lng)) return ''
+  const lng = Number(destination.lng).toFixed(6)
+  const lat = Number(destination.lat).toFixed(6)
+  const name = encodeURIComponent(String(destination.name || '目的地'))
+  return `https://uri.amap.com/navigation?to=${lng},${lat},${name}&mode=walk&policy=1&callnative=1&src=zhimo`
+}

@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  bearingDegrees,
+  compassLabel,
   coordPlace,
   formatAccuracy,
   formatDistance,
   haversineKm,
+  navigationUrl,
   normalizePosition,
   parseLatLngQuery,
+  walkMinutes,
   watchLocation,
 } from './geo'
 
@@ -86,5 +90,23 @@ describe('geo', () => {
     stop()
     expect(calls).toEqual(['watch', 'clear:42'])
     if (original) Object.defineProperty(globalThis, 'navigator', original)
+  })
+
+  it('计算方位角、方向与步行时长', () => {
+    expect(bearingDegrees({ lat: 0, lng: 0 }, { lat: 0, lng: 90 })).toBeCloseTo(90)
+    expect(bearingDegrees({ lat: 0, lng: 0 }, { lat: 90, lng: 0 })).toBeCloseTo(0, 5)
+    expect(compassLabel(0)).toBe('北')
+    expect(compassLabel(45)).toBe('东北')
+    expect(compassLabel(225)).toBe('西南')
+    expect(compassLabel(359)).toBe('北')
+    expect(walkMinutes(0.8)).toBe(10)
+    expect(walkMinutes(0)).toBe(0)
+  })
+
+  it('生成高德导航链接', () => {
+    const url = navigationUrl({ lat: 31.2304, lng: 121.4737, name: '外滩' })
+    expect(url).toContain('https://uri.amap.com/navigation?to=121.473700,31.230400,')
+    expect(url).toContain('mode=walk')
+    expect(navigationUrl(null)).toBe('')
   })
 })
