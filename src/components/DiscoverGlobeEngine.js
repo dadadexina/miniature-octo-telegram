@@ -33,6 +33,7 @@ import {
   buildArcFlowLine,
   citySpread,
   disposeObject,
+  earthRotationAngle,
   hashString,
   pointFor,
   smoothstep,
@@ -89,7 +90,7 @@ export function createGlobeEngine({
   controls.minDistance = MIN_DISTANCE
   controls.maxDistance = MAX_DISTANCE
   controls.autoRotate = !reducedMotion
-  controls.autoRotateSpeed = 0.55
+  controls.autoRotateSpeed = 0
 
   const ambientLight = new THREE.AmbientLight(0x6fa8dc, 1.1)
   scene.add(ambientLight)
@@ -786,6 +787,8 @@ export function createGlobeEngine({
   }
 
   const clock = new THREE.Clock()
+  const spinAxis = new THREE.Vector3(0, 1, 0)
+  let spinAt = 0
   let frame = 0
   let lastFrameAt = 0
   const animate = (timestamp = 0) => {
@@ -803,6 +806,17 @@ export function createGlobeEngine({
       node.mesh.scale.setScalar(scale)
     })
     applyFlight(now)
+    if (controls.autoRotate && !state.flight) {
+      if (spinAt) {
+        const elapsed = Math.min(250, Math.max(0, now - spinAt))
+        if (elapsed > 0) {
+          camera.position.applyAxisAngle(spinAxis, -earthRotationAngle(elapsed))
+        }
+      }
+      spinAt = now
+    } else {
+      spinAt = 0
+    }
     controls.update()
     const distance = camera.position.length()
     const altitude = Math.max(distance - R, MIN_ALTITUDE_WORLD)

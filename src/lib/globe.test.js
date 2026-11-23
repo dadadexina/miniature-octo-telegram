@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  EARTH_ROTATION_SPEED_SCALE,
   ME_COORDS,
+  SIDEREAL_DAY_MS,
   buildArc,
   buildMapPatchGeometry,
   citySpread,
+  earthRotationAngle,
   hashString,
   pointFor,
   smoothstep,
@@ -72,6 +75,26 @@ describe('sunPosition', () => {
     expect(sun.dir.length()).toBeCloseTo(1)
     expect(typeof sun.declination).toBe('number')
     expect(typeof sun.lng).toBe('number')
+  })
+})
+
+describe('earthRotationAngle', () => {
+  it('零时间不转动，一个恒星日转一整圈', () => {
+    expect(earthRotationAngle(0)).toBe(0)
+    expect(earthRotationAngle(SIDEREAL_DAY_MS)).toBeCloseTo(Math.PI * 2)
+    expect(earthRotationAngle(SIDEREAL_DAY_MS / 2)).toBeCloseTo(Math.PI)
+  })
+
+  it('角度随时间线性增长并按真实速度换算', () => {
+    expect(EARTH_ROTATION_SPEED_SCALE).toBe(1)
+    const hour = 3600000
+    expect(earthRotationAngle(hour)).toBeCloseTo((Math.PI * 2 * hour) / SIDEREAL_DAY_MS)
+    expect(earthRotationAngle(hour)).toBeGreaterThan(earthRotationAngle(hour / 2))
+  })
+
+  it('非法时长按零处理', () => {
+    expect(earthRotationAngle(Number.NaN)).toBe(0)
+    expect(earthRotationAngle(undefined)).toBe(0)
   })
 })
 

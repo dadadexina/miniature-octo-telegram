@@ -89,6 +89,15 @@ export const MAP_DISTANCE = R + 0.06
 
 export const ME_COORDS = { lat: 34.3416, lng: 108.9398 }
 
+export const SIDEREAL_DAY_MS = 86164090.5
+export const EARTH_ROTATION_SPEED_SCALE = 1
+const EARTH_ROTATION_RAD_PER_MS = (Math.PI * 2) / SIDEREAL_DAY_MS
+
+export function earthRotationAngle(elapsedMs) {
+  const elapsed = Number.isFinite(elapsedMs) ? elapsedMs : 0
+  return elapsed * EARTH_ROTATION_RAD_PER_MS * EARTH_ROTATION_SPEED_SCALE
+}
+
 export function smoothstep(edge0, edge1, value) {
   const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)))
   return t * t * (3 - 2 * t)
