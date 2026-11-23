@@ -203,6 +203,53 @@ exception when duplicate_object then null; when others then
   raise notice '跳过 friends_friend_fk: %', sqlerrm;
 end $$;
 
+-- 删除好友:成对删除两侧好友边,并清除该对之间的全部好友请求。
+-- 清空请求后双方都无法再发消息,也无法借残留请求补边恢复关系,重新聊天需重新加好友。
+create or replace function public.unfriend(peer uuid)
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null or peer is null or peer = auth.uid() then
+    raise exception 'invalid unfriend target';
+  end if;
+  delete from public.friends
+    where (owner_id = auth.uid() and friend_id = peer)
+       or (owner_id = peer and friend_id = auth.uid());
+  delete from public.friend_requests
+    where (from_id = auth.uid() and to_id = peer)
+       or (from_id = peer and to_id = auth.uid());
+end
+$fn$;
+
+revoke execute on function public.unfriend(uuid) from public, anon;
+grant execute on function public.unfriend(uuid) to authenticated;
+
+-- 补好友边:仅在同一对存在 accepted 请求且双方未拉黑时,由服务端补齐两侧好友边。
+-- 删除好友会作废请求,因此不会借补边逻辑恢复已解除的关系。
+create or replace function public.heal_friend_pair(peer uuid)
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null or peer is null or peer = auth.uid() then return; end if;
+  if not exists (
+    select 1 from public.friend_requests r
+    where r.status = 'accepted'
+      and ((r.from_id = auth.uid() and r.to_id = peer)
+        or (r.from_id = peer and r.to_id = auth.uid()))
+  ) then return; end if;
+  if exists (
+    select 1 from public.blocks bl
+    where (bl.blocker_id = auth.uid() and bl.blocked_id = peer)
+       or (bl.blocker_id = peer and bl.blocked_id = auth.uid())
+  ) then return; end if;
+  insert into public.friends (owner_id, friend_id) values (auth.uid(), peer)
+    on conflict (owner_id, friend_id) do nothing;
+  insert into public.friends (owner_id, friend_id) values (peer, auth.uid())
+    on conflict (owner_id, friend_id) do nothing;
+end
+$fn$;
+
+revoke execute on function public.heal_friend_pair(uuid) from public, anon;
+grant execute on function public.heal_friend_pair(uuid) to authenticated;
+
 create table if not exists public.client_errors (
   id uuid primary key default gen_random_uuid(),
   occurred_at timestamptz default now(),
@@ -690,8 +737,8 @@ end $$;
 
 -- ============ friends 对等边回写(接受方替请求方建边 / 双方互备) ============
 -- permissive 策略与 friends_insert_own 叠加(OR):本人边始终可插;
--- 对等边(owner=对方, friend=我)仅在「反向边已存在」时允许插入,
--- 即只允许补齐已有关系,不能凭已接受的旧请求单方面重建好友。
+-- 对等边(owner=对方, friend=我)仅在同一对存在 accepted 请求时允许插入,
+-- 即只允许补齐已确认的好友关系,不能凭已接受的旧请求单方面重建好友。
 
 drop policy if exists "friends_insert_reciprocal" on public.friends;
 create policy "friends_insert_reciprocal" on public.friends for insert
@@ -1078,3 +1125,76 @@ to authenticated using (user_id = auth.uid());
 
 revoke all on public.push_subscriptions from anon;
 grant select, insert, update, delete on public.push_subscriptions to authenticated;
+
+-- ============ 好友城市位置（默认关闭，城市级） ============
+
+create table if not exists public.profile_locations (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  lat double precision not null check (lat between -90 and 90),
+  lng double precision not null check (lng between -180 and 180),
+  label text not null default '',
+  precision integer not null default 2 check (precision between 0 and 2),
+  visible boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.profile_locations enable row level security;
+
+drop policy if exists "profile_locations_select_visible" on public.profile_locations;
+create policy "profile_locations_select_visible" on public.profile_locations for select
+to authenticated
+using (
+  user_id = auth.uid()
+  or (visible = true and public.are_contacts(auth.uid(), user_id))
+);
+
+drop policy if exists "profile_locations_insert_own" on public.profile_locations;
+create policy "profile_locations_insert_own" on public.profile_locations for insert
+to authenticated with check (user_id = auth.uid());
+
+drop policy if exists "profile_locations_update_own" on public.profile_locations;
+create policy "profile_locations_update_own" on public.profile_locations for update
+to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "profile_locations_delete_own" on public.profile_locations;
+create policy "profile_locations_delete_own" on public.profile_locations for delete
+to authenticated using (user_id = auth.uid());
+
+revoke all on public.profile_locations from anon;
+grant select, insert, update, delete on public.profile_locations to authenticated;
+
+create table if not exists public.profile_locations (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  lat double precision not null check (lat between -90 and 90),
+  lng double precision not null check (lng between -180 and 180),
+  label text not null default '',
+  precision integer not null default 2 check (precision between 0 and 2),
+  visible boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.profile_locations enable row level security;
+
+drop policy if exists "profile_locations_select_visible" on public.profile_locations;
+create policy "profile_locations_select_visible" on public.profile_locations for select
+to authenticated
+using (
+  user_id = auth.uid()
+  or (visible = true and public.are_contacts(auth.uid(), user_id))
+);
+
+drop policy if exists "profile_locations_insert_own" on public.profile_locations;
+create policy "profile_locations_insert_own" on public.profile_locations for insert
+to authenticated with check (user_id = auth.uid());
+
+drop policy if exists "profile_locations_update_own" on public.profile_locations;
+create policy "profile_locations_update_own" on public.profile_locations for update
+to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "profile_locations_delete_own" on public.profile_locations;
+create policy "profile_locations_delete_own" on public.profile_locations for delete
+to authenticated using (user_id = auth.uid());
+
+revoke all on public.profile_locations from anon;
+grant select, insert, update, delete on public.profile_locations to authenticated;
+
