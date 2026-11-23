@@ -109,6 +109,20 @@ export function buildArc(aUnit, bUnit, radius) {
   return new THREE.CatmullRomCurve3(points)
 }
 
+export function buildArcFlowLine(curve, segments = 96) {
+  const points = curve.getPoints(segments)
+  const positions = new Float32Array(points.length * 3)
+  const progress = new Float32Array(points.length)
+  points.forEach((point, index) => {
+    positions.set([point.x, point.y, point.z], index * 3)
+    progress[index] = index / (points.length - 1)
+  })
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('aProgress', new THREE.BufferAttribute(progress, 1))
+  return geometry
+}
+
 export function buildMapPatchGeometry(block, radius, segments = 32) {
   const positions = []
   const uvs = []
@@ -214,4 +228,84 @@ export const GLOW_FRAGMENT_SHADER = `
     float i = pow(0.65 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.0);
     float day = smoothstep(-0.4, 0.6, dot(normalize(vWorldNormal), normalize(sunDirection)));
     gl_FragColor = vec4(glowColor * (0.7 + 0.5 * day), 1.0) * clamp(i, 0.0, 1.0) * (0.6 + 0.4 * day) * fade;
+  }`
+
+export const ARC_VERTEX_SHADER = `
+  attribute float aProgress;
+  varying float vProgress;
+  void main() {
+    vProgress = aProgress;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }`
+
+export const ARC_FRAGMENT_SHADER = `
+  uniform vec3 uColor;
+  uniform float uTime;
+  uniform float uPhase;
+  uniform float uDashCount;
+  uniform float uSpeed;
+  uniform float uOpacity;
+  varying float vProgress;
+  void main() {
+    float dashPhase = fract(vProgress * uDashCount - uTime * uSpeed + uPhase);
+    float dash = smoothstep(0.0, 0.08, dashPhase) * smoothstep(0.6, 0.5, dashPhase);
+    float headPos = fract(uTime * uSpeed * 0.4 + uPhase);
+    float head = 1.0 - smoothstep(0.0, 0.05, abs(vProgress - headPos));
+    float alpha = clamp(dash * 0.9 + head, 0.0, 1.0) * uOpacity;
+    gl_FragColor = vec4(uColor, alpha);
+  }`
+
+export const EXPLORE_VERTEX_SHADER = `
+  varying vec3 vNormal;
+  varying vec3 vWorldPosition;
+  void main() {
+    vNormal = normalize(mat3(modelMatrix) * normal);
+    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPosition.xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }`
+
+export const EXPLORE_FRAGMENT_SHADER = `
+  uniform vec3 uLandColor;
+  uniform vec3 uWaterColor;
+  uniform vec3 uBorderColor;
+  uniform float uNoiseScale;
+  varying vec3 vNormal;
+  varying vec3 vWorldPosition;
+  float hash(vec3 p) {
+    p = fract(p * 0.3183099 + 0.1);
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+  }
+  float noise(vec3 x) {
+    vec3 i = floor(x);
+    vec3 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(mix(hash(i + vec3(0.0, 0.0, 0.0)), hash(i + vec3(1.0, 0.0, 0.0)), f.x),
+          mix(hash(i + vec3(0.0, 1.0, 0.0)), hash(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+      mix(mix(hash(i + vec3(0.0, 0.0, 1.0)), hash(i + vec3(1.0, 0.0, 1.0)), f.x),
+          mix(hash(i + vec3(0.0, 1.0, 1.0)), hash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y),
+      f.z);
+  }
+  float fbm(vec3 p) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    for (int i = 0; i < 5; i++) {
+      value += amplitude * noise(p);
+      p = p * 2.0 + vec3(1.7, 9.2, 5.1);
+      amplitude *= 0.5;
+    }
+    return value;
+  }
+  void main() {
+    vec3 dir = normalize(vWorldPosition);
+    float continent = fbm(dir * uNoiseScale);
+    float landMask = smoothstep(0.47, 0.60, continent);
+    vec3 surface = mix(uWaterColor, uLandColor, landMask);
+    float coast = smoothstep(0.05, 0.18, landMask) * (1.0 - smoothstep(0.18, 0.35, landMask));
+    surface = mix(surface, uBorderColor, coast * 0.65);
+    float shade = 0.9 + 0.1 * dot(normalize(vNormal), normalize(vec3(0.3, 0.8, 0.5)));
+    surface *= shade;
+    gl_FragColor = vec4(surface, 1.0);
   }`

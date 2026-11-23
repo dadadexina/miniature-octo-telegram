@@ -2,11 +2,14 @@ import { TILE_PX } from './tiles'
 
 export const OSM_COPYRIGHT = '© OpenStreetMap contributors'
 export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright'
+export const ESRI_COPYRIGHT = 'Esri, Maxar, Earthstar Geographics'
+export const ESRI_COPYRIGHT_URL = 'https://www.esri.com/'
 
-const CACHE_LIMIT = 96
+const CACHE_LIMIT = 128
 const MAX_PARALLEL = 4
 const TILE_CACHE_NAME = 'miniature-osm-tiles-v1'
-const TILE_TEMPLATE = import.meta.env.VITE_MAP_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+const OSM_TILE_TEMPLATE = import.meta.env.VITE_MAP_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+const ESRI_TILE_TEMPLATE = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 const tileCache = new Map()
 let cachePromise = null
 let activeRequests = 0
@@ -16,10 +19,13 @@ export function clearTileCache() {
   tileCache.clear()
 }
 
-export function tileUrl(zoom, x, y) {
+export function tileUrl(source, zoom, x, y) {
   const count = 2 ** zoom
   const wrapped = ((x % count) + count) % count
-  return TILE_TEMPLATE.replace('{z}', String(zoom)).replace('{x}', String(wrapped)).replace('{y}', String(y))
+  if (source === 'esri') {
+    return ESRI_TILE_TEMPLATE.replace('{z}', String(zoom)).replace('{y}', String(y)).replace('{x}', String(wrapped))
+  }
+  return OSM_TILE_TEMPLATE.replace('{z}', String(zoom)).replace('{x}', String(wrapped)).replace('{y}', String(y))
 }
 
 function openCache() {
@@ -110,33 +116,17 @@ function paintTile(image) {
   const canvas = document.createElement('canvas')
   canvas.width = TILE_PX
   canvas.height = TILE_PX
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  const ctx = canvas.getContext('2d')
   if (!ctx) return null
   ctx.drawImage(image, 0, 0, TILE_PX, TILE_PX)
-  const frame = ctx.getImageData(0, 0, TILE_PX, TILE_PX)
-  const data = frame.data
-  for (let index = 0; index < data.length; index += 4) {
-    const red = data[index]
-    const green = data[index + 1]
-    const blue = data[index + 2]
-    const luma = 0.299 * red + 0.587 * green + 0.114 * blue
-    const water = blue > red + 10 && blue > green + 3 && luma > 90
-    const road = luma > 248
-    const value = Math.min(240, water ? 10 + (255 - luma) * 0.12 : road ? 110 : 14 + (255 - luma) * 1.05)
-    data[index] = Math.min(255, value * 0.62)
-    data[index + 1] = Math.min(255, value * 0.78)
-    data[index + 2] = Math.min(255, value)
-  }
-  ctx.putImageData(frame, 0, 0)
-  const source = image
-  if (typeof source.close === 'function') source.close()
+  if (typeof image.close === 'function') image.close()
   return canvas
 }
 
-function loadTile(zoom, x, y) {
+function loadTile(source, zoom, x, y) {
   const count = 2 ** zoom
   const wrappedX = ((x % count) + count) % count
-  const key = `${zoom}/${wrappedX}/${y}`
+  const key = `${source}/${zoom}/${wrappedX}/${y}`
   const cached = tileCache.get(key)
   if (cached) {
     tileCache.delete(key)
@@ -144,7 +134,7 @@ function loadTile(zoom, x, y) {
     return cached
   }
   const promise = schedule(async () => {
-    const url = tileUrl(zoom, wrappedX, y)
+    const url = tileUrl(source, zoom, wrappedX, y)
     let lastError = null
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -169,7 +159,7 @@ function loadTile(zoom, x, y) {
   return promise
 }
 
-export async function buildTileCanvas(zoom, originX, originY, span = 4) {
+export async function buildTileCanvas(zoom, originX, originY, span = 4, source = 'osm') {
   if (typeof document === 'undefined') return null
   const size = span * TILE_PX
   const canvas = document.createElement('canvas')
@@ -182,7 +172,7 @@ export async function buildTileCanvas(zoom, originX, originY, span = 4) {
   const tiles = []
   for (let row = 0; row < span; row += 1) {
     for (let column = 0; column < span; column += 1) {
-      tiles.push({ row, column, promise: loadTile(zoom, originX + column, originY + row) })
+      tiles.push({ row, column, promise: loadTile(source, zoom, originX + column, originY + row) })
     }
   }
   const settled = await Promise.allSettled(tiles.map((tile) => tile.promise))

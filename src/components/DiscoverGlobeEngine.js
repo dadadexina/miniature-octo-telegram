@@ -14,8 +14,12 @@ import {
   tileZoomFor,
 } from '../lib/tiles'
 import {
+  ARC_FRAGMENT_SHADER,
+  ARC_VERTEX_SHADER,
   CLOUD_FRAGMENT_SHADER,
   CLOUD_VERTEX_SHADER,
+  EXPLORE_FRAGMENT_SHADER,
+  EXPLORE_VERTEX_SHADER,
   GLOBE_FRAGMENT_SHADER,
   GLOBE_VERTEX_SHADER,
   GLOW_FRAGMENT_SHADER,
@@ -28,6 +32,7 @@ import {
   PALETTE,
   R,
   buildArc,
+  buildArcFlowLine,
   buildMapPatchGeometry,
   citySpread,
   disposeObject,
@@ -123,6 +128,17 @@ export function createGlobeEngine({
   const globeMesh = new THREE.Mesh(new THREE.SphereGeometry(R, lowPower ? 64 : 96, lowPower ? 44 : 64), globeMaterial)
   globe.add(globeMesh)
 
+  const exploreMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uLandColor: { value: new THREE.Color(0xe8ecda) },
+      uWaterColor: { value: new THREE.Color(0xaacbe8) },
+      uBorderColor: { value: new THREE.Color(0x8fa3b8) },
+      uNoiseScale: { value: 2.2 },
+    },
+    vertexShader: EXPLORE_VERTEX_SHADER,
+    fragmentShader: EXPLORE_FRAGMENT_SHADER,
+  })
+
   const blankCloud = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat)
   blankCloud.needsUpdate = true
   const cloudMaterial = new THREE.ShaderMaterial({
@@ -210,6 +226,8 @@ export function createGlobeEngine({
   const network = new THREE.Group()
   globe.add(network)
 
+  const arcTimeUniform = { value: 0 }
+
   const state = {
     renderer,
     scene,
@@ -237,6 +255,7 @@ export function createGlobeEngine({
     worldFade: 1,
     mapFade: 0,
     flight: null,
+    mode: 'satellite',
   }
 
   state.cloudTexture = null
@@ -298,6 +317,22 @@ export function createGlobeEngine({
   state.center = () => {
     const point = latLngFromUnit(camera.position)
     return { ...point, altitude: altitudeOf() }
+  }
+  state.setMode = (mode) => {
+    const next = mode === 'explore' ? 'explore' : 'satellite'
+    if (next === state.mode) return
+    state.mode = next
+    globeMesh.material = next === 'explore' ? exploreMaterial : globeMaterial
+    state.patchToken += 1
+    state.patchLoading = false
+    state.patchKey = ''
+    if (state.patchMesh) {
+      mapPatch.remove(state.patchMesh)
+      state.patchMesh.geometry.dispose()
+      state.patchMesh.material.map?.dispose()
+      state.patchMesh.material.dispose()
+      state.patchMesh = null
+    }
   }
 
   state.labelItems = []
@@ -383,7 +418,7 @@ export function createGlobeEngine({
       addNode(person.id, person.name, false, shared)
     })
 
-    nextLinks.forEach(([a, b]) => {
+    nextLinks.forEach(([a, b], index) => {
       const from = state.nodes.get(a)
       const to = state.nodes.get(b)
       if (!from || !to) return
@@ -392,15 +427,23 @@ export function createGlobeEngine({
         to.mesh.position.clone().normalize(),
         R * 1.002
       )
-      const geometry = new THREE.TubeGeometry(curve, 64, 0.006, 6, false)
-      const material = new THREE.MeshBasicMaterial({
-        color: 0x3fa9ff,
+      const geometry = buildArcFlowLine(curve, 96)
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uColor: { value: new THREE.Color(0x3fa9ff) },
+          uTime: arcTimeUniform,
+          uPhase: { value: index / Math.max(1, nextLinks.length) },
+          uDashCount: { value: 24 },
+          uSpeed: { value: 0.5 },
+          uOpacity: { value: 0 },
+        },
+        vertexShader: ARC_VERTEX_SHADER,
+        fragmentShader: ARC_FRAGMENT_SHADER,
         transparent: true,
-        opacity: 0.3,
         depthWrite: false,
       })
-      const mesh = new THREE.Mesh(geometry, material)
-      network.add(mesh)
+      const line = new THREE.Line(geometry, material)
+      network.add(line)
       state.edges.push({ a, b, material })
     })
 
@@ -431,8 +474,8 @@ export function createGlobeEngine({
     state.edges.forEach((edge) => {
       const active = !selected || edge.a === selected || edge.b === selected
       edge.baseOpacity = active ? (selected ? 0.9 : 0.3) : 0.05
-      edge.material.opacity = edge.baseOpacity * state.worldFade
-      edge.material.color.setHex(active && selected ? 0x8fe6ff : 0x3fa9ff)
+      edge.material.uniforms.uOpacity.value = edge.baseOpacity * state.worldFade
+      edge.material.uniforms.uColor.value.setHex(active && selected ? 0x8fe6ff : 0x3fa9ff)
     })
   }
 
@@ -444,7 +487,7 @@ export function createGlobeEngine({
       node.material.opacity = node.baseOpacity * value
     })
     state.edges.forEach((edge) => {
-      edge.material.opacity = edge.baseOpacity * value
+      edge.material.uniforms.uOpacity.value = edge.baseOpacity * value
     })
   }
 
@@ -642,7 +685,8 @@ export function createGlobeEngine({
     state.patchLoading = true
     state.patchPartial = false
     state.patchAt = Date.now()
-    buildTileCanvas(block.zoom, block.originX, block.originY, block.span)
+    const source = state.mode === 'explore' ? 'osm' : 'esri'
+    buildTileCanvas(block.zoom, block.originX, block.originY, block.span, source)
       .then((canvas) => {
         if (state.disposed || token !== state.patchToken) return
         if (!canvas) {
@@ -692,7 +736,9 @@ export function createGlobeEngine({
     const distance = camera.position.length()
     const altitude = Math.max(distance - R, MIN_ALTITUDE_WORLD)
     const point = latLngFromUnit(camera.position)
-    const mapActive = distance < MAP_DISTANCE && Math.abs(point.lat) < 84
+    const isExplore = state.mode === 'explore'
+    const patchDistance = isExplore ? MAP_DISTANCE : R + 0.12
+    const mapActive = distance < patchDistance && Math.abs(point.lat) < 84
     let zoom = 0
     if (mapActive) {
       zoom = tileZoomFor({ altitudeWorld: altitude, lat: point.lat, fovDeg: camera.fov })
@@ -704,7 +750,9 @@ export function createGlobeEngine({
         installPatch(block, key, altitude)
       }
     }
-    const mapFade = 1 - smoothstep(0.045, 0.06, altitude)
+    const mapFade = isExplore
+      ? 1 - smoothstep(0.045, 0.06, altitude)
+      : 1 - smoothstep(0.06, 0.12, altitude)
     const networkFade = smoothstep(0.06, 0.14, altitude)
     const cloudFade = smoothstep(0.06, 0.12, altitude)
     const atmosphereFade = smoothstep(0.3, 0.42, altitude)
@@ -712,10 +760,10 @@ export function createGlobeEngine({
     state.mapMode = mapActive
     state.setWorldFade(networkFade)
     network.visible = networkFade > 0.01
-    gridMaterial.opacity = 0.12 * smoothstep(0.04, 0.08, altitude)
+    gridMaterial.opacity = isExplore ? 0 : 0.12 * smoothstep(0.04, 0.08, altitude)
     grid.visible = gridMaterial.opacity > 0.001
-    cloudMaterial.uniforms.fade.value = cloudFade
-    cloudShell.visible = cloudFade > 0.01
+    cloudMaterial.uniforms.fade.value = isExplore ? 0 : cloudFade
+    cloudShell.visible = !isExplore && cloudFade > 0.01
     glowMaterial.uniforms.fade.value = atmosphereFade
     atmosphere.visible = atmosphereFade > 0.01
     if (state.patchMesh) state.patchMesh.material.opacity = mapFade
@@ -723,10 +771,16 @@ export function createGlobeEngine({
     if (mapStatus) {
       const pending = mapActive && (!state.patchMesh || state.patchLoading || state.patchFailed || state.patchPartial)
       const copy = state.patchFailed
-        ? '街道图暂不可用，稍后自动重试'
+        ? isExplore
+          ? '街道图暂不可用，稍后自动重试'
+          : '影像暂不可用，稍后自动重试'
         : state.patchPartial
-          ? '正在补齐街道图…'
-          : '正在取街道图…'
+          ? isExplore
+            ? '正在补齐街道图…'
+            : '正在补齐影像…'
+          : isExplore
+            ? '正在取街道图…'
+            : '正在取影像…'
       mapStatus.style.opacity = pending ? '1' : '0'
       if (pending && mapStatus.textContent !== copy) mapStatus.textContent = copy
     }
@@ -771,6 +825,7 @@ export function createGlobeEngine({
     if (lowPower && now - lastFrameAt < 34) return
     lastFrameAt = now
     const time = clock.getElapsedTime()
+    arcTimeUniform.value = time
     state.nodeList.forEach((node) => {
       const hoverBoost = node.id === state.hoveredId && node.id !== state.selectedId ? 1.5 : 1
       const target = node.baseScale * hoverBoost * (1 + Math.sin(time * 1.8 + hashString(node.id)) * 0.08)
@@ -812,6 +867,7 @@ export function createGlobeEngine({
     focusAt: (lat, lng, altitude) => state.focusAt(lat, lng, altitude),
     flyTo: (lat, lng, altitude) => state.flyTo(lat, lng, altitude),
     center: () => state.center(),
+    setMode: (mode) => state.setMode(mode),
     dispose: () => {
       state.disposed = true
       cancelAnimationFrame(frame)
@@ -836,6 +892,7 @@ export function createGlobeEngine({
       dayMap.dispose()
       nightMap.dispose()
       blankCloud.dispose()
+      exploreMaterial.dispose()
       disposeObject(scene)
       renderer.dispose()
       renderer.domElement.remove()

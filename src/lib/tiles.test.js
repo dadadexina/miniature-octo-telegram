@@ -81,7 +81,10 @@ describe('tiles', () => {
   })
 
   it('wraps tile x across the antimeridian', () => {
-    expect(tileUrl(3, 8, 2)).toBe('https://tile.openstreetmap.org/3/0/2.png')
-    expect(tileUrl(3, -1, 2)).toBe('https://tile.openstreetmap.org/3/7/2.png')
+    expect(tileUrl('osm', 3, 8, 2)).toBe('https://tile.openstreetmap.org/3/0/2.png')
+    expect(tileUrl('osm', 3, -1, 2)).toBe('https://tile.openstreetmap.org/3/7/2.png')
+    expect(tileUrl('esri', 3, 8, 2)).toBe(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/3/2/0'
+    )
   })
 })

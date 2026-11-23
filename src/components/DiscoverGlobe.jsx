@@ -6,7 +6,7 @@ import { buildCloudCanvas, cloudGridFrom, cloudPoints } from '../lib/clouds'
 import { searchPlacesOnline } from '../lib/geocode'
 import { fetchWeather } from '../lib/weather'
 import { formatCoords, parseCoords } from '../lib/tiles'
-import { OSM_COPYRIGHT, OSM_COPYRIGHT_URL } from '../lib/mapTiles'
+import { ESRI_COPYRIGHT, ESRI_COPYRIGHT_URL, OSM_COPYRIGHT, OSM_COPYRIGHT_URL } from '../lib/mapTiles'
 import { canUseWebGL, deviceClock, deviceDaylight } from '../lib/globe'
 import { formatRelativeTime } from '../utils'
 
@@ -46,6 +46,7 @@ export default function DiscoverGlobe({
   const [fallback, setFallback] = useState(() => !canUseWebGL())
   const [weather, setWeather] = useState({})
   const [now, setNow] = useState(() => Date.now())
+  const [mode, setMode] = useState('satellite')
 
   useEffect(() => {
     meNameRef.current = meName
@@ -171,6 +172,10 @@ export default function DiscoverGlobe({
   useEffect(() => {
     threeRef.current?.setSelected(selectedId)
   }, [fallback, selectedId])
+
+  useEffect(() => {
+    threeRef.current?.setMode(mode)
+  }, [fallback, mode])
 
   const currentDate = new Date(now)
 
@@ -346,6 +351,36 @@ export default function DiscoverGlobe({
         <div
           className={`absolute right-4 top-1/2 z-20 -translate-y-1/2 flex-col gap-1 ${fallback ? 'hidden' : 'flex'}`}
         >
+          <div className="mb-1 flex flex-col gap-1">
+            <button
+              type="button"
+              data-testid="globe-mode-satellite"
+              aria-label="卫星模式"
+              aria-pressed={mode === 'satellite'}
+              className={`h-9 w-9 border text-[10px] leading-none tracking-[0.06em] backdrop-blur active:bg-[#0a2138] ${
+                mode === 'satellite'
+                  ? 'border-[#5ab4ff]/70 bg-[#0a2138] text-[#b8ddff]'
+                  : 'border-[#2a6fa8]/40 bg-[#081628]/85 text-[#7fc4f0]'
+              }`}
+              onClick={() => setMode('satellite')}
+            >
+              卫星
+            </button>
+            <button
+              type="button"
+              data-testid="globe-mode-explore"
+              aria-label="探索模式"
+              aria-pressed={mode === 'explore'}
+              className={`h-9 w-9 border text-[10px] leading-none tracking-[0.06em] backdrop-blur active:bg-[#0a2138] ${
+                mode === 'explore'
+                  ? 'border-[#5ab4ff]/70 bg-[#0a2138] text-[#b8ddff]'
+                  : 'border-[#2a6fa8]/40 bg-[#081628]/85 text-[#7fc4f0]'
+              }`}
+              onClick={() => setMode('explore')}
+            >
+              探索
+            </button>
+          </div>
           <button
             type="button"
             data-testid="globe-zoom-in"
@@ -462,6 +497,15 @@ export default function DiscoverGlobe({
               className="pointer-events-auto mt-1 inline-block text-[9px] tracking-[0.04em] text-[#2f5d7d] underline decoration-[#2f5d7d]/50 underline-offset-2 hover:text-[#7fc4f0]"
             >
               {OSM_COPYRIGHT}
+            </a>
+            <span className="mx-1 text-[9px] text-[#2f5d7d]">·</span>
+            <a
+              href={ESRI_COPYRIGHT_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="pointer-events-auto text-[9px] tracking-[0.04em] text-[#2f5d7d] underline decoration-[#2f5d7d]/50 underline-offset-2 hover:text-[#7fc4f0]"
+            >
+              {ESRI_COPYRIGHT}
             </a>
           </div>
           <button
