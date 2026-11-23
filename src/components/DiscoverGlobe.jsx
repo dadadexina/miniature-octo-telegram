@@ -5,7 +5,7 @@ import {
   applyMapTheme,
   buildArcsGeoJSON,
   buildNodes,
-  buildRouteGeoJSON,
+  buildRouteLine,
   mapTheme,
 } from '../lib/mapGlobe'
 import {
@@ -18,12 +18,12 @@ import {
   getCurrentLocation,
   haversineKm,
   locationPermissionState,
-  navigationUrl,
   parseLatLngQuery,
   walkMinutes,
   watchLocation,
 } from '../lib/geo'
 import { mergePlaceResults, searchPlacesOnline } from '../lib/geocode'
+import { planRoute, routeModeLabel, straightRoute } from '../lib/routing'
 import { searchPlaces } from '../lib/places'
 
 const DASH_PATTERNS = [
@@ -101,6 +101,9 @@ export default function DiscoverGlobe({
   const meRef = useRef({ id: meId, name: meName, coords: meCoords })
   const myPosRef = useRef(null)
   const destinationRef = useRef(null)
+  const routeRef = useRef(null)
+  const navSeqRef = useRef(0)
+  const navAbortRef = useRef(null)
 
   const [copied, setCopied] = useState('')
   const [fallback, setFallback] = useState(() => !canUseWebGL())
@@ -113,7 +116,8 @@ export default function DiscoverGlobe({
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
   const [results, setResults] = useState([])
-  const [destination, setDestination] = useState(null)
+  const [preview, setPreview] = useState(null)
+  const [nav, setNav] = useState(null)
 
   const locate = useCallback(async () => {
     markAskedLocation()
@@ -155,6 +159,7 @@ export default function DiscoverGlobe({
   useEffect(
     () => () => {
       clearTimeout(copyTimerRef.current)
+      navAbortRef.current?.abort()
     },
     []
   )
@@ -221,13 +226,13 @@ export default function DiscoverGlobe({
 
   useEffect(() => {
     myPosRef.current = myPos
-    destinationRef.current = destination
+    destinationRef.current = nav?.place || preview || null
     meRef.current = { id: meId, name: meName, coords: myPos || meCoords }
     routeSyncRef.current?.()
     const map = mapRef.current
     if (!map) return
     syncRef.current?.()
-    if (destination) return
+    if (nav?.place || preview) return
     const coords = myPos || meCoords
     if (coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)) {
       try {
@@ -240,37 +245,55 @@ export default function DiscoverGlobe({
         // 地图尚未就绪时忽略
       }
     }
-  }, [myPos, meCoords, meId, meName, destination])
+  }, [myPos, meCoords, meId, meName, nav?.place, preview])
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !destination) return
-    const from = myPosRef.current || meRef.current.coords
-    try {
-      if (from && Number.isFinite(from.lat) && Number.isFinite(from.lng)) {
-        const km = haversineKm(from, destination)
-        if (km < 0.03) {
-          map.easeTo({ center: [destination.lng, destination.lat], zoom: 17, duration: 700 })
+    if (!map) return
+    const place = nav?.place
+    if (place) {
+      const route = nav?.route
+      if (!route?.coordinates?.length) return
+      let minLng = Infinity
+      let minLat = Infinity
+      let maxLng = -Infinity
+      let maxLat = -Infinity
+      for (const [lng, lat] of route.coordinates) {
+        if (lng < minLng) minLng = lng
+        if (lat < minLat) minLat = lat
+        if (lng > maxLng) maxLng = lng
+        if (lat > maxLat) maxLat = lat
+      }
+      const from = myPosRef.current || meRef.current.coords
+      try {
+        if (from && haversineKm(from, place) < 0.03) {
+          map.easeTo({ center: [place.lng, place.lat], zoom: 17, duration: 700 })
         } else {
           map.fitBounds(
             [
-              [Math.min(from.lng, destination.lng), Math.min(from.lat, destination.lat)],
-              [Math.max(from.lng, destination.lng), Math.max(from.lat, destination.lat)],
+              [minLng, minLat],
+              [maxLng, maxLat],
             ],
             {
-              padding: { top: 70, bottom: 210, left: 40, right: 40 },
+              padding: { top: 70, bottom: 230, left: 36, right: 36 },
               maxZoom: 16.5,
               duration: 700,
             }
           )
         }
-      } else {
-        map.easeTo({ center: [destination.lng, destination.lat], zoom: 15, duration: 1000 })
+      } catch {
+        // 地图尚未就绪时忽略
       }
-    } catch {
-      // 地图尚未就绪时忽略
+      return
     }
-  }, [destination, myPos])
+    if (preview) {
+      try {
+        map.easeTo({ center: [preview.lng, preview.lat], zoom: 15, duration: 1000 })
+      } catch {
+        // 地图尚未就绪时忽略
+      }
+    }
+  }, [nav, preview])
 
   useEffect(() => {
     const text = searchText.trim()
@@ -448,11 +471,12 @@ export default function DiscoverGlobe({
 
       const syncRoute = () => {
         if (!map) return
-        const from = myPosRef.current || meRef.current.coords
         const to = destinationRef.current
         try {
           const source = map.getSource('route')
-          if (source && source.setData) source.setData(buildRouteGeoJSON(from, to))
+          if (source && source.setData) {
+            source.setData(routeRef.current ? buildRouteLine(routeRef.current) : EMPTY_FC)
+          }
         } catch {
           // 数据源尚未建立时忽略
         }
@@ -544,16 +568,48 @@ export default function DiscoverGlobe({
         }
         if (!map.getSource('route')) {
           map.addSource('route', { type: 'geojson', data: EMPTY_FC })
+          const routeLayout = { 'line-cap': 'round', 'line-join': 'round' }
+          const plannedFilter = (mode) => [
+            'all',
+            ['==', ['get', 'mode'], mode],
+            ['!=', ['get', 'fallback'], true],
+          ]
           map.addLayer({
-            id: 'route-line',
+            id: 'route-driving',
             type: 'line',
             source: 'route',
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            filter: plannedFilter('driving'),
+            layout: routeLayout,
+            paint: {
+              'line-color': ROUTE_COLOR,
+              'line-width': 4.2,
+              'line-opacity': 0.95,
+            },
+          })
+          map.addLayer({
+            id: 'route-walking',
+            type: 'line',
+            source: 'route',
+            filter: plannedFilter('walking'),
+            layout: routeLayout,
+            paint: {
+              'line-color': ROUTE_COLOR,
+              'line-width': 3.2,
+              'line-opacity': 0.95,
+              'line-dasharray': [1.6, 1.3],
+            },
+          })
+          map.addLayer({
+            id: 'route-fallback',
+            type: 'line',
+            source: 'route',
+            filter: ['==', ['get', 'fallback'], true],
+            layout: routeLayout,
             paint: {
               'line-color': ROUTE_COLOR,
               'line-width': 2.4,
-              'line-opacity': 0.95,
-              'line-dasharray': [2, 1.5],
+              'line-opacity': 0.55,
+              'line-dasharray': [0.7, 1.2],
             },
           })
         }
@@ -670,9 +726,14 @@ export default function DiscoverGlobe({
     copyTimerRef.current = setTimeout(() => setCopied(''), 1500)
   }
 
-  const goHere = (place) => {
+  const selectPlace = (place) => {
     if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return
-    setDestination(place)
+    navSeqRef.current += 1
+    navAbortRef.current?.abort()
+    navAbortRef.current = null
+    routeRef.current = null
+    setNav(null)
+    setPreview(place)
     setSearchOpen(false)
     setSearchText('')
     setResults([])
@@ -680,24 +741,94 @@ export default function DiscoverGlobe({
     if (!myPosRef.current) locate()
   }
 
+  const startNav = useCallback(
+    async (place, mode) => {
+      if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return
+      const from = myPosRef.current || meRef.current.coords
+      setPreview(null)
+      if (!from) {
+        setNav({ place, mode, status: 'need-location', route: null })
+        locate()
+        return
+      }
+      navAbortRef.current?.abort()
+      const seq = navSeqRef.current + 1
+      navSeqRef.current = seq
+      const controller = new AbortController()
+      navAbortRef.current = controller
+      routeRef.current = null
+      routeSyncRef.current?.()
+      setNav({ place, mode, status: 'loading', route: null })
+      try {
+        const route = await planRoute({ from, to: place, mode, signal: controller.signal })
+        if (navSeqRef.current !== seq) return
+        routeRef.current = route
+        setNav({ place, mode, status: 'ready', route })
+        routeSyncRef.current?.()
+      } catch (err) {
+        if (navSeqRef.current !== seq || err?.name === 'AbortError') return
+        const fallback = straightRoute(from, place, mode)
+        if (!fallback) {
+          setNav({ place, mode, status: 'error', route: null })
+          return
+        }
+        routeRef.current = { ...fallback, error: err?.message }
+        setNav({ place, mode, status: 'ready', route: routeRef.current })
+        routeSyncRef.current?.()
+      }
+    },
+    [locate]
+  )
+
+  const endNav = useCallback(() => {
+    navSeqRef.current += 1
+    navAbortRef.current?.abort()
+    navAbortRef.current = null
+    routeRef.current = null
+    destinationRef.current = null
+    setNav(null)
+    setPreview(null)
+    routeSyncRef.current?.()
+  }, [])
+
   const currentDate = new Date(now)
   const effectiveCoords = myPos || meCoords
-  const distanceKm = destination ? haversineKm(effectiveCoords, destination) : 0
   const geoMessage =
     geoState === 'denied' || geoState === 'error' || geoState === 'unsupported' ? geoError : ''
-  const bearing =
-    destination && effectiveCoords ? bearingDegrees(effectiveCoords, destination) : null
-  const heading = bearing === null ? '' : compassLabel(bearing)
-  const walkMin = destination ? walkMinutes(distanceKm) : 0
-  const arrived = Boolean(destination && effectiveCoords && distanceKm < 0.03)
-  const routeStatus = effectiveCoords
-    ? arrived
-      ? '已到达目的地附近'
-      : `距目的地 ${formatDistance(distanceKm)} · 步行约 ${walkMin} 分钟 · 向${heading}`
-    : geoState === 'loading'
-      ? '正在获取我的位置...'
-      : geoError || '未获取到我的位置'
-  const mapsHref = destination ? navigationUrl(destination) : ''
+  const navPlace = nav?.place || null
+  const navRoute = nav?.route || null
+  const previewDistance =
+    preview && effectiveCoords ? haversineKm(effectiveCoords, preview) : null
+  const previewDriveMin =
+    previewDistance === null ? null : Math.max(1, Math.round((previewDistance / 30) * 60))
+  const previewWalkMin = previewDistance === null ? null : walkMinutes(previewDistance)
+  const navDistanceKm = navPlace && effectiveCoords ? haversineKm(effectiveCoords, navPlace) : 0
+  const navBearing =
+    navPlace && effectiveCoords ? bearingDegrees(effectiveCoords, navPlace) : null
+  const navHeading = navBearing === null ? '' : compassLabel(navBearing)
+  const arrived = Boolean(navPlace && effectiveCoords && navDistanceKm < 0.03)
+  const navModeLabel = nav ? routeModeLabel(nav.mode) : ''
+  const navStatus = !nav
+    ? ''
+    : nav.status === 'loading'
+      ? `正在规划${navModeLabel}路线...`
+      : nav.status === 'need-location'
+        ? geoState === 'loading'
+          ? '正在获取我的位置...'
+          : geoError || '需要先获取你的位置才能规划路线'
+        : nav.status === 'error'
+          ? '路线规划失败，请重试'
+          : arrived
+            ? '已到达目的地附近'
+            : effectiveCoords && navRoute
+              ? `距目的地 ${formatDistance(navDistanceKm)} · 全程 ${formatDistance(navRoute.distanceKm)} · 约 ${navRoute.durationMin} 分钟 · 向${navHeading}`
+              : '未获取到我的位置'
+
+  useEffect(() => {
+    if (nav?.status === 'need-location' && effectiveCoords) {
+      startNav(nav.place, nav.mode)
+    }
+  }, [effectiveCoords, nav, startNav])
 
   return (
     <div className="relative h-full overflow-hidden bg-eink-paper text-eink-ink">
@@ -809,7 +940,7 @@ export default function DiscoverGlobe({
                   key={place.id}
                   type="button"
                   data-testid="globe-place-result"
-                  onClick={() => goHere(place)}
+                  onClick={() => selectPlace(place)}
                   className="flex w-full items-center gap-2 border-b border-eink-divider px-3 py-2 text-left active:bg-eink-surface"
                 >
                   <span className="min-w-0 flex-1">
@@ -822,7 +953,7 @@ export default function DiscoverGlobe({
                     data-testid="globe-go-here"
                     className="shrink-0 border border-eink-line/40 px-2 py-0.5 text-[10px] text-eink-sub"
                   >
-                    去这里
+                    查看
                   </span>
                 </button>
               ))}
@@ -867,21 +998,106 @@ export default function DiscoverGlobe({
         </div>
       ) : null}
 
-      {destination ? (
+      {preview && !nav ? (
+        <div
+          data-testid="globe-place-preview"
+          className="absolute bottom-36 left-2 right-14 z-20 border border-eink-line/30 bg-eink-bar/95 px-3 py-2 text-[11px] shadow-sm"
+        >
+          <p className="min-w-0 truncate text-eink-ink">目的地 {preview.name}</p>
+          {preview.detail ? (
+            <p className="mt-0.5 truncate text-[10px] text-eink-faint">{preview.detail}</p>
+          ) : null}
+          <p data-testid="globe-preview-estimate" className="mt-0.5 text-[10px] text-eink-sub tabular-nums">
+            {previewDistance === null
+              ? '选择出行方式后开始规划路线'
+              : `距你 ${formatDistance(previewDistance)} · 开车约 ${previewDriveMin} 分钟 · 步行约 ${previewWalkMin} 分钟`}
+          </p>
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <button
+              type="button"
+              data-testid="globe-route-drive"
+              className="border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
+              onClick={() => startNav(preview, 'driving')}
+            >
+              开车导航
+            </button>
+            <button
+              type="button"
+              data-testid="globe-route-walk"
+              className="border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
+              onClick={() => startNav(preview, 'walking')}
+            >
+              步行导航
+            </button>
+            <button
+              type="button"
+              data-testid="globe-preview-close"
+              className="ml-auto border border-eink-line/40 px-2 py-0.5 text-eink-faint active:bg-eink-surface"
+              onClick={() => setPreview(null)}
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {nav ? (
         <div
           data-testid="globe-route-info"
           className="absolute bottom-36 left-2 right-14 z-20 border border-eink-line/30 bg-eink-bar/95 px-3 py-2 text-[11px] shadow-sm"
         >
           <div className="flex items-baseline justify-between gap-2">
-            <p className="min-w-0 truncate text-eink-ink">导航前往 {destination.name}</p>
-            <span className="shrink-0 text-[9px] tracking-[0.08em] text-eink-faint">
-              {arrived ? '已到达' : '导航中'}
+            <p data-testid="globe-route-title" className="min-w-0 truncate text-eink-ink">
+              {nav.status === 'loading' || nav.status === 'need-location'
+                ? `正在规划${navModeLabel}路线`
+                : `${navModeLabel}导航 · ${nav.place.name}`}
+            </p>
+            <span
+              data-testid="globe-route-mode"
+              className="shrink-0 text-[9px] tracking-[0.08em] text-eink-faint"
+            >
+              {nav.status === 'loading' || nav.status === 'need-location'
+                ? '规划中'
+                : arrived
+                  ? '已到达'
+                  : '导航中'}
             </span>
           </div>
           <p data-testid="globe-route-status" className="mt-0.5 text-[10px] text-eink-sub tabular-nums">
-            {routeStatus}
+            {navStatus}
           </p>
-          <div className="mt-1.5 flex items-center gap-1.5">
+          {nav.status === 'ready' && navRoute?.fallback ? (
+            <p data-testid="globe-route-fallback" className="mt-0.5 text-[10px] text-eink-faint">
+              路线服务暂不可用，当前以直线距离示意
+            </p>
+          ) : null}
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              data-testid="globe-mode-drive"
+              aria-pressed={nav.mode === 'driving'}
+              className={`border px-2 py-0.5 active:bg-eink-surface ${
+                nav.mode === 'driving'
+                  ? 'border-eink-ink text-eink-ink'
+                  : 'border-eink-line/40 text-eink-sub'
+              }`}
+              onClick={() => startNav(nav.place, 'driving')}
+            >
+              开车
+            </button>
+            <button
+              type="button"
+              data-testid="globe-mode-walk"
+              aria-pressed={nav.mode === 'walking'}
+              className={`border px-2 py-0.5 active:bg-eink-surface ${
+                nav.mode === 'walking'
+                  ? 'border-eink-ink text-eink-ink'
+                  : 'border-eink-line/40 text-eink-sub'
+              }`}
+              onClick={() => startNav(nav.place, 'walking')}
+            >
+              步行
+            </button>
             {!effectiveCoords ? (
               <button
                 type="button"
@@ -892,22 +1108,11 @@ export default function DiscoverGlobe({
                 重试定位
               </button>
             ) : null}
-            {mapsHref ? (
-              <a
-                data-testid="globe-open-maps"
-                href={mapsHref}
-                target="_blank"
-                rel="noreferrer"
-                className="border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
-              >
-                系统地图
-              </a>
-            ) : null}
             <button
               type="button"
               data-testid="globe-route-clear"
               className="ml-auto border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
-              onClick={() => setDestination(null)}
+              onClick={endNav}
             >
               结束导航
             </button>

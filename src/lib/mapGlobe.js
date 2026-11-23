@@ -316,17 +316,24 @@ export function buildArcsGeoJSON(nodes = [], links = []) {
   return { type: 'FeatureCollection', features }
 }
 
-export function buildRouteGeoJSON(from, to, steps = 96) {
-  const valid = (point) =>
-    point && Number.isFinite(point.lat) && Number.isFinite(point.lng)
-  if (!valid(from) || !valid(to)) return { type: 'FeatureCollection', features: [] }
+export function buildRouteLine(route) {
+  const coordinates = Array.isArray(route?.coordinates) ? route.coordinates : []
+  const valid =
+    coordinates.length >= 2 &&
+    coordinates.every(
+      (coord) => Array.isArray(coord) && Number.isFinite(coord[0]) && Number.isFinite(coord[1])
+    )
+  if (!valid) return { type: 'FeatureCollection', features: [] }
   return {
     type: 'FeatureCollection',
     features: [
       {
         type: 'Feature',
-        properties: {},
-        geometry: { type: 'LineString', coordinates: greatCircleLine(from, to, steps) },
+        properties: {
+          mode: route.mode === 'driving' ? 'driving' : 'walking',
+          fallback: Boolean(route.fallback),
+        },
+        geometry: { type: 'LineString', coordinates },
       },
     ],
   }

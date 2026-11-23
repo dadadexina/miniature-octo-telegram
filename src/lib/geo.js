@@ -178,11 +178,3 @@ export function walkMinutes(km, speedKmh = 4.8) {
   if (!Number.isFinite(speed) || speed <= 0) return 0
   return Math.max(1, Math.round((value / speed) * 60))
 }
-
-export function navigationUrl(destination) {
-  if (!destination || !Number.isFinite(destination.lat) || !Number.isFinite(destination.lng)) return ''
-  const lng = Number(destination.lng).toFixed(6)
-  const lat = Number(destination.lat).toFixed(6)
-  const name = encodeURIComponent(String(destination.name || '目的地'))
-  return `https://uri.amap.com/navigation?to=${lng},${lat},${name}&mode=walk&policy=1&callnative=1&src=zhimo`
-}

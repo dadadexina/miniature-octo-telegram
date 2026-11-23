@@ -3,7 +3,7 @@ import {
   MAP_THEMES,
   buildArcsGeoJSON,
   buildNodes,
-  buildRouteGeoJSON,
+  buildRouteLine,
   greatCircleLine,
   mapTheme,
   pseudoCoords,
@@ -64,14 +64,20 @@ describe('mapGlobe', () => {
     expect(geo.features[0].geometry.type).toBe('LineString')
   })
 
-  it('导航线只接受有效端点并包含全部路径点', () => {
-    const geo = buildRouteGeoJSON({ lat: 31.2304, lng: 121.4737 }, { lat: 39.9042, lng: 116.4074 }, 24)
+  it('导航线保留规划路径点并标注出行方式', () => {
+    const coordinates = [
+      [121.4737, 31.2304],
+      [121.48, 31.235],
+      [121.49, 31.24],
+    ]
+    const geo = buildRouteLine({ mode: 'driving', coordinates, fallback: false })
     expect(geo.features).toHaveLength(1)
-    const line = geo.features[0].geometry.coordinates
-    expect(line).toHaveLength(25)
-    expect(line[0][0]).toBeCloseTo(121.4737)
-    expect(line[24][1]).toBeCloseTo(39.9042)
-    expect(buildRouteGeoJSON(null, { lat: 0, lng: 0 }).features).toHaveLength(0)
-    expect(buildRouteGeoJSON({ lat: 0, lng: 0 }, { lat: NaN, lng: 1 }).features).toHaveLength(0)
+    expect(geo.features[0].geometry.coordinates).toEqual(coordinates)
+    expect(geo.features[0].properties).toEqual({ mode: 'driving', fallback: false })
+    const walk = buildRouteLine({ mode: 'walking', coordinates, fallback: true })
+    expect(walk.features[0].properties).toEqual({ mode: 'walking', fallback: true })
+    expect(buildRouteLine(null).features).toHaveLength(0)
+    expect(buildRouteLine({ coordinates: [[0, 0]] }).features).toHaveLength(0)
+    expect(buildRouteLine({ coordinates: [[0, 0], [NaN, 1]] }).features).toHaveLength(0)
   })
 })
