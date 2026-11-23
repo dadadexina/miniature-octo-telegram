@@ -1,4 +1,4 @@
-import { MAX_TILE_ZOOM, TILE_PX } from './tiles'
+import { TILE_PX } from './tiles'
 
 export const OSM_COPYRIGHT = '© OpenStreetMap contributors'
 export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright'
@@ -118,18 +118,49 @@ async function decodeBlob(blob) {
   })
 }
 
+function isPlaceholderTile(ctx) {
+  const size = TILE_PX
+  const data = ctx.getImageData(0, 0, size, size).data
+  const grid = 8
+  const step = size / grid
+  let white = 0
+  let gray = 0
+  let dark = 0
+  let total = 0
+  for (let gy = 0; gy < grid; gy += 1) {
+    for (let gx = 0; gx < grid; gx += 1) {
+      const idx = (Math.floor(step * (gy + 0.5)) * size + Math.floor(step * (gx + 0.5))) * 4
+      const r = data[idx]
+      const g = data[idx + 1]
+      const b = data[idx + 2]
+      total += 1
+      if (r > 235 && g > 235 && b > 235) white += 1
+      else if (Math.abs(r - 204) < 8 && Math.abs(g - 204) < 8 && Math.abs(b - 204) < 8) gray += 1
+      else if (r < 90 && g < 90 && b < 90) dark += 1
+    }
+  }
+  if (gray / total > 0.9) return true
+  if (white / total > 0.7 && dark / total > 0.02) return true
+  return false
+}
+
 function paintTile(image) {
   const canvas = document.createElement('canvas')
   canvas.width = TILE_PX
   canvas.height = TILE_PX
   const ctx = canvas.getContext('2d')
-  if (!ctx) return null
+  if (!ctx) throw new Error('canvas unavailable')
   ctx.drawImage(image, 0, 0, TILE_PX, TILE_PX)
   if (typeof image.close === 'function') image.close()
+  if (isPlaceholderTile(ctx)) {
+    const error = new Error('placeholder tile')
+    error.placeholder = true
+    throw error
+  }
   return canvas
 }
 
-function loadTile(source, zoom, x, y) {
+export function loadTile(source, zoom, x, y) {
   const count = 2 ** zoom
   const wrappedX = ((x % count) + count) % count
   const key = `${source}/${zoom}/${wrappedX}/${y}`
@@ -146,10 +177,9 @@ function loadTile(source, zoom, x, y) {
       try {
         const blob = await fetchBlob(url)
         const image = await decodeBlob(blob)
-        const canvas = paintTile(image)
-        if (!canvas) throw new Error('canvas unavailable')
-        return canvas
+        return paintTile(image)
       } catch (error) {
+        if (error.placeholder) throw error
         lastError = error
         if (attempt === 0) await wait(500 + Math.random() * 500)
       }
@@ -163,94 +193,4 @@ function loadTile(source, zoom, x, y) {
     if (oldest && oldest !== key) tileCache.delete(oldest)
   }
   return promise
-}
-
-export function buildTileCanvasProgressive(zoom, originX, originY, span = 4, source = 'osm', onProgress) {
-  if (typeof document === 'undefined') return null
-  const canvasSize = span * TILE_PX
-  const canvas = document.createElement('canvas')
-  canvas.width = canvasSize
-  canvas.height = canvasSize
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return null
-  ctx.fillStyle = '#0a1624'
-  ctx.fillRect(0, 0, canvasSize, canvasSize)
-
-  const parentJobs = []
-  if (zoom > 0) {
-    const pOriginX = Math.floor(originX / 2)
-    const pOriginY = Math.floor(originY / 2)
-    const pSpan = Math.ceil(span / 2) + 1
-    for (let py = 0; py < pSpan; py += 1) {
-      for (let px = 0; px < pSpan; px += 1) {
-        const tx = pOriginX + px
-        const ty = pOriginY + py
-        const dx = (tx * 2 - originX) * TILE_PX
-        const dy = (ty * 2 - originY) * TILE_PX
-        if (dx >= canvasSize || dy >= canvasSize) continue
-        if (dx + TILE_PX * 2 <= 0 || dy + TILE_PX * 2 <= 0) continue
-        parentJobs.push({ zoom: zoom - 1, x: tx, y: ty, dx, dy, draw: TILE_PX * 2 })
-      }
-    }
-  }
-
-  const childJobs = []
-  const center = (span - 1) / 2
-  for (let row = 0; row < span; row += 1) {
-    for (let column = 0; column < span; column += 1) {
-      childJobs.push({
-        zoom,
-        x: originX + column,
-        y: originY + row,
-        dx: column * TILE_PX,
-        dy: row * TILE_PX,
-        draw: TILE_PX,
-        dist: (column - center) ** 2 + (row - center) ** 2,
-      })
-    }
-  }
-  childJobs.sort((a, b) => a.dist - b.dist)
-
-  const stats = { loaded: 0, failed: 0, total: childJobs.length }
-  const run = (async () => {
-    if (parentJobs.length) {
-      await Promise.allSettled(
-        parentJobs.map(async (job) => {
-          try {
-            const image = await loadTile(source, job.zoom, job.x, job.y)
-            if (image) ctx.drawImage(image, job.dx, job.dy, job.draw, job.draw)
-          } catch {
-            // 父级仅作模糊底图，失败不影响清晰子级
-          }
-        })
-      )
-      if (typeof onProgress === 'function') onProgress(stats)
-    }
-    await Promise.all(
-      childJobs.map(async (job) => {
-        try {
-          const image = await loadTile(source, job.zoom, job.x, job.y)
-          if (image) {
-            ctx.drawImage(image, job.dx, job.dy, job.draw, job.draw)
-            stats.loaded += 1
-          }
-        } catch {
-          stats.failed += 1
-        }
-        if (typeof onProgress === 'function') onProgress(stats)
-      })
-    )
-  })()
-
-  return { canvas, done: run, stats }
-}
-
-export function prefetchTiles(source, zoom, centerX, centerY, span = 3) {
-  if (zoom < 0 || zoom > MAX_TILE_ZOOM) return
-  const offset = Math.floor(span / 2)
-  for (let y = -offset; y <= offset; y += 1) {
-    for (let x = -offset; x <= offset; x += 1) {
-      loadTile(source, zoom, centerX + x, centerY + y)
-    }
-  }
 }

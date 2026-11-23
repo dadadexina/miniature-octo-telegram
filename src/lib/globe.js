@@ -123,6 +123,36 @@ export function buildArcFlowLine(curve, segments = 96) {
   return geometry
 }
 
+export function buildTileGeometry(x, y, zoom, radius, segments = 4) {
+  const positions = []
+  const uvs = []
+  const indices = []
+  for (let row = 0; row <= segments; row += 1) {
+    const lat = tileToLat(y + row / segments, zoom)
+    for (let column = 0; column <= segments; column += 1) {
+      const lng = tileToLng(x + column / segments, zoom)
+      const point = toVec(lat, lng, radius)
+      positions.push(point.x, point.y, point.z)
+      uvs.push(column / segments, 1 - row / segments)
+    }
+  }
+  const stride = segments + 1
+  for (let row = 0; row < segments; row += 1) {
+    for (let column = 0; column < segments; column += 1) {
+      const a = row * stride + column
+      const b = a + 1
+      const c = a + stride
+      const d = c + 1
+      indices.push(a, c, b, b, c, d)
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geometry.setIndex(indices)
+  return geometry
+}
+
 export function buildMapPatchGeometry(block, radius, segments = 32) {
   const positions = []
   const uvs = []
@@ -251,7 +281,7 @@ export const ARC_FRAGMENT_SHADER = `
     float dash = smoothstep(0.0, 0.08, dashPhase) * smoothstep(0.6, 0.5, dashPhase);
     float headPos = fract(uTime * uSpeed * 0.4 + uPhase);
     float head = 1.0 - smoothstep(0.0, 0.05, abs(vProgress - headPos));
-    float alpha = clamp(dash * 0.9 + head, 0.0, 1.0) * uOpacity;
+    float alpha = clamp(dash * 1.15 + head, 0.0, 1.0) * uOpacity;
     gl_FragColor = vec4(uColor, alpha);
   }`
 

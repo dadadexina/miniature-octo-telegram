@@ -3,14 +3,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import earthDayUrl from '../assets/earth/earth-day.jpg'
 import earthNightUrl from '../assets/earth/earth-night.jpg'
 import { PLACES } from '../lib/places'
-import { buildTileCanvasProgressive, cancelPendingTiles, clearTileCache, prefetchTiles } from '../lib/mapTiles'
+import { createTileLayer } from '../lib/tileLayer'
 import {
   MAX_ALTITUDE_WORLD,
   MIN_ALTITUDE_WORLD,
   altitudeLabel,
   formatCoords,
   latLngFromUnit,
-  tileBlock,
   tileZoomFor,
 } from '../lib/tiles'
 import {
@@ -33,7 +32,6 @@ import {
   R,
   buildArc,
   buildArcFlowLine,
-  buildMapPatchGeometry,
   citySpread,
   disposeObject,
   hashString,
@@ -197,10 +195,6 @@ export function createGlobeEngine({
   )
   globe.add(atmosphere)
 
-  const mapPatch = new THREE.Group()
-  mapPatch.visible = false
-  globe.add(mapPatch)
-
   const starGeometry = new THREE.BufferGeometry()
   const starCount = lowPower ? 800 : 1600
   const starPositions = new Float32Array(starCount * 3)
@@ -244,20 +238,18 @@ export function createGlobeEngine({
     selectedId: null,
     disposed: false,
     mapMode: false,
-    patchMesh: null,
-    patchKey: '',
-    patchToken: 0,
-    patchLoading: false,
-    patchAt: 0,
-    patchFailed: false,
-    patchPartial: false,
-    patchRetryAt: 0,
     worldFade: 1,
-    mapFade: 0,
     flight: null,
     mode: 'satellite',
     rotateLocked: false,
   }
+
+  const tileLayer = createTileLayer({
+    globe,
+    renderer,
+    getSource: () => (state.mode === 'explore' ? 'osm' : 'esri'),
+    lowPower,
+  })
 
   state.cloudTexture = null
   state.setClouds = (canvas) => {
@@ -325,16 +317,7 @@ export function createGlobeEngine({
     if (next === state.mode) return
     state.mode = next
     globeMesh.material = next === 'explore' ? exploreMaterial : globeMaterial
-    state.patchToken += 1
-    state.patchLoading = false
-    state.patchKey = ''
-    if (state.patchMesh) {
-      mapPatch.remove(state.patchMesh)
-      state.patchMesh.geometry.dispose()
-      state.patchMesh.material.map?.dispose()
-      state.patchMesh.material.dispose()
-      state.patchMesh = null
-    }
+    tileLayer.clear()
   }
 
   state.labelItems = []
@@ -429,14 +412,14 @@ export function createGlobeEngine({
         to.mesh.position.clone().normalize(),
         R * 1.002
       )
-      const geometry = buildArcFlowLine(curve, 96)
+      const geometry = buildArcFlowLine(curve, 140)
       const material = new THREE.ShaderMaterial({
         uniforms: {
-          uColor: { value: new THREE.Color(0x3fa9ff) },
+          uColor: { value: new THREE.Color(0x5fbcff) },
           uTime: arcTimeUniform,
           uPhase: { value: index / Math.max(1, nextLinks.length) },
-          uDashCount: { value: 24 },
-          uSpeed: { value: 0.5 },
+          uDashCount: { value: 34 },
+          uSpeed: { value: 0.85 },
           uOpacity: { value: 0 },
         },
         vertexShader: ARC_VERTEX_SHADER,
@@ -475,9 +458,9 @@ export function createGlobeEngine({
     })
     state.edges.forEach((edge) => {
       const active = !selected || edge.a === selected || edge.b === selected
-      edge.baseOpacity = active ? (selected ? 0.9 : 0.3) : 0.05
+      edge.baseOpacity = active ? (selected ? 0.95 : 0.45) : 0.05
       edge.material.uniforms.uOpacity.value = edge.baseOpacity * state.worldFade
-      edge.material.uniforms.uColor.value.setHex(active && selected ? 0x8fe6ff : 0x3fa9ff)
+      edge.material.uniforms.uColor.value.setHex(active && selected ? 0xb0f0ff : 0x5fbcff)
     })
   }
 
@@ -672,83 +655,6 @@ export function createGlobeEngine({
     })
   }
 
-  const disposePatch = () => {
-    if (!state.patchMesh) return
-    mapPatch.remove(state.patchMesh)
-    state.patchMesh.geometry.dispose()
-    state.patchMesh.material.map?.dispose()
-    state.patchMesh.material.dispose()
-    state.patchMesh = null
-  }
-
-  const installPatch = (block, key, altitude) => {
-    const token = state.patchToken + 1
-    state.patchToken = token
-    state.patchLoading = true
-    state.patchPartial = false
-    state.patchAt = Date.now()
-    const source = state.mode === 'explore' ? 'osm' : 'esri'
-    cancelPendingTiles()
-    const progress = buildTileCanvasProgressive(
-      block.zoom,
-      block.originX,
-      block.originY,
-      block.span,
-      source,
-      () => {
-        if (state.disposed || token !== state.patchToken) return
-        const mesh = state.patchMesh
-        if (mesh && mesh.material.map) mesh.material.map.needsUpdate = true
-      }
-    )
-    if (!progress) return
-    const texture = new THREE.CanvasTexture(progress.canvas)
-    texture.colorSpace = THREE.SRGBColorSpace
-    texture.anisotropy = Math.min(
-      renderer.capabilities.getMaxAnisotropy(),
-      lowPower ? 4 : 8
-    )
-    const offset = Math.max(5e-7, altitude * 0.005)
-    const geometry = buildMapPatchGeometry(block, R + offset, lowPower ? 24 : 32)
-    const material = new THREE.MeshBasicMaterial({
-      map: texture,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0,
-      depthTest: false,
-      depthWrite: false,
-    })
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.renderOrder = 10
-    disposePatch()
-    mapPatch.add(mesh)
-    state.patchMesh = mesh
-    state.patchKey = key
-    state.patchFailed = false
-    progress.done
-      .then(() => {
-        if (state.disposed || token !== state.patchToken) return
-        state.patchLoading = false
-        state.patchPartial = progress.stats.loaded > 0 && progress.stats.loaded < progress.stats.total
-        if (progress.stats.loaded === 0) {
-          state.patchFailed = true
-          state.patchPartial = false
-          state.patchRetryAt = Date.now() + 8000
-        } else {
-          state.patchFailed = false
-          if (state.patchPartial) state.patchRetryAt = Date.now() + 4000
-        }
-        const live = state.patchMesh
-        if (live && live.material.map) live.material.map.needsUpdate = true
-        const centerX = Math.floor((block.originX + block.span / 2) * 2)
-        const centerY = Math.floor((block.originY + block.span / 2) * 2)
-        prefetchTiles(source, block.zoom + 1, centerX, centerY, 3)
-      })
-      .catch(() => {
-        if (token === state.patchToken) state.patchLoading = false
-      })
-  }
-
   const updateSurface = () => {
     const distance = camera.position.length()
     const altitude = Math.max(distance - R, MIN_ALTITUDE_WORLD)
@@ -756,24 +662,15 @@ export function createGlobeEngine({
     const isExplore = state.mode === 'explore'
     const patchDistance = isExplore ? MAP_DISTANCE : R + 0.12
     const mapActive = distance < patchDistance && Math.abs(point.lat) < 84
-    let zoom = 0
-    if (mapActive) {
-      zoom = tileZoomFor({ altitudeWorld: altitude, lat: point.lat, fovDeg: camera.fov })
-      const block = tileBlock(point.lat, point.lng, zoom)
-      const key = `${zoom}:${block.originX}:${block.originY}`
-      const retryDue = (state.patchFailed || state.patchPartial) && Date.now() > state.patchRetryAt
-      if ((key !== state.patchKey || retryDue) && !state.patchLoading && Date.now() - state.patchAt > 220) {
-        state.patchFailed = false
-        installPatch(block, key, altitude)
-      }
-    }
     const mapFade = isExplore
       ? 1 - smoothstep(0.045, 0.06, altitude)
       : 1 - smoothstep(0.06, 0.12, altitude)
     const networkFade = smoothstep(0.06, 0.14, altitude)
     const cloudFade = smoothstep(0.06, 0.12, altitude)
     const atmosphereFade = smoothstep(0.3, 0.42, altitude)
-    state.mapFade = mapFade
+    tileLayer.setFade(mapFade)
+    tileLayer.setVisible(mapActive && mapFade > 0.005)
+    if (mapActive) tileLayer.update(camera)
     state.mapMode = mapActive
     state.setWorldFade(networkFade)
     network.visible = networkFade > 0.01
@@ -783,15 +680,17 @@ export function createGlobeEngine({
     cloudShell.visible = !isExplore && cloudFade > 0.01
     glowMaterial.uniforms.fade.value = atmosphereFade
     atmosphere.visible = atmosphereFade > 0.01
-    if (state.patchMesh) state.patchMesh.material.opacity = mapFade
-    mapPatch.visible = mapActive && Boolean(state.patchMesh) && mapFade > 0.005
     if (mapStatus) {
-      const pending = mapActive && (!state.patchMesh || state.patchLoading || state.patchFailed || state.patchPartial)
-      const copy = state.patchFailed
+      const tileStats = tileLayer.stats()
+      const hasTiles = tileStats.count > 0
+      const allFailed = hasTiles && tileStats.loaded === 0 && tileStats.failed > 0 && !tileStats.loading
+      const partial = hasTiles && tileStats.loaded > 0 && (tileStats.loading || tileStats.failed > 0)
+      const pending = mapActive && (!hasTiles || tileStats.loading || allFailed || partial)
+      const copy = allFailed
         ? isExplore
           ? '街道图暂不可用，稍后自动重试'
           : '影像暂不可用，稍后自动重试'
-        : state.patchPartial
+        : partial
           ? isExplore
             ? '正在补齐街道图…'
             : '正在补齐影像…'
@@ -806,6 +705,7 @@ export function createGlobeEngine({
       state.coordAt = Date.now()
       const maxDetail = altitude <= MIN_ALTITUDE_WORLD * 1.5
       const digits = altitude < 0.02 ? 5 : 2
+      const zoom = mapActive ? tileZoomFor({ altitudeWorld: altitude, lat: point.lat, fovDeg: camera.fov }) : 0
       const suffix = mapActive
         ? `海拔 ${altitudeLabel(altitude)} · 地图 z${zoom}${maxDetail ? ' · 最大细节' : ''}`
         : altitude < 1.2
@@ -902,9 +802,7 @@ export function createGlobeEngine({
       renderer.domElement.removeEventListener('dblclick', onDoubleClick)
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
       controls.dispose()
-      state.patchToken += 1
-      disposePatch()
-      clearTileCache()
+      tileLayer.dispose()
       state.cloudTexture?.dispose()
       dayMap.dispose()
       nightMap.dispose()
