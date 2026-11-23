@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber/native';
 import FriendNetwork from './FriendNetwork';
-import { latLngToVector3 } from './geometry';
+import { buildStreetGrid, latLngToVector3 } from './geometry';
 import {
   atmosphereFragment,
   atmosphereVertex,
@@ -10,6 +10,7 @@ import {
   cloudVertex,
   earthFragment,
   earthVertex,
+  exploreFragment,
 } from './shaders';
 
 const SUN_DIRECTION = new THREE.Vector3(0.35, 0.9, 0.25).normalize();
@@ -84,12 +85,38 @@ function Weather({ home, radius = 1, count = 140 }) {
   );
 }
 
+function StreetGrid({ home, radius = 1, controls, mode }) {
+  const gridRef = useRef(null);
+
+  const geometry = useMemo(
+    () => buildStreetGrid(home.lat, home.lng, radius),
+    [home.lat, home.lng, radius],
+  );
+
+  useFrame(() => {
+    const line = gridRef.current;
+    if (!line) return;
+    const zoom = controls.current.zoom;
+    const show = mode === 'explore' && zoom > 1.4;
+    line.visible = show;
+    if (show) {
+      line.material.opacity = Math.min(1, (zoom - 1.4) / 0.8) * 0.6;
+    }
+  });
+
+  return (
+    <lineSegments ref={gridRef} geometry={geometry} visible={false}>
+      <lineBasicMaterial color="#5b6673" transparent opacity={0} depthWrite={false} />
+    </lineSegments>
+  );
+}
+
 /**
  * Full 3D scene: procedural earth, rim atmosphere, starfield, the friends
  * network and a weather particle placeholder. Exposes `pick(x, y)` through
  * `onReady` for tap-to-select of friend nodes.
  */
-export default function GlobeScene({ friends = [], home, controls, onReady }) {
+export default function GlobeScene({ friends = [], home, controls, onReady, mode = 'satellite' }) {
   const { camera, size } = useThree();
   const globeRef = useRef(null);
   const hitMeshes = useRef([]);
@@ -118,6 +145,16 @@ export default function GlobeScene({ friends = [], home, controls, onReady }) {
     () => ({
       uNoiseScale: { value: 2.2 },
       uTime: { value: 0 },
+    }),
+    [],
+  );
+
+  const exploreUniforms = useMemo(
+    () => ({
+      uLandColor: { value: new THREE.Color('#e9e6de') },
+      uWaterColor: { value: new THREE.Color('#c3d8ec') },
+      uBorderColor: { value: new THREE.Color('#7c8a9a') },
+      uNoiseScale: { value: 1.5 },
     }),
     [],
   );
@@ -161,22 +198,34 @@ export default function GlobeScene({ friends = [], home, controls, onReady }) {
       <group ref={globeRef}>
         <mesh>
           <sphereGeometry args={[1, 64, 64]} />
-          <shaderMaterial
-            vertexShader={earthVertex}
-            fragmentShader={earthFragment}
-            uniforms={earthUniforms}
-          />
+          {mode === 'satellite' ? (
+            <shaderMaterial
+              key="satellite"
+              vertexShader={earthVertex}
+              fragmentShader={earthFragment}
+              uniforms={earthUniforms}
+            />
+          ) : (
+            <shaderMaterial
+              key="explore"
+              vertexShader={earthVertex}
+              fragmentShader={exploreFragment}
+              uniforms={exploreUniforms}
+            />
+          )}
         </mesh>
-        <mesh scale={1.015}>
-          <sphereGeometry args={[1, 48, 48]} />
-          <shaderMaterial
-            vertexShader={cloudVertex}
-            fragmentShader={cloudFragment}
-            uniforms={cloudUniforms}
-            transparent
-            depthWrite={false}
-          />
-        </mesh>
+        {mode === 'satellite' && (
+          <mesh scale={1.015}>
+            <sphereGeometry args={[1, 48, 48]} />
+            <shaderMaterial
+              vertexShader={cloudVertex}
+              fragmentShader={cloudFragment}
+              uniforms={cloudUniforms}
+              transparent
+              depthWrite={false}
+            />
+          </mesh>
+        )}
         <mesh scale={1.025}>
           <sphereGeometry args={[1, 48, 48]} />
           <shaderMaterial
@@ -189,6 +238,7 @@ export default function GlobeScene({ friends = [], home, controls, onReady }) {
             depthWrite={false}
           />
         </mesh>
+        <StreetGrid home={home} controls={controls} mode={mode} />
         <FriendNetwork friends={friends} home={home} radius={1} hitMeshes={hitMeshes} />
         <Weather home={home} radius={1} />
       </group>

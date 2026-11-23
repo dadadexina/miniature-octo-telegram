@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { useMemo } from 'react';
-import { buildArcLine, colorFromKey, latLngToVector3 } from './geometry';
+import { useFrame } from '@react-three/fiber/native';
+import { buildArcFlowLine, colorFromKey, latLngToVector3 } from './geometry';
+import { arcFragment, arcVertex } from './shaders';
 
 const HIT_RADIUS = 0.075;
 
@@ -26,19 +28,34 @@ export default function FriendNetwork({ friends = [], home, radius = 1, hitMeshe
     [friends, radius],
   );
 
+  const timeUniform = useMemo(() => ({ value: 0 }), []);
+
   const arcs = useMemo(
     () =>
-      nodes.map(({ friend, position }) => {
-        const geometry = buildArcLine(homePos, position, radius, 0.22, 64);
-        const material = new THREE.LineBasicMaterial({
-          color: colorFromKey(friend.id),
+      nodes.map(({ friend, position }, i) => {
+        const geometry = buildArcFlowLine(homePos, position, radius, 0.22, 96);
+        const material = new THREE.ShaderMaterial({
+          uniforms: {
+            uColor: { value: colorFromKey(friend.id) },
+            uTime: timeUniform,
+            uPhase: { value: (i * 0.37) % 1 },
+            uDashCount: { value: 24 },
+            uSpeed: { value: 0.5 },
+          },
+          vertexShader: arcVertex,
+          fragmentShader: arcFragment,
           transparent: true,
-          opacity: 0.55,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
         });
         return new THREE.Line(geometry, material);
       }),
-    [nodes, homePos, radius],
+    [nodes, homePos, radius, timeUniform],
   );
+
+  useFrame((_, delta) => {
+    timeUniform.value += delta;
+  });
 
   return (
     <group>

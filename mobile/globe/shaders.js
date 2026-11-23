@@ -158,3 +158,68 @@ export const cloudFragment = /* glsl */ `
     gl_FragColor = vec4(vec3(1.0), clouds * 0.9);
   }
 `;
+
+// Apple Maps "explore" (vector) style: flat pale land, light water and a
+// darker coastline contour, with only a faint shading for roundness.
+export const exploreFragment = /* glsl */ `
+  uniform vec3 uLandColor;
+  uniform vec3 uWaterColor;
+  uniform vec3 uBorderColor;
+  uniform float uNoiseScale;
+
+  varying vec3 vNormal;
+  varying vec3 vWorldPosition;
+
+  ${NOISE_GLSL}
+
+  void main() {
+    vec3 dir = normalize(vWorldPosition);
+    float continent = fbm(dir * uNoiseScale);
+    float landMask = smoothstep(0.47, 0.60, continent);
+
+    vec3 surface = mix(uWaterColor, uLandColor, landMask);
+
+    // Coastline contour: a narrow band where landMask transitions 0 -> 1.
+    float coast = smoothstep(0.05, 0.18, landMask) * (1.0 - smoothstep(0.18, 0.35, landMask));
+    surface = mix(surface, uBorderColor, coast * 0.65);
+
+    // Faint roundness shading keeps the globe readable.
+    float shade = 0.9 + 0.1 * dot(normalize(vNormal), normalize(vec3(0.3, 0.8, 0.5)));
+    surface *= shade;
+
+    gl_FragColor = vec4(surface, 1.0);
+  }
+`;
+
+export const arcVertex = /* glsl */ `
+  attribute float aProgress;
+  varying float vProgress;
+
+  void main() {
+    vProgress = aProgress;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+export const arcFragment = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uTime;
+  uniform float uPhase;
+  uniform float uDashCount;
+  uniform float uSpeed;
+
+  varying float vProgress;
+
+  void main() {
+    // Flowing dashed line.
+    float dashPhase = fract(vProgress * uDashCount - uTime * uSpeed + uPhase);
+    float dash = smoothstep(0.0, 0.08, dashPhase) * smoothstep(0.6, 0.5, dashPhase);
+
+    // Traveling pulse / "teleport" head moving along the arc.
+    float headPos = fract(uTime * uSpeed * 0.4 + uPhase);
+    float head = 1.0 - smoothstep(0.0, 0.05, abs(vProgress - headPos));
+
+    float alpha = dash * 0.85 + head * 1.0;
+    gl_FragColor = vec4(uColor, alpha);
+  }
+`;
