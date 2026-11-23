@@ -256,6 +256,7 @@ export function createGlobeEngine({
     mapFade: 0,
     flight: null,
     mode: 'satellite',
+    rotateLocked: false,
   }
 
   state.cloudTexture = null
@@ -295,6 +296,7 @@ export function createGlobeEngine({
   }
   state.flyTo = (lat, lng, altitude = 0.0015) => {
     controls.autoRotate = false
+    state.rotateLocked = true
     const endDir = toVec(lat, lng, 1).normalize()
     const endAlt = THREE.MathUtils.clamp(altitude, MIN_ALTITUDE_WORLD, MAX_ALTITUDE_WORLD)
     const startDir = camera.position.clone().normalize()
@@ -494,7 +496,7 @@ export function createGlobeEngine({
   state.setSelected = (id) => {
     state.selectedId = id
     state.applyHighlight(id)
-    controls.autoRotate = !reducedMotion && !id && !state.hoveredId
+    controls.autoRotate = !reducedMotion && !id && !state.hoveredId && !state.rotateLocked
   }
 
   const pickNode = (clientX, clientY) => {
@@ -537,7 +539,7 @@ export function createGlobeEngine({
     const id = pickNode(event.clientX, event.clientY)
     if (id !== state.hoveredId) {
       state.hoveredId = id
-      controls.autoRotate = !reducedMotion && !id && !state.selectedId
+      controls.autoRotate = !reducedMotion && !id && !state.selectedId && !state.rotateLocked
       renderer.domElement.style.cursor = id ? 'pointer' : 'grab'
     }
     if (!tooltip) return
@@ -553,7 +555,7 @@ export function createGlobeEngine({
 
   const onPointerLeave = () => {
     state.hoveredId = null
-    controls.autoRotate = !reducedMotion && !state.selectedId
+    controls.autoRotate = !reducedMotion && !state.selectedId && !state.rotateLocked
     renderer.domElement.style.cursor = 'grab'
     if (tooltip) tooltip.style.opacity = 0
   }
