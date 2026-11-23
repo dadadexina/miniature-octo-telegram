@@ -186,6 +186,6 @@ This file records user instructions, preferences, and teachings for reference in
   - e2e 用户名须匹配 `^[A-Za-z0-9]{8,15}$` 且含字母数字，否则 `profiles_fill_public_id` 会替换为随机 ID
   - `scripts/export-cloud-sql.mjs` 必须用函数替换 `.replaceAll(k, () => v)`，否则替换串中的 `$$` 折叠为 `$` 破坏 dollar-quote
   - avatar-sync 实时头像用例默认跳过，`E2E_AVATAR_SYNC=1` 才运行；生产函数 ACL 仅 `authenticated` 可执行四个关系判定函数
-  - 仓库 2026-11-23 由用户再次转为私有；此前 2026-11-22 转私有曾导致 Vercel 部署被拦截，首次 push 后需确认 Vercel/Actions 是否仍触发，未触发则提示用户授权 Vercel 访问私有仓库
+  - 私有仓库 + Vercel Hobby：提交作者必须能匹配到团队 Owner，否则部署状态为 `Deployment was blocked`（非仓库授权问题）。已实测：author 用 `dadadexina <106894018+dadadexina@users.noreply.github.com>` 提交后 Vercel 部署成功；后续推送统一用该作者身份（`git -c user.name=... -c user.email=...`），勿再用 `monkeycode-ai@chaitin.com`
   - 2026-11-23 用户提供两个组织级 Supabase PAT，均存于 `.monkeycode/secrets/`（gitignore、600）：`supabase-prod-token.txt` 覆盖 org `dlqxyvklimrwdexpspei`（生产 ref `ljlvqnhzewzxpyhgumnp`），另一枚覆盖 staging org `cuiinllsqxcslytifwxz`；Management API 已验证可读项目/keys，`POST /v1/projects/<ref>/database/query` 在生产执行 `select 1` 返回 201
   - 两个项目名都叫 `dadadexina's Project`，命令行与脚本一律用 ref 区分，勿按 name 匹配
