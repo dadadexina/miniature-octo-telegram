@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Discover from './Discover'
@@ -52,6 +52,7 @@ function setup() {
 }
 
 let writeText
+let geoWatch
 
 beforeEach(() => {
   localStorage.clear()
@@ -65,6 +66,7 @@ beforeEach(() => {
     configurable: true,
     value: { query: vi.fn(() => Promise.resolve({ state: 'prompt' })) },
   })
+  geoWatch = { success: null, error: null, cleared: 0 }
   Object.defineProperty(navigator, 'geolocation', {
     configurable: true,
     value: {
@@ -73,6 +75,14 @@ beforeEach(() => {
           coords: { latitude: 31.2304, longitude: 121.4737, accuracy: 6.4 },
           timestamp: Date.now(),
         }),
+      watchPosition: (success, error) => {
+        geoWatch.success = success
+        geoWatch.error = error
+        return 7
+      },
+      clearWatch: () => {
+        geoWatch.cleared += 1
+      },
     },
   })
 })
@@ -143,6 +153,7 @@ describe('Discover 关系网页', () => {
       ],
     })
     setup()
+    fireEvent.click(await screen.findByTestId('globe-search-toggle'))
     fireEvent.change(await screen.findByTestId('globe-search-input'), { target: { value: '外滩' } })
     const result = await screen.findByTestId('globe-place-result')
     expect(result.textContent).toContain('外滩')
@@ -152,5 +163,59 @@ describe('Discover 关系网页', () => {
     await waitFor(() => expect(info.textContent).toContain('距目的地'))
     expect(info.textContent).toContain('前往 外滩')
     expect(screen.getByTestId('globe-route-clear')).toBeTruthy()
+  })
+
+  it('授权后持续接收实时定位并更新坐标', async () => {
+    setup()
+    fireEvent.click(await screen.findByTestId('globe-locate-allow'))
+    await waitFor(() => expect(screen.getByTestId('globe-coords').textContent).toContain('31.230400'))
+    await waitFor(() => expect(typeof geoWatch.success).toBe('function'))
+    act(() => {
+      geoWatch.success({
+        coords: { latitude: 31.2311, longitude: 121.4742, accuracy: 3.2 },
+        timestamp: Date.now(),
+      })
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('globe-coords').textContent).toContain('N 31.231100°  E 121.474200°')
+    )
+    expect(screen.getByTestId('globe-coords').textContent).toContain('±3.2 m')
+  })
+
+  it('支持输入经纬度并直接导航到坐标', async () => {
+    setup()
+    fireEvent.click(await screen.findByTestId('globe-search-toggle'))
+    fireEvent.change(await screen.findByTestId('globe-search-input'), {
+      target: { value: '31.2304, 121.4737' },
+    })
+    const result = await screen.findByTestId('globe-place-result')
+    expect(result.textContent).toContain('坐标 31.230400, 121.473700')
+    fireEvent.click(result)
+    const info = await screen.findByTestId('globe-route-info')
+    expect(info.textContent).toContain('前往 坐标 31.230400, 121.473700')
+    expect(screen.queryByTestId('globe-search-sheet')).toBeNull()
+  })
+
+  it('定位失败时导航条提示原因并可重试', async () => {
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: {
+        getCurrentPosition: (_success, error) => error({ code: 1 }),
+        watchPosition: () => 9,
+        clearWatch: () => {},
+      },
+    })
+    searchMock.mockResolvedValue({
+      ok: true,
+      places: [{ id: 'osm:2', name: '人民广场', detail: '黄浦区', lat: 31.233, lng: 121.475, kind: 'attraction' }],
+    })
+    setup()
+    fireEvent.click(await screen.findByTestId('globe-search-toggle'))
+    fireEvent.change(await screen.findByTestId('globe-search-input'), { target: { value: '人民广场' } })
+    fireEvent.click(await screen.findByTestId('globe-place-result'))
+    const status = await screen.findByTestId('globe-route-status')
+    await waitFor(() => expect(status.textContent).toContain('定位权限被拒绝'))
+    expect(screen.getByTestId('globe-route-locate')).toBeTruthy()
+    expect(status.textContent).not.toContain('正在获取我的位置')
   })
 })

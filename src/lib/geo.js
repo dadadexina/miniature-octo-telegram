@@ -49,6 +49,27 @@ export function getCurrentLocation(options = {}) {
   })
 }
 
+export function watchLocation(onUpdate, onError, options = {}) {
+  if (typeof navigator === 'undefined' || !navigator.geolocation?.watchPosition) {
+    return () => {}
+  }
+  const id = navigator.geolocation.watchPosition(
+    (position) => {
+      const location = normalizePosition(position)
+      if (location) onUpdate?.(location)
+    },
+    (error) => onError?.({ code: error?.code ?? -1, error: geoErrorMessage(error) }),
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 2000, ...options }
+  )
+  return () => {
+    try {
+      navigator.geolocation.clearWatch(id)
+    } catch {
+      // 清理失败时忽略
+    }
+  }
+}
+
 export async function locationPermissionState() {
   if (typeof navigator === 'undefined' || !navigator.permissions?.query) return 'unknown'
   try {
@@ -85,4 +106,48 @@ export function formatAccuracy(meters) {
   const value = Number(meters)
   if (!Number.isFinite(value) || value <= 0) return ''
   return `±${value < 10 ? value.toFixed(1) : Math.round(value)} m`
+}
+
+const COORD_PATTERN = /^([NnSs])?\s*([+-]?\d+(?:\.\d+)?)\s*°?\s*([NnSs])?\s*[, ]\s*([EeWw])?\s*([+-]?\d+(?:\.\d+)?)\s*°?\s*([EeWw])?$/
+
+function axisSign(prefix, suffix, positive, negative) {
+  const mark = String(prefix || suffix || '').toUpperCase()
+  if (mark === positive) return 1
+  if (mark === negative) return -1
+  return 0
+}
+
+export function parseLatLngQuery(input) {
+  const text = String(input || '').trim().replace(/，/g, ',').replace(/\s+/g, ' ')
+  if (!text) return null
+  const match = text.match(COORD_PATTERN)
+  if (!match) return null
+  const latSign = axisSign(match[1], match[3], 'N', 'S')
+  const lngSign = axisSign(match[4], match[6], 'E', 'W')
+  let lat = Math.abs(Number(match[2])) * (latSign || 1)
+  let lng = Math.abs(Number(match[5])) * (lngSign || 1)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
+    const swap = lat
+    lat = lng
+    lng = swap
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null
+  if (!match[1] && match[2].startsWith('-')) lat = -Math.abs(lat)
+  if (!match[4] && match[5].startsWith('-')) lng = -Math.abs(lng)
+  return { lat, lng }
+}
+
+export function coordPlace(lat, lng, digits = 6) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  const label = `${lat.toFixed(digits)}, ${lng.toFixed(digits)}`
+  return {
+    id: `coords:${label}`,
+    name: `坐标 ${label}`,
+    detail: '经纬度定位',
+    lat,
+    lng,
+    kind: 'coords',
+    source: 'coords',
+  }
 }

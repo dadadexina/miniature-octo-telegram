@@ -9,12 +9,15 @@ import {
   mapTheme,
 } from '../lib/mapGlobe'
 import {
+  coordPlace,
   formatAccuracy,
   formatDistance,
   geolocationSupported,
   getCurrentLocation,
   haversineKm,
   locationPermissionState,
+  parseLatLngQuery,
+  watchLocation,
 } from '../lib/geo'
 import { mergePlaceResults, searchPlacesOnline } from '../lib/geocode'
 import { searchPlaces } from '../lib/places'
@@ -101,6 +104,7 @@ export default function DiscoverGlobe({
   const [myPos, setMyPos] = useState(null)
   const [geoState, setGeoState] = useState('idle')
   const [geoError, setGeoError] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
@@ -178,6 +182,24 @@ export default function DiscoverGlobe({
   }, [locate])
 
   useEffect(() => {
+    if (geoState !== 'granted') return undefined
+    return watchLocation(
+      (location) => {
+        setMyPos(location)
+        setGeoError('')
+      },
+      (err) => {
+        if (err.code === 1) {
+          setGeoState('denied')
+          setGeoError(err.error)
+        } else {
+          setGeoError(err.error)
+        }
+      }
+    )
+  }, [geoState])
+
+  useEffect(() => {
     const coords = myPos || meCoords
     const text =
       coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)
@@ -222,19 +244,24 @@ export default function DiscoverGlobe({
     const from = myPosRef.current || meRef.current.coords
     try {
       if (from && Number.isFinite(from.lat) && Number.isFinite(from.lng)) {
-        map.fitBounds(
-          [
-            [Math.min(from.lng, destination.lng), Math.min(from.lat, destination.lat)],
-            [Math.max(from.lng, destination.lng), Math.max(from.lat, destination.lat)],
-          ],
-          {
-            padding: { top: 130, bottom: 150, left: 60, right: 60 },
-            maxZoom: 14,
-            duration: 1000,
-          }
-        )
+        const near = haversineKm(from, destination) < 1.5
+        if (near) {
+          map.easeTo({ center: [destination.lng, destination.lat], zoom: 16, duration: 1000 })
+        } else {
+          map.fitBounds(
+            [
+              [Math.min(from.lng, destination.lng), Math.min(from.lat, destination.lat)],
+              [Math.max(from.lng, destination.lng), Math.max(from.lat, destination.lat)],
+            ],
+            {
+              padding: { top: 130, bottom: 150, left: 60, right: 60 },
+              maxZoom: 15,
+              duration: 1000,
+            }
+          )
+        }
       } else {
-        map.easeTo({ center: [destination.lng, destination.lat], zoom: 12, duration: 1000 })
+        map.easeTo({ center: [destination.lng, destination.lat], zoom: 15, duration: 1000 })
       }
     } catch {
       // 地图尚未就绪时忽略
@@ -245,6 +272,13 @@ export default function DiscoverGlobe({
     const text = searchText.trim()
     if (text.length < 2) {
       setResults([])
+      setSearchError('')
+      setSearching(false)
+      return undefined
+    }
+    const coord = parseLatLngQuery(text)
+    if (coord) {
+      setResults([coordPlace(coord.lat, coord.lng)].filter(Boolean))
       setSearchError('')
       setSearching(false)
       return undefined
@@ -635,6 +669,7 @@ export default function DiscoverGlobe({
   const goHere = (place) => {
     if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return
     setDestination(place)
+    setSearchOpen(false)
     setSearchText('')
     setResults([])
     setSearchError('')
@@ -644,9 +679,13 @@ export default function DiscoverGlobe({
   const currentDate = new Date(now)
   const effectiveCoords = myPos || meCoords
   const distanceKm = destination ? haversineKm(effectiveCoords, destination) : 0
-  const showSearchPanel = searchText.trim().length >= 2
   const geoMessage =
     geoState === 'denied' || geoState === 'error' || geoState === 'unsupported' ? geoError : ''
+  const routeStatus = effectiveCoords
+    ? `距目的地 ${formatDistance(distanceKm)} · 沿红色虚线前往`
+    : geoState === 'loading'
+      ? '正在获取我的位置...'
+      : geoError || '未获取到我的位置'
 
   return (
     <div className="relative h-full overflow-hidden bg-eink-paper text-eink-ink">
@@ -682,77 +721,105 @@ export default function DiscoverGlobe({
         </div>
       ) : null}
 
-      <div className="absolute inset-x-2 top-2 z-30">
-        <div className="flex items-center gap-1.5 border border-eink-line/25 bg-eink-bar/95 px-2 py-1 shadow-sm backdrop-blur">
-          <input
-            data-testid="globe-search-input"
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-            placeholder="搜索地名或商户"
-            aria-label="搜索地名或商户"
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-eink-ink outline-none placeholder:text-eink-faint"
-          />
-          {searchText ? (
-            <button
-              type="button"
-              data-testid="globe-search-clear"
-              className="shrink-0 px-1 text-[11px] text-eink-faint"
-              onClick={() => setSearchText('')}
-            >
-              清除
-            </button>
-          ) : null}
+      <button
+        type="button"
+        data-testid="globe-search-toggle"
+        aria-label="搜索地名、商户或经纬度"
+        className="absolute bottom-[112px] right-2 z-30 flex h-8 w-8 items-center justify-center border border-eink-line/30 bg-eink-bar/95 text-eink-ink shadow-sm active:bg-eink-surface"
+        onClick={() => setSearchOpen(true)}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
+          <path d="m16 16 4.2 4.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      </button>
+
+      {searchOpen ? (
+        <div className="absolute inset-0 z-40">
           <button
             type="button"
-            data-testid="globe-locate"
-            className="shrink-0 border border-eink-line/40 px-2 py-0.5 text-[11px] text-eink-sub active:bg-eink-surface"
-            onClick={() => locate()}
-          >
-            {geoState === 'loading' ? '定位中' : '定位'}
-          </button>
-        </div>
-
-        {showSearchPanel ? (
+            aria-label="关闭搜索"
+            data-testid="globe-search-backdrop"
+            className="absolute inset-0 bg-eink-ink/15"
+            onClick={() => setSearchOpen(false)}
+          />
           <div
-            data-testid="globe-search-panel"
-            className="mt-1 max-h-[42vh] overflow-y-auto border border-eink-divider bg-eink-bar shadow-md"
+            data-testid="globe-search-sheet"
+            className="absolute inset-x-2 top-2 border border-eink-line/30 bg-eink-bar shadow-lg"
           >
-            {searching ? (
-              <p className="px-3 py-2 text-[12px] text-eink-faint">搜索中...</p>
-            ) : null}
-            {searchError ? (
-              <p className="px-3 py-2 text-[11px] text-eink-faint">{searchError}</p>
-            ) : null}
-            {!searching && !searchError && !results.length ? (
-              <p className="px-3 py-2 text-[12px] text-eink-faint">没有找到匹配地点</p>
-            ) : null}
-            {results.map((place) => (
-              <button
-                key={place.id}
-                type="button"
-                data-testid="globe-place-result"
-                onClick={() => goHere(place)}
-                className="flex w-full items-center gap-2 border-b border-eink-divider px-3 py-2 text-left active:bg-eink-surface"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] text-eink-ink">{place.name}</span>
-                  {place.detail ? (
-                    <span className="block truncate text-[10px] text-eink-faint">{place.detail}</span>
-                  ) : null}
-                </span>
-                <span
-                  data-testid="globe-go-here"
-                  className="shrink-0 border border-eink-line/40 px-2 py-0.5 text-[10px] text-eink-sub"
+            <div className="flex items-center gap-1.5 border-b border-eink-divider px-2 py-1.5">
+              <input
+                data-testid="globe-search-input"
+                value={searchText}
+                autoFocus
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="搜索地名、商户或经纬度"
+                aria-label="搜索地名、商户或经纬度"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-eink-ink outline-none placeholder:text-eink-faint"
+              />
+              {searchText ? (
+                <button
+                  type="button"
+                  data-testid="globe-search-clear"
+                  className="shrink-0 px-1 text-[11px] text-eink-faint"
+                  onClick={() => setSearchText('')}
                 >
-                  去这里
-                </span>
+                  清除
+                </button>
+              ) : null}
+              <button
+                type="button"
+                data-testid="globe-search-close"
+                className="shrink-0 border border-eink-line/40 px-2 py-0.5 text-[11px] text-eink-sub active:bg-eink-surface"
+                onClick={() => setSearchOpen(false)}
+              >
+                关闭
               </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
+            </div>
 
-      <div className="pointer-events-none absolute inset-x-0 top-12 z-10 text-center">
+            <div data-testid="globe-search-panel" className="max-h-[52vh] overflow-y-auto">
+              {searchText.trim().length < 2 ? (
+                <p className="px-3 py-2 text-[11px] text-eink-faint">
+                  输入地名或商户，也可直接输入经纬度，例如 31.2304, 121.4737
+                </p>
+              ) : null}
+              {searching ? (
+                <p className="px-3 py-2 text-[12px] text-eink-faint">搜索中...</p>
+              ) : null}
+              {searchError ? (
+                <p className="px-3 py-2 text-[11px] text-eink-faint">{searchError}</p>
+              ) : null}
+              {!searching && !searchError && !results.length && searchText.trim().length >= 2 ? (
+                <p className="px-3 py-2 text-[12px] text-eink-faint">没有找到匹配地点</p>
+              ) : null}
+              {results.map((place) => (
+                <button
+                  key={place.id}
+                  type="button"
+                  data-testid="globe-place-result"
+                  onClick={() => goHere(place)}
+                  className="flex w-full items-center gap-2 border-b border-eink-divider px-3 py-2 text-left active:bg-eink-surface"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] text-eink-ink">{place.name}</span>
+                    {place.detail ? (
+                      <span className="block truncate text-[10px] text-eink-faint">{place.detail}</span>
+                    ) : null}
+                  </span>
+                  <span
+                    data-testid="globe-go-here"
+                    className="shrink-0 border border-eink-line/40 px-2 py-0.5 text-[10px] text-eink-sub"
+                  >
+                    去这里
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="pointer-events-none absolute inset-x-0 top-3 z-10 text-center">
         <p className="text-[10px] tracking-[0.08em] text-eink-sub">{meName} 的地球 · 全球实时天气</p>
         <p data-testid="globe-weather" className="mt-0.5 text-[10px] tracking-[0.06em] text-eink-faint">
           此刻 · 本地 {deviceClock(currentDate)} · {deviceDaylight(currentDate)} · 城市实时天气
@@ -791,24 +858,34 @@ export default function DiscoverGlobe({
       {destination ? (
         <div
           data-testid="globe-route-info"
-          className="absolute inset-x-2 bottom-36 z-20 flex items-center gap-2 border border-eink-line/30 bg-eink-bar/95 px-3 py-2 text-[11px] shadow-sm"
+          className="absolute bottom-36 left-2 right-16 z-20 flex items-center gap-2 border border-eink-line/30 bg-eink-bar/95 px-3 py-2 text-[11px] shadow-sm"
         >
           <div className="min-w-0 flex-1">
             <p className="truncate text-eink-ink">前往 {destination.name}</p>
-            <p className="mt-0.5 text-[10px] text-eink-sub tabular-nums">
-              {effectiveCoords
-                ? `距目的地 ${formatDistance(distanceKm)} · 沿红色虚线前往`
-                : '正在获取我的位置...'}
+            <p data-testid="globe-route-status" className="mt-0.5 text-[10px] text-eink-sub tabular-nums">
+              {routeStatus}
             </p>
           </div>
-          <button
-            type="button"
-            data-testid="globe-route-clear"
-            className="shrink-0 border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
-            onClick={() => setDestination(null)}
-          >
-            结束
-          </button>
+          <div className="flex shrink-0 flex-col gap-1">
+            {!effectiveCoords ? (
+              <button
+                type="button"
+                data-testid="globe-route-locate"
+                className="border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
+                onClick={() => locate()}
+              >
+                重试
+              </button>
+            ) : null}
+            <button
+              type="button"
+              data-testid="globe-route-clear"
+              className="border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
+              onClick={() => setDestination(null)}
+            >
+              结束
+            </button>
+          </div>
         </div>
       ) : null}
 
