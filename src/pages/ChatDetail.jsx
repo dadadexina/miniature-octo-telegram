@@ -716,6 +716,7 @@ export default function ChatDetail() {
                   <div
                     className={`mb-3 flex items-start gap-2 ${mine ? 'flex-row-reverse' : ''}`}
                     onClickCapture={(e) => {
+                      if (e.target?.closest?.('[data-testid="msg-actions"]')) return
                       if (!isLongPressSuppressed()) return
                       e.stopPropagation()
                       e.preventDefault()
