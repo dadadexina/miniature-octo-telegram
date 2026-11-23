@@ -1,12 +1,12 @@
-import { TILE_PX } from './tiles'
+import { MAX_TILE_ZOOM, TILE_PX } from './tiles'
 
 export const OSM_COPYRIGHT = '© OpenStreetMap contributors'
 export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright'
 export const ESRI_COPYRIGHT = 'Esri, Maxar, Earthstar Geographics'
 export const ESRI_COPYRIGHT_URL = 'https://www.esri.com/'
 
-const CACHE_LIMIT = 128
-const MAX_PARALLEL = 4
+const CACHE_LIMIT = 256
+const MAX_PARALLEL = 8
 const TILE_CACHE_NAME = 'miniature-osm-tiles-v1'
 const OSM_TILE_TEMPLATE = import.meta.env.VITE_MAP_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 const ESRI_TILE_TEMPLATE = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
@@ -60,6 +60,12 @@ function schedule(task) {
     pendingRequests.push({ task, resolve, reject })
     drainQueue()
   })
+}
+
+export function cancelPendingTiles() {
+  for (const job of pendingRequests.splice(0)) {
+    job.reject(new Error('tile request cancelled'))
+  }
 }
 
 function wait(ms) {
@@ -159,30 +165,92 @@ function loadTile(source, zoom, x, y) {
   return promise
 }
 
-export async function buildTileCanvas(zoom, originX, originY, span = 4, source = 'osm') {
+export function buildTileCanvasProgressive(zoom, originX, originY, span = 4, source = 'osm', onProgress) {
   if (typeof document === 'undefined') return null
-  const size = span * TILE_PX
+  const canvasSize = span * TILE_PX
   const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
+  canvas.width = canvasSize
+  canvas.height = canvasSize
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
   ctx.fillStyle = '#0a1624'
-  ctx.fillRect(0, 0, size, size)
-  const tiles = []
-  for (let row = 0; row < span; row += 1) {
-    for (let column = 0; column < span; column += 1) {
-      tiles.push({ row, column, promise: loadTile(source, zoom, originX + column, originY + row) })
+  ctx.fillRect(0, 0, canvasSize, canvasSize)
+
+  const parentJobs = []
+  if (zoom > 0) {
+    const pOriginX = Math.floor(originX / 2)
+    const pOriginY = Math.floor(originY / 2)
+    const pSpan = Math.ceil(span / 2) + 1
+    for (let py = 0; py < pSpan; py += 1) {
+      for (let px = 0; px < pSpan; px += 1) {
+        const tx = pOriginX + px
+        const ty = pOriginY + py
+        const dx = (tx * 2 - originX) * TILE_PX
+        const dy = (ty * 2 - originY) * TILE_PX
+        if (dx >= canvasSize || dy >= canvasSize) continue
+        if (dx + TILE_PX * 2 <= 0 || dy + TILE_PX * 2 <= 0) continue
+        parentJobs.push({ zoom: zoom - 1, x: tx, y: ty, dx, dy, draw: TILE_PX * 2 })
+      }
     }
   }
-  const settled = await Promise.allSettled(tiles.map((tile) => tile.promise))
-  let loaded = 0
-  settled.forEach((result, index) => {
-    if (result.status !== 'fulfilled' || !result.value) return
-    loaded += 1
-    ctx.drawImage(result.value, tiles[index].column * TILE_PX, tiles[index].row * TILE_PX)
-  })
-  if (!loaded) throw new Error('all tiles failed')
-  canvas.partial = loaded < tiles.length
-  return canvas
+
+  const childJobs = []
+  const center = (span - 1) / 2
+  for (let row = 0; row < span; row += 1) {
+    for (let column = 0; column < span; column += 1) {
+      childJobs.push({
+        zoom,
+        x: originX + column,
+        y: originY + row,
+        dx: column * TILE_PX,
+        dy: row * TILE_PX,
+        draw: TILE_PX,
+        dist: (column - center) ** 2 + (row - center) ** 2,
+      })
+    }
+  }
+  childJobs.sort((a, b) => a.dist - b.dist)
+
+  const stats = { loaded: 0, failed: 0, total: childJobs.length }
+  const run = (async () => {
+    if (parentJobs.length) {
+      await Promise.allSettled(
+        parentJobs.map(async (job) => {
+          try {
+            const image = await loadTile(source, job.zoom, job.x, job.y)
+            if (image) ctx.drawImage(image, job.dx, job.dy, job.draw, job.draw)
+          } catch {
+            // 父级仅作模糊底图，失败不影响清晰子级
+          }
+        })
+      )
+      if (typeof onProgress === 'function') onProgress(stats)
+    }
+    await Promise.all(
+      childJobs.map(async (job) => {
+        try {
+          const image = await loadTile(source, job.zoom, job.x, job.y)
+          if (image) {
+            ctx.drawImage(image, job.dx, job.dy, job.draw, job.draw)
+            stats.loaded += 1
+          }
+        } catch {
+          stats.failed += 1
+        }
+        if (typeof onProgress === 'function') onProgress(stats)
+      })
+    )
+  })()
+
+  return { canvas, done: run, stats }
+}
+
+export function prefetchTiles(source, zoom, centerX, centerY, span = 3) {
+  if (zoom < 0 || zoom > MAX_TILE_ZOOM) return
+  const offset = Math.floor(span / 2)
+  for (let y = -offset; y <= offset; y += 1) {
+    for (let x = -offset; x <= offset; x += 1) {
+      loadTile(source, zoom, centerX + x, centerY + y)
+    }
+  }
 }

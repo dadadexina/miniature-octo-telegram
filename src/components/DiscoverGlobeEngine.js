@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import earthDayUrl from '../assets/earth/earth-day.jpg'
 import earthNightUrl from '../assets/earth/earth-night.jpg'
 import { PLACES } from '../lib/places'
-import { buildTileCanvas, clearTileCache } from '../lib/mapTiles'
+import { buildTileCanvasProgressive, cancelPendingTiles, clearTileCache, prefetchTiles } from '../lib/mapTiles'
 import {
   MAX_ALTITUDE_WORLD,
   MIN_ALTITUDE_WORLD,
@@ -688,48 +688,63 @@ export function createGlobeEngine({
     state.patchPartial = false
     state.patchAt = Date.now()
     const source = state.mode === 'explore' ? 'osm' : 'esri'
-    buildTileCanvas(block.zoom, block.originX, block.originY, block.span, source)
-      .then((canvas) => {
+    cancelPendingTiles()
+    const progress = buildTileCanvasProgressive(
+      block.zoom,
+      block.originX,
+      block.originY,
+      block.span,
+      source,
+      () => {
         if (state.disposed || token !== state.patchToken) return
-        if (!canvas) {
-          state.patchKey = key
-          return
-        }
-        const texture = new THREE.CanvasTexture(canvas)
-        texture.colorSpace = THREE.SRGBColorSpace
-        texture.anisotropy = Math.min(
-          renderer.capabilities.getMaxAnisotropy(),
-          lowPower ? 4 : 8
-        )
-        const offset = Math.max(5e-7, altitude * 0.005)
-        const geometry = buildMapPatchGeometry(block, R + offset, lowPower ? 24 : 32)
-        const material = new THREE.MeshBasicMaterial({
-          map: texture,
-          side: THREE.DoubleSide,
-          transparent: true,
-          opacity: 0,
-          depthTest: false,
-          depthWrite: false,
-        })
-        const mesh = new THREE.Mesh(geometry, material)
-        mesh.renderOrder = 10
-        disposePatch()
-        mapPatch.add(mesh)
-        state.patchMesh = mesh
-        state.patchKey = key
-        state.patchFailed = false
-        state.patchPartial = Boolean(canvas.partial)
-        if (state.patchPartial) state.patchRetryAt = Date.now() + 4000
-      })
-      .catch(() => {
-        if (token === state.patchToken) {
-          state.patchKey = key
+        const mesh = state.patchMesh
+        if (mesh && mesh.material.map) mesh.material.map.needsUpdate = true
+      }
+    )
+    if (!progress) return
+    const texture = new THREE.CanvasTexture(progress.canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.anisotropy = Math.min(
+      renderer.capabilities.getMaxAnisotropy(),
+      lowPower ? 4 : 8
+    )
+    const offset = Math.max(5e-7, altitude * 0.005)
+    const geometry = buildMapPatchGeometry(block, R + offset, lowPower ? 24 : 32)
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.renderOrder = 10
+    disposePatch()
+    mapPatch.add(mesh)
+    state.patchMesh = mesh
+    state.patchKey = key
+    state.patchFailed = false
+    progress.done
+      .then(() => {
+        if (state.disposed || token !== state.patchToken) return
+        state.patchLoading = false
+        state.patchPartial = progress.stats.loaded > 0 && progress.stats.loaded < progress.stats.total
+        if (progress.stats.loaded === 0) {
           state.patchFailed = true
           state.patchPartial = false
           state.patchRetryAt = Date.now() + 8000
+        } else {
+          state.patchFailed = false
+          if (state.patchPartial) state.patchRetryAt = Date.now() + 4000
         }
+        const live = state.patchMesh
+        if (live && live.material.map) live.material.map.needsUpdate = true
+        const centerX = Math.floor((block.originX + block.span / 2) * 2)
+        const centerY = Math.floor((block.originY + block.span / 2) * 2)
+        prefetchTiles(source, block.zoom + 1, centerX, centerY, 3)
       })
-      .finally(() => {
+      .catch(() => {
         if (token === state.patchToken) state.patchLoading = false
       })
   }
