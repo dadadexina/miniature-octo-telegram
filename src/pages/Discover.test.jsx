@@ -11,6 +11,18 @@ const users = vi.hoisted(() => ({
   '22222222-2222-4222-8222-222222222222': { id: '22222222-2222-4222-8222-222222222222', nickname: '阿哲', avatarUrl: '' },
 }))
 const storeState = vi.hoisted(() => ({ friends: [] }))
+const searchMock = vi.hoisted(() => vi.fn())
+
+vi.mock('../lib/geocode', () => ({
+  searchPlacesOnline: searchMock,
+  mergePlaceResults: (online, local) => {
+    const merged = [...online]
+    local.forEach((place) => {
+      if (!merged.some((item) => item.name === place.name)) merged.push(place)
+    })
+    return merged
+  },
+}))
 
 vi.mock('../store', () => ({
   useStore: () => ({
@@ -47,6 +59,22 @@ beforeEach(() => {
   vi.stubGlobal('WebGLRenderingContext', undefined)
   writeText = vi.fn(() => Promise.resolve())
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  searchMock.mockReset()
+  searchMock.mockResolvedValue({ ok: true, places: [] })
+  Object.defineProperty(navigator, 'permissions', {
+    configurable: true,
+    value: { query: vi.fn(() => Promise.resolve({ state: 'prompt' })) },
+  })
+  Object.defineProperty(navigator, 'geolocation', {
+    configurable: true,
+    value: {
+      getCurrentPosition: (success) =>
+        success({
+          coords: { latitude: 31.2304, longitude: 121.4737, accuracy: 6.4 },
+          timestamp: Date.now(),
+        }),
+    },
+  })
 })
 
 afterEach(() => {
@@ -79,5 +107,50 @@ describe('Discover 关系网页', () => {
     setup()
     expect(await screen.findByTestId('globe-fallback')).toBeTruthy()
     expect(screen.getByText('阿哲')).toBeTruthy()
+  })
+
+  it('首次进入提示授权，允许后显示精准经纬度且刷新不再弹提示', async () => {
+    setup()
+    const allow = await screen.findByTestId('globe-locate-allow')
+    fireEvent.click(allow)
+    await waitFor(() =>
+      expect(screen.getByTestId('globe-coords').textContent).toContain('N 31.230400°  E 121.473700°')
+    )
+    expect(screen.getByTestId('globe-coords').textContent).toContain('±6.4 m')
+    expect(screen.queryByTestId('globe-locate-prompt')).toBeNull()
+    expect(localStorage.getItem('globe.geoAsked')).toBe('1')
+
+    cleanup()
+    setup()
+    await waitFor(() => expect(screen.getByTestId('relationship-globe')).toBeTruthy())
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(screen.queryByTestId('globe-locate-prompt')).toBeNull()
+  })
+
+  it('搜索地名后点击去这里生成红色虚线导航信息', async () => {
+    searchMock.mockResolvedValue({
+      ok: true,
+      places: [
+        {
+          id: 'osm:1',
+          name: '外滩',
+          detail: '黄浦区 · 上海',
+          lat: 31.24,
+          lng: 121.49,
+          kind: 'attraction',
+          source: 'osm',
+        },
+      ],
+    })
+    setup()
+    fireEvent.change(await screen.findByTestId('globe-search-input'), { target: { value: '外滩' } })
+    const result = await screen.findByTestId('globe-place-result')
+    expect(result.textContent).toContain('外滩')
+    expect(result.textContent).toContain('黄浦区 · 上海')
+    fireEvent.click(result)
+    const info = await screen.findByTestId('globe-route-info')
+    await waitFor(() => expect(info.textContent).toContain('距目的地'))
+    expect(info.textContent).toContain('前往 外滩')
+    expect(screen.getByTestId('globe-route-clear')).toBeTruthy()
   })
 })

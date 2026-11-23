@@ -315,3 +315,19 @@ export function buildArcsGeoJSON(nodes = [], links = []) {
   }
   return { type: 'FeatureCollection', features }
 }
+
+export function buildRouteGeoJSON(from, to, steps = 96) {
+  const valid = (point) =>
+    point && Number.isFinite(point.lat) && Number.isFinite(point.lng)
+  if (!valid(from) || !valid(to)) return { type: 'FeatureCollection', features: [] }
+  return {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'LineString', coordinates: greatCircleLine(from, to, steps) },
+      },
+    ],
+  }
+}

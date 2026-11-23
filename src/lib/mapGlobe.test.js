@@ -3,6 +3,7 @@ import {
   MAP_THEMES,
   buildArcsGeoJSON,
   buildNodes,
+  buildRouteGeoJSON,
   greatCircleLine,
   mapTheme,
   pseudoCoords,
@@ -61,5 +62,16 @@ describe('mapGlobe', () => {
     const geo = buildArcsGeoJSON(nodes, [['me', 'a'], ['me', 'ghost']])
     expect(geo.features).toHaveLength(1)
     expect(geo.features[0].geometry.type).toBe('LineString')
+  })
+
+  it('导航线只接受有效端点并包含全部路径点', () => {
+    const geo = buildRouteGeoJSON({ lat: 31.2304, lng: 121.4737 }, { lat: 39.9042, lng: 116.4074 }, 24)
+    expect(geo.features).toHaveLength(1)
+    const line = geo.features[0].geometry.coordinates
+    expect(line).toHaveLength(25)
+    expect(line[0][0]).toBeCloseTo(121.4737)
+    expect(line[24][1]).toBeCloseTo(39.9042)
+    expect(buildRouteGeoJSON(null, { lat: 0, lng: 0 }).features).toHaveLength(0)
+    expect(buildRouteGeoJSON({ lat: 0, lng: 0 }, { lat: NaN, lng: 1 }).features).toHaveLength(0)
   })
 })

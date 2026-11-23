@@ -61,6 +61,21 @@ export function mapPhotonFeature(feature, index = 0) {
   }
 }
 
+export function mergePlaceResults(online = [], local = []) {
+  const merged = []
+  const seen = new Set()
+  const add = (place) => {
+    if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return
+    const key = `${String(place.name).trim().toLowerCase()}|${place.lat.toFixed(3)}|${place.lng.toFixed(3)}`
+    if (seen.has(key)) return
+    seen.add(key)
+    merged.push(place)
+  }
+  online.forEach(add)
+  local.forEach(add)
+  return merged
+}
+
 function buildUrl(query, { lat, lng, limit }) {
   const url = new URL(ENDPOINT)
   url.searchParams.set('q', query)

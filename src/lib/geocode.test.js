@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mapPhotonFeature, searchAltitude, searchPlacesOnline } from './geocode'
+import { mapPhotonFeature, mergePlaceResults, searchAltitude, searchPlacesOnline } from './geocode'
 
 const feature = (overrides = {}) => ({
   type: 'Feature',
@@ -88,5 +88,15 @@ describe('geocode', () => {
     const result = await searchPlacesOnline('西')
     expect(result).toEqual({ ok: true, places: [] })
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('merges and dedupes online and local places', () => {
+    const online = [{ id: 'a', name: '西安', lat: 34.3416, lng: 108.9398 }]
+    const local = [
+      { id: 'local:xian', name: '西安', lat: 34.3416, lng: 108.9398 },
+      { id: 'local:beijing', name: '北京', lat: 39.9, lng: 116.4 },
+    ]
+    const merged = mergePlaceResults(online, local)
+    expect(merged.map((place) => place.name)).toEqual(['西安', '北京'])
   })
 })
