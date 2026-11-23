@@ -22,6 +22,9 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version)
   },
+  optimizeDeps: {
+    exclude: ['maplibre-gl']
+  },
   server: {
     host: true,
     port: 5173,

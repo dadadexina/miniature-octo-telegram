@@ -23,12 +23,11 @@ import {
   GLOBE_VERTEX_SHADER,
   GLOW_FRAGMENT_SHADER,
   GLOW_VERTEX_SHADER,
+  GLOBE_THEMES,
   MAP_DISTANCE,
   MAX_DISTANCE,
-  ME_COLOR,
   ME_COORDS,
   MIN_DISTANCE,
-  PALETTE,
   R,
   buildArc,
   buildArcFlowLine,
@@ -92,7 +91,8 @@ export function createGlobeEngine({
   controls.autoRotate = !reducedMotion
   controls.autoRotateSpeed = 0.55
 
-  scene.add(new THREE.AmbientLight(0x6fa8dc, 1.1))
+  const ambientLight = new THREE.AmbientLight(0x6fa8dc, 1.1)
+  scene.add(ambientLight)
   const keyLight = new THREE.DirectionalLight(0xffffff, 1.4)
   keyLight.position.set(4, 2, 5)
   scene.add(keyLight)
@@ -119,6 +119,11 @@ export function createGlobeEngine({
       dayMap: { value: dayMap },
       nightMap: { value: nightMap },
       sunDirection: { value: sunVector },
+      uOceanTint: { value: new THREE.Color(0x3a77b0) },
+      uShadow: { value: new THREE.Color(0x06121f) },
+      uHighlight: { value: new THREE.Color(0xdde8f5) },
+      uGrade: { value: 0.12 },
+      uBrightness: { value: 1 },
     },
     vertexShader: GLOBE_VERTEX_SHADER,
     fragmentShader: GLOBE_FRAGMENT_SHADER,
@@ -143,6 +148,8 @@ export function createGlobeEngine({
     uniforms: {
       cloudMap: { value: blankCloud },
       sunDirection: { value: sunVector },
+      uCloudColor: { value: new THREE.Color(0xc7dcff) },
+      uCloudOpacity: { value: 0.48 },
       fade: { value: 1 },
     },
     vertexShader: CLOUD_VERTEX_SHADER,
@@ -215,7 +222,8 @@ export function createGlobeEngine({
     opacity: 0.7,
     depthWrite: false,
   })
-  scene.add(new THREE.Points(starGeometry, starMaterial))
+  const starPoints = new THREE.Points(starGeometry, starMaterial)
+  scene.add(starPoints)
 
   const network = new THREE.Group()
   globe.add(network)
@@ -242,6 +250,8 @@ export function createGlobeEngine({
     flight: null,
     mode: 'satellite',
     rotateLocked: false,
+    theme: GLOBE_THEMES.light,
+    themeId: null,
   }
 
   const tileLayer = createTileLayer({
@@ -329,22 +339,23 @@ export function createGlobeEngine({
       el.setAttribute('data-testid', 'globe-label')
       el.dataset.tier = String(place.tier)
       el.className =
-        'pointer-events-none absolute left-0 top-0 flex items-baseline gap-1 whitespace-nowrap text-[10px] leading-none tracking-[0.04em] text-[#b8ddff] will-change-transform'
-      el.style.textShadow = '0 1px 5px rgba(2, 8, 16, 0.92)'
+        'pointer-events-none absolute left-0 top-0 flex items-baseline gap-1 whitespace-nowrap text-[10px] leading-none tracking-[0.04em] will-change-transform'
       el.style.opacity = '0'
       el.style.visibility = 'hidden'
       el.style.transition = 'opacity 220ms ease'
       const dot = document.createElement('span')
-      dot.className = 'h-[3px] w-[3px] shrink-0 rounded-full bg-[#7cffb2]'
+      dot.className = 'h-[3px] w-[3px] shrink-0 rounded-full'
       const name = document.createElement('span')
       name.textContent = place.name
       const temp = document.createElement('span')
-      temp.className = 'text-[9px] text-[#6fb8e2]'
+      temp.className = 'text-[9px]'
       el.append(dot, name, temp)
       labelLayer.appendChild(el)
       const item = {
         place,
         el,
+        dot,
+        name,
         temp,
         unit: toVec(place.lat, place.lng, 1).normalize(),
         threshold: place.tier === 1 ? 14 : place.tier === 2 ? 11.5 : 9.2,
@@ -374,7 +385,7 @@ export function createGlobeEngine({
     const addNode = (id, name, isMe, coords = null) => {
       const { lat, lng } = coords || (isMe ? ME_COORDS : pointFor(id))
       const position = toVec(lat, lng, R * 1.02)
-      const color = isMe ? ME_COLOR : PALETTE[hashString(id) % PALETTE.length]
+      const color = isMe ? state.theme.me : state.theme.palette[hashString(id) % state.theme.palette.length]
       const material = new THREE.MeshBasicMaterial({ color, transparent: true })
       const mesh = new THREE.Mesh(nodeGeometry, material)
       mesh.position.copy(position)
@@ -415,11 +426,11 @@ export function createGlobeEngine({
       const geometry = buildArcFlowLine(curve, 140)
       const material = new THREE.ShaderMaterial({
         uniforms: {
-          uColor: { value: new THREE.Color(0x5fbcff) },
+          uColor: { value: new THREE.Color(state.theme.arcBase) },
           uTime: arcTimeUniform,
           uPhase: { value: index / Math.max(1, nextLinks.length) },
           uDashCount: { value: 34 },
-          uSpeed: { value: 0.85 },
+          uSpeed: { value: 1.7 },
           uOpacity: { value: 0 },
         },
         vertexShader: ARC_VERTEX_SHADER,
@@ -450,18 +461,60 @@ export function createGlobeEngine({
       const isSelected = node.id === selected
       const isRelated = related.has(node.id)
       const active = !selected || isRelated
-      const baseColor = node.isMe ? ME_COLOR : PALETTE[hashString(node.id) % PALETTE.length]
-      node.material.color.setHex(isSelected ? 0xffd166 : isRelated ? 0x8fe6ff : baseColor)
+      const baseColor = node.isMe
+        ? state.theme.me
+        : state.theme.palette[hashString(node.id) % state.theme.palette.length]
+      node.material.color.setHex(isSelected ? state.theme.me : isRelated ? state.theme.arcActive : baseColor)
       node.baseOpacity = active ? 1 : 0.15
       node.material.opacity = node.baseOpacity * state.worldFade
       node.baseScale = isSelected ? 2.2 : isRelated && selected ? 1.5 : node.isMe ? 1.7 : 1
     })
     state.edges.forEach((edge) => {
       const active = !selected || edge.a === selected || edge.b === selected
-      edge.baseOpacity = active ? (selected ? 0.95 : 0.45) : 0.05
+      edge.baseOpacity = active ? (selected ? 1 : 0.9) : 0.05
       edge.material.uniforms.uOpacity.value = edge.baseOpacity * state.worldFade
-      edge.material.uniforms.uColor.value.setHex(active && selected ? 0xb0f0ff : 0x5fbcff)
+      edge.material.uniforms.uColor.value.setHex(
+        active && selected ? state.theme.arcActive : state.theme.arcBase
+      )
     })
+  }
+
+  state.setTheme = (name) => {
+    const id = GLOBE_THEMES[name] ? name : 'light'
+    if (state.themeId === id) return
+    state.themeId = id
+    const t = GLOBE_THEMES[id]
+    state.theme = t
+    renderer.setClearColor(t.clear, 1)
+    ambientLight.color.setHex(t.ambientColor)
+    ambientLight.intensity = t.ambientIntensity
+    keyLight.color.setHex(t.keyColor)
+    keyLight.intensity = t.keyIntensity
+    rimLight.color.setHex(t.rimColor)
+    rimLight.intensity = t.rimIntensity
+    globeMaterial.uniforms.uOceanTint.value.setHex(t.oceanTint)
+    globeMaterial.uniforms.uShadow.value.setHex(t.shadow)
+    globeMaterial.uniforms.uHighlight.value.setHex(t.highlight)
+    globeMaterial.uniforms.uGrade.value = t.grade
+    globeMaterial.uniforms.uBrightness.value = t.brightness
+    exploreMaterial.uniforms.uLandColor.value.setHex(t.exploreLand)
+    exploreMaterial.uniforms.uWaterColor.value.setHex(t.exploreWater)
+    exploreMaterial.uniforms.uBorderColor.value.setHex(t.exploreBorder)
+    cloudMaterial.uniforms.uCloudColor.value.setHex(t.cloud)
+    cloudMaterial.uniforms.uCloudOpacity.value = t.cloudOpacity
+    gridMaterial.color.setHex(t.grid)
+    gridMaterial.opacity = t.gridOpacity
+    glowMaterial.uniforms.glowColor.value.setHex(t.glow)
+    starMaterial.color.setHex(t.star)
+    starMaterial.opacity = t.starOpacity
+    starPoints.visible = t.starOpacity > 0
+    state.labelItems.forEach((item) => {
+      item.el.style.color = t.labelText
+      item.el.style.textShadow = t.labelShadow
+      item.dot.style.background = t.labelDot
+      item.temp.style.color = t.labelTemp
+    })
+    state.applyHighlight(state.selectedId)
   }
 
   state.setWorldFade = (fade) => {
@@ -767,6 +820,7 @@ export function createGlobeEngine({
     }
     renderer.render(scene, camera)
   }
+  state.setTheme(document.documentElement?.dataset?.theme)
   animate()
 
   const onContextLost = (event) => {
@@ -777,6 +831,7 @@ export function createGlobeEngine({
 
   return {
     setClouds: (canvas) => state.setClouds(canvas),
+    setTheme: (name) => state.setTheme(name),
     rebuild: (people, links, meId) => state.rebuild(people, links, meId),
     setSelected: (id) => state.setSelected(id),
     zoomBy: (factor) => state.zoomBy(factor),

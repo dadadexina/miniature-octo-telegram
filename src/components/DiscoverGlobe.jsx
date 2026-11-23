@@ -1,56 +1,56 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import ImageViewer from './ImageViewer'
-import { createGlobeEngine } from './DiscoverGlobeEngine'
-import { PLACES, cityWeatherId, searchPlaces } from '../lib/places'
-import { buildCloudCanvas, cloudGridFrom, cloudPoints } from '../lib/clouds'
-import { searchPlacesOnline } from '../lib/geocode'
-import { fetchWeather } from '../lib/weather'
-import { formatCoords, parseCoords } from '../lib/tiles'
-import { ESRI_COPYRIGHT, ESRI_COPYRIGHT_URL, OSM_COPYRIGHT, OSM_COPYRIGHT_URL } from '../lib/mapTiles'
+import { useEffect, useRef, useState } from 'react'
+import { formatCoords } from '../lib/tiles'
 import { canUseWebGL, deviceClock, deviceDaylight } from '../lib/globe'
-import { formatRelativeTime } from '../utils'
+import { applyMapTheme, buildArcsGeoJSON, buildNodes, mapTheme } from '../lib/mapGlobe'
+
+const DASH_PATTERNS = [
+  [2, 2],
+  [1.6, 2.4],
+  [1.2, 2.8],
+  [0.8, 3.2],
+  [0.5, 3.5],
+  [0.25, 3.75],
+  [0.1, 3.9],
+  [0.25, 3.75],
+  [0.5, 3.5],
+  [0.8, 3.2],
+  [1.2, 2.8],
+  [1.6, 2.4],
+]
+
+function themeIdOf() {
+  return document.documentElement?.dataset?.theme || 'light'
+}
+
+function wrapLng(lng) {
+  return (((lng + 180) % 360) + 360) % 360 - 180
+}
 
 export default function DiscoverGlobe({
-  people,
+  people = [],
   links = [],
   meId,
   meName = '你',
   meCoords = null,
-  routes = [],
-  loading,
-  error,
-  emptyText,
-  onReply,
 }) {
   const containerRef = useRef(null)
-  const tooltipRef = useRef(null)
-  const labelsRef = useRef(null)
   const coordsRef = useRef(null)
-  const mapStatusRef = useRef(null)
-  const labelElsRef = useRef(new Map())
-  const threeRef = useRef(null)
-  const meNameRef = useRef(meName)
-  const meCoordsRef = useRef(meCoords)
-  const centeredOnMeRef = useRef(false)
   const copyTimerRef = useRef(null)
-  const [selectedId, setSelectedId] = useState(null)
-  const [viewerUrl, setViewerUrl] = useState('')
-  const [listOpen, setListOpen] = useState(false)
-  const [jumpOpen, setJumpOpen] = useState(false)
-  const [jumpQuery, setJumpQuery] = useState('')
-  const [jumpError, setJumpError] = useState('')
+  const mapRef = useRef(null)
+  const syncRef = useRef(null)
+  const latestCoordsRef = useRef('N 0.00° E 0.00°')
+  const peopleRef = useRef(people)
+  const linksRef = useRef(links)
+  const meRef = useRef({ id: meId, name: meName, coords: meCoords })
+
   const [copied, setCopied] = useState('')
-  const [onlinePlaces, setOnlinePlaces] = useState([])
-  const [searchLoading, setSearchLoading] = useState(false)
-  const [searchError, setSearchError] = useState('')
   const [fallback, setFallback] = useState(() => !canUseWebGL())
-  const [weather, setWeather] = useState({})
   const [now, setNow] = useState(() => Date.now())
-  const [mode, setMode] = useState('satellite')
 
   useEffect(() => {
-    meNameRef.current = meName
-  }, [meName])
+    const timer = setInterval(() => setNow(Date.now()), 60000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(
     () => () => {
@@ -60,720 +60,385 @@ export default function DiscoverGlobe({
   )
 
   useEffect(() => {
-    if (fallback) return undefined
-    const timer = setInterval(() => setNow(Date.now()), 60000)
-    return () => clearInterval(timer)
-  }, [fallback])
+    const coords = meRef.current.coords
+    const text =
+      coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)
+        ? formatCoords(coords.lat, coords.lng, 4)
+        : 'N 0.00° E 0.00°'
+    latestCoordsRef.current = text
+    if (coordsRef.current) coordsRef.current.textContent = text
+  }, [meCoords])
 
   useEffect(() => {
-    if (fallback) return undefined
-    let cancelled = false
-    const points = PLACES.map((place) => ({ id: cityWeatherId(place), lat: place.lat, lng: place.lng }))
-    const load = () => {
-      fetchWeather(points).then((result) => {
-        if (!cancelled && result.ok) setWeather((previous) => ({ ...previous, ...result.byId }))
-      })
-    }
-    load()
-    const timer = setInterval(load, 15 * 60 * 1000)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
-    }
-  }, [fallback])
+    peopleRef.current = people
+    linksRef.current = links
+    syncRef.current?.()
+  }, [people, links])
 
   useEffect(() => {
-    if (fallback) return undefined
-    let cancelled = false
-    const points = cloudPoints()
-    const load = () => {
-      fetchWeather(points).then((result) => {
-        if (cancelled || !result.ok) return
-        const canvas = buildCloudCanvas(cloudGridFrom(result.byId))
-        if (canvas) threeRef.current?.setClouds(canvas)
-      })
+    meRef.current = { id: meId, name: meName, coords: meCoords }
+    const map = mapRef.current
+    if (!map) return
+    syncRef.current?.()
+    if (meCoords && Number.isFinite(meCoords.lat) && Number.isFinite(meCoords.lng)) {
+      try {
+        map.easeTo({
+          center: [meCoords.lng, meCoords.lat],
+          zoom: Math.max(map.getZoom(), 2.4),
+          duration: 900,
+        })
+      } catch {
+        // 地图尚未就绪时忽略
+      }
     }
-    load()
-    const timer = setInterval(load, 15 * 60 * 1000)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
-    }
-  }, [fallback])
-
-  useEffect(() => {
-    const labels = labelElsRef.current
-    if (!labels.size) return
-    PLACES.forEach((place) => {
-      const item = labels.get(place.id)
-      if (!item) return
-      const info = weather[cityWeatherId(place)]
-      const temp = typeof info?.temp === 'number' ? `${Math.round(info.temp)}°` : ''
-      item.temp.textContent = temp
-      item.el.title = info ? `${place.name} · ${info.label}${temp ? ` ${temp}` : ''}` : place.name
-    })
-  }, [weather])
-
-  const routeByAuthor = useMemo(() => new Map(routes.map((route) => [route.authorId, route])), [routes])
-  const selectedPerson = useMemo(() => {
-    if (!selectedId) return null
-    if (selectedId === meId) return { id: meId, name: meName }
-    return people.find((person) => person.id === selectedId) || { id: selectedId, name: '朋友' }
-  }, [selectedId, meId, meName, people])
-  const selectedRoute = selectedId ? routeByAuthor.get(selectedId) : null
-
-  const relationNames = useMemo(() => {
-    if (!selectedId) return []
-    const names = new Map([[meId, meName], ...people.map((person) => [person.id, person.name])])
-    const ids = new Set()
-    links.forEach(([a, b]) => {
-      if (a === selectedId) ids.add(b)
-      else if (b === selectedId) ids.add(a)
-    })
-    return [...ids].map((id) => names.get(id)).filter(Boolean)
-  }, [selectedId, links, people, meId, meName])
+  }, [meCoords, meId, meName])
 
   useEffect(() => {
     if (fallback) return undefined
     const container = containerRef.current
     if (!container) return undefined
-    const api = createGlobeEngine({
-      container,
-      labelLayer: labelsRef.current,
-      tooltip: tooltipRef.current,
-      coords: coordsRef.current,
-      mapStatus: mapStatusRef.current,
-      labelElsRef,
-      meNameRef,
-      meCoordsRef,
-      onPick: setSelectedId,
-      onFallback: () => setFallback(true),
-    })
-    if (!api) return undefined
-    threeRef.current = api
+
+    let cancelled = false
+    let map = null
+    let raf = 0
+    let flowTimer = 0
+    let flowIndex = 0
+    let observer = null
+    let resizeObserver = null
+    let lastTs = 0
+    let pauseUntil = 0
+    let dragging = false
+    let markers = []
+
+    const clearMarkers = () => {
+      markers.forEach((marker) => {
+        try {
+          marker.remove()
+        } catch {
+          // 忽略已移除的标记
+        }
+      })
+      markers = []
+    }
+
+    const boot = async () => {
+      let mod
+      try {
+        const gl = await import('maplibre-gl')
+        mod = gl.default || gl
+      } catch {
+        if (!cancelled) setFallback(true)
+        return
+      }
+      if (cancelled) return
+      try {
+        await import('maplibre-gl/dist/maplibre-gl.css')
+      } catch {
+        // 样式表加载失败不影响地图本身
+      }
+      if (cancelled) return
+
+      const start = meRef.current.coords
+      try {
+        map = new mod.Map({
+          container,
+          style: 'https://tiles.openfreemap.org/styles/liberty',
+          center: [
+            start && Number.isFinite(start.lng) ? start.lng : 108.9398,
+            start && Number.isFinite(start.lat) ? start.lat : 34.3416,
+          ],
+          zoom: 1.7,
+          attributionControl: { compact: true },
+          dragRotate: false,
+        })
+      } catch {
+        if (!cancelled) setFallback(true)
+        return
+      }
+      mapRef.current = map
+
+      try {
+        map.addControl(new mod.NavigationControl({ showCompass: true, visualizePitch: false }), 'bottom-right')
+      } catch {
+        // 控件不可用时忽略
+      }
+
+      try {
+        resizeObserver = new ResizeObserver(() => {
+          try {
+            map.resize()
+          } catch {
+            // 销毁过程中忽略
+          }
+        })
+        resizeObserver.observe(container)
+      } catch {
+        // 无 ResizeObserver 时忽略
+      }
+
+      const sync = () => {
+        if (!map) return
+        const nodes = buildNodes(peopleRef.current, meRef.current)
+        clearMarkers()
+        for (const node of nodes) {
+          const el = document.createElement('div')
+          el.className = 'globe-node pointer-events-none flex select-none flex-col items-center gap-0.5'
+          const dot = document.createElement('span')
+          dot.className = node.me
+            ? 'h-2 w-2 rounded-full bg-eink-ink ring-2 ring-eink-paper'
+            : 'h-1.5 w-1.5 rounded-full bg-eink-sub ring-1 ring-eink-paper'
+          const label = document.createElement('span')
+          label.className = 'whitespace-nowrap text-[10px] leading-none tracking-[0.04em] text-eink-ink'
+          label.textContent = node.name
+          el.append(dot, label)
+          try {
+            markers.push(new mod.Marker({ element: el, anchor: 'center' }).setLngLat([node.lng, node.lat]).addTo(map))
+          } catch {
+            // 单个标记异常不影响其余
+          }
+        }
+        try {
+          const source = map.getSource('arcs')
+          if (source && source.setData) source.setData(buildArcsGeoJSON(nodes, linksRef.current))
+        } catch {
+          // 数据源尚未建立时忽略
+        }
+        const coords = meRef.current.coords
+        if (coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)) {
+          const text = formatCoords(coords.lat, coords.lng, 4)
+          latestCoordsRef.current = text
+          if (coordsRef.current) coordsRef.current.textContent = text
+        }
+      }
+      syncRef.current = sync
+
+      const applyArcTheme = () => {
+        if (!map) return
+        const theme = mapTheme(themeIdOf())
+        try {
+          map.setPaintProperty('arc-base', 'line-color', theme.arcBase)
+          map.setPaintProperty('arc-flow', 'line-color', theme.arcActive)
+        } catch {
+          // 图层未就绪时忽略
+        }
+      }
+
+      const startFlow = () => {
+        clearInterval(flowTimer)
+        flowTimer = setInterval(() => {
+          if (!map || document.hidden) return
+          if (!map.getLayer('arc-flow')) return
+          flowIndex = (flowIndex + 1) % DASH_PATTERNS.length
+          try {
+            map.setPaintProperty('arc-flow', 'line-dasharray', DASH_PATTERNS[flowIndex])
+          } catch {
+            // 忽略瞬时错误
+          }
+        }, 130)
+      }
+
+      map.on('style.load', () => {
+        if (cancelled || !map) return
+        try {
+          map.setProjection({ type: 'globe' })
+        } catch {
+          // 低版本无投影切换时忽略
+        }
+        try {
+          map.resize()
+        } catch {
+          // 忽略尺寸同步异常
+        }
+        const theme = mapTheme(themeIdOf())
+        applyMapTheme(map, themeIdOf())
+        if (!map.getSource('arcs')) {
+          map.addSource('arcs', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+          map.addLayer({
+            id: 'arc-base',
+            type: 'line',
+            source: 'arcs',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: { 'line-color': theme.arcBase, 'line-width': 1.1, 'line-opacity': 0.4 },
+          })
+          map.addLayer({
+            id: 'arc-flow',
+            type: 'line',
+            source: 'arcs',
+            layout: { 'line-cap': 'butt', 'line-join': 'round' },
+            paint: {
+              'line-color': theme.arcActive,
+              'line-width': 1.7,
+              'line-opacity': 0.95,
+              'line-dasharray': [2, 2],
+            },
+          })
+        }
+        sync()
+        startFlow()
+      })
+
+      map.on('move', () => {
+        if (!map) return
+        const center = map.getCenter()
+        const text = formatCoords(center.lat, center.lng, 4)
+        latestCoordsRef.current = text
+        if (coordsRef.current) coordsRef.current.textContent = text
+      })
+
+      map.on('click', (event) => {
+        if (!map) return
+        const center = event.lngLat
+        try {
+          new mod.Popup({ closeButton: true, offset: 10, className: 'globe-popup' })
+            .setLngLat(center)
+            .setHTML(
+              `<div style="font-variant-numeric:tabular-nums">${formatCoords(center.lat, center.lng, 4)}` +
+                `<span style="opacity:.55"> · z${map.getZoom().toFixed(2)}</span></div>`
+            )
+            .addTo(map)
+        } catch {
+          // 弹窗失败时忽略
+        }
+      })
+
+      const pause = () => {
+        pauseUntil = performance.now() + 2600
+      }
+      ;['mousedown', 'touchstart', 'wheel', 'dragstart', 'zoomstart', 'rotatestart'].forEach((name) => map.on(name, pause))
+      map.on('dragstart', () => {
+        dragging = true
+      })
+      map.on('dragend', () => {
+        dragging = false
+        pause()
+      })
+      map.on('zoomstart', () => {
+        dragging = true
+      })
+      map.on('zoomend', () => {
+        dragging = false
+        pause()
+      })
+
+      const tick = (ts) => {
+        raf = requestAnimationFrame(tick)
+        if (!map || document.hidden) {
+          lastTs = ts
+          return
+        }
+        const dt = lastTs ? Math.min(64, ts - lastTs) : 0
+        lastTs = ts
+        if (dragging || ts < pauseUntil || dt <= 0) return
+        const center = map.getCenter()
+        try {
+          map.setCenter([wrapLng(center.lng + dt * 0.0022), center.lat])
+        } catch {
+          // 相机被约束时忽略
+        }
+      }
+      raf = requestAnimationFrame(tick)
+
+      observer = new MutationObserver(() => {
+        if (!map) return
+        applyMapTheme(map, themeIdOf())
+        applyArcTheme()
+      })
+      if (document.documentElement) {
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+      }
+    }
+
+    boot()
+
     return () => {
-      api.dispose()
-      threeRef.current = null
+      cancelled = true
+      syncRef.current = null
+      if (observer) observer.disconnect()
+      if (resizeObserver) resizeObserver.disconnect()
+      cancelAnimationFrame(raf)
+      clearInterval(flowTimer)
+      clearMarkers()
+      if (map) {
+        try {
+          map.remove()
+        } catch {
+          // 销毁异常忽略
+        }
+      }
+      if (mapRef.current === map) mapRef.current = null
     }
   }, [fallback])
 
-  useEffect(() => {
-    meCoordsRef.current = meCoords
-    if (fallback) return
-    threeRef.current?.rebuild(people, links, meId)
-  }, [fallback, people, links, meId, meCoords])
-
-  useEffect(() => {
-    if (fallback || !meCoords || centeredOnMeRef.current) return
-    centeredOnMeRef.current = true
-    threeRef.current?.focusAt(meCoords.lat, meCoords.lng, 10)
-  }, [fallback, meCoords])
-
-  useEffect(() => {
-    threeRef.current?.setSelected(selectedId)
-  }, [fallback, selectedId])
-
-  useEffect(() => {
-    threeRef.current?.setMode(mode)
-  }, [fallback, mode])
-
-  const currentDate = new Date(now)
-
-  const closeSheet = () => setSelectedId(null)
-  const routeIndex = selectedRoute ? routes.findIndex((route) => route.id === selectedRoute.id) : -1
-  const jumpCoords = useMemo(() => parseCoords(jumpQuery), [jumpQuery])
-  const localMatches = useMemo(() => (jumpCoords ? [] : searchPlaces(jumpQuery)), [jumpCoords, jumpQuery])
-  const jumpMatches = useMemo(() => {
-    if (!onlinePlaces.length) return localMatches
-    const merged = [...localMatches.map((place) => ({ ...place, altitude: 0.006 }))]
-    onlinePlaces.forEach((place) => {
-      const duplicate = merged.some(
-        (item) =>
-          item.name === place.name &&
-          Math.abs(item.lat - place.lat) < 0.12 &&
-          Math.abs(item.lng - place.lng) < 0.12
-      )
-      if (!duplicate) merged.push(place)
-    })
-    return merged.slice(0, 10)
-  }, [localMatches, onlinePlaces])
-  useEffect(() => {
-    if (!jumpOpen || jumpCoords || jumpQuery.trim().length < 2) {
-      setOnlinePlaces([])
-      setSearchLoading(false)
-      setSearchError('')
-      return undefined
-    }
-    setOnlinePlaces([])
-    setSearchError('')
-    const controller = new AbortController()
-    const timer = setTimeout(() => {
-      setSearchLoading(true)
-      const center = threeRef.current?.center?.()
-      searchPlacesOnline(jumpQuery, {
-        lat: center?.lat,
-        lng: center?.lng,
-        signal: controller.signal,
-      }).then((result) => {
-        if (controller.signal.aborted) return
-        setSearchLoading(false)
-        if (result.ok) setOnlinePlaces(result.places)
-        else if (!result.aborted) setSearchError(result.error || '地名搜索失败')
-      })
-    }, 420)
-    return () => {
-      clearTimeout(timer)
-      controller.abort()
-    }
-  }, [jumpOpen, jumpQuery, jumpCoords])
-  const goTo = (lat, lng, altitude = 0.003) => {
-    threeRef.current?.flyTo(lat, lng, altitude)
-    setJumpOpen(false)
-    setJumpQuery('')
-    setJumpError('')
-    setSearchError('')
-  }
-  const submitJump = async (event) => {
-    event.preventDefault()
-    if (jumpCoords) {
-      goTo(jumpCoords.lat, jumpCoords.lng, 0.0015)
-      return
-    }
-    const place = jumpMatches[0] || searchPlaces(jumpQuery, 1)[0]
-    if (place) {
-      goTo(place.lat, place.lng, place.altitude || 0.006)
-      return
-    }
-    if (jumpQuery.trim().length < 2) {
-      setJumpError('输入城市、村镇或经纬度')
-      return
-    }
-    setSearchLoading(true)
-    const result = await searchPlacesOnline(jumpQuery, { limit: 1 })
-    setSearchLoading(false)
-    if (result.ok && result.places[0]) {
-      goTo(result.places[0].lat, result.places[0].lng, result.places[0].altitude)
-      return
-    }
-    setJumpError(result.error || '没有找到这个地点，试试输入经纬度')
-  }
   const copyCoords = async () => {
-    const center = threeRef.current?.center?.()
-    if (!center) return
-    const text = `${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}`
-    const finish = (ok) => {
-      setCopied(ok ? '已复制' : '复制失败')
-      clearTimeout(copyTimerRef.current)
-      copyTimerRef.current = setTimeout(() => setCopied(''), 1800)
-    }
+    const text = latestCoordsRef.current
     try {
       if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable')
       await navigator.clipboard.writeText(text)
-      finish(true)
+      setCopied('已复制')
     } catch {
-      finish(false)
+      setCopied('复制失败')
     }
+    clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = setTimeout(() => setCopied(''), 1500)
   }
-  const reply = () => {
-    const peerId = selectedId
-    closeSheet()
-    onReply(peerId)
-  }
+
+  const currentDate = new Date(now)
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-[#03070f] text-[#dff1ff]">
-      <div className="relative min-h-0 flex-1">
-        <div
-          ref={containerRef}
-          data-testid="relationship-globe"
-          aria-label="3D 地球关系网，可拖动旋转、缩放并点击节点"
-          className={fallback ? 'hidden' : 'absolute inset-0'}
-        />
-        <div
-          ref={labelsRef}
-          data-testid="globe-labels"
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
-        />
-        <div
-          ref={tooltipRef}
-          data-testid="globe-tooltip"
-          className="pointer-events-none fixed z-20 -translate-x-1/2 -translate-y-[160%] rounded-md border border-[#5ab4ff]/45 bg-[#081628]/92 px-2.5 py-1.5 text-[13px] whitespace-nowrap text-[#cfe9ff] opacity-0 transition-opacity"
-          style={{ left: 0, top: 0 }}
-        />
+    <div className="relative h-full overflow-hidden bg-eink-paper text-eink-ink">
+      <div
+        ref={containerRef}
+        data-testid="relationship-globe"
+        aria-label="关系网地球，可拖动旋转、缩放并点击查看经纬度"
+        className={`h-full w-full ${fallback ? 'hidden' : ''}`}
+      />
 
-        <div className="pointer-events-none absolute inset-x-0 top-3 text-center">
-          <p className="text-[11px] tracking-[0.08em] text-[#7fc4f0]">
-            {meName} 的地球 · 全球实时天气
+      {fallback ? (
+        <div data-testid="globe-fallback" className="absolute inset-0 overflow-y-auto px-6 pt-16 pb-24">
+          <p className="mb-4 text-center text-[11px] tracking-[0.06em] text-eink-faint">
+            当前环境不支持地图渲染，已切换为关系列表
           </p>
-          <p data-testid="globe-weather" className="mt-1 text-[10px] tracking-[0.06em] text-[#3d6f96]">
-            此刻 · 本地 {deviceClock(currentDate)} · {deviceDaylight(currentDate)} · 城市实时天气
-          </p>
-          <div className={`mt-1.5 flex items-center justify-center gap-2 ${fallback ? 'hidden' : ''}`}>
-            <p
-              ref={coordsRef}
-              data-testid="globe-coords"
-              className="text-[10px] tracking-[0.14em] text-[#6fb8e2] tabular-nums"
-            >
-              N 0.00° E 0.00°
-            </p>
-            <button
-              type="button"
-              data-testid="globe-copy-coords"
-              className="pointer-events-auto border border-[#2a6fa8]/35 px-1.5 py-0.5 text-[9px] tracking-[0.08em] text-[#5da6d4] active:bg-[#0a2138]"
-              onClick={copyCoords}
-            >
-              {copied || '复制'}
-            </button>
-          </div>
-        </div>
-
-        <div
-          data-testid="globe-crosshair"
-          aria-hidden="true"
-          className={`pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 ${fallback ? 'hidden' : ''}`}
-        >
-          <span className="absolute left-1/2 top-1/2 h-px w-5 -translate-x-1/2 -translate-y-1/2 bg-[#7fc4f0]/55" />
-          <span className="absolute left-1/2 top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-[#7fc4f0]/55" />
-          <span className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#7cffb2]/85" />
-        </div>
-
-        <div
-          className={`pointer-events-none absolute inset-x-0 bottom-24 z-20 text-center ${fallback ? 'hidden' : ''}`}
-        >
-          <p
-            ref={mapStatusRef}
-            data-testid="globe-map-status"
-            className="inline-block border border-[#2a6fa8]/35 bg-[#04101f]/85 px-3 py-1 text-[10px] tracking-[0.12em] text-[#7fc4f0] opacity-0 transition-opacity duration-300"
-          />
-        </div>
-
-        <div
-          className={`absolute right-4 top-1/2 z-20 -translate-y-1/2 flex-col gap-1 ${fallback ? 'hidden' : 'flex'}`}
-        >
-          <div className="mb-1 flex flex-col gap-1">
-            <button
-              type="button"
-              data-testid="globe-mode-satellite"
-              aria-label="卫星模式"
-              aria-pressed={mode === 'satellite'}
-              className={`h-9 w-9 border text-[10px] leading-none tracking-[0.06em] backdrop-blur active:bg-[#0a2138] ${
-                mode === 'satellite'
-                  ? 'border-[#5ab4ff]/70 bg-[#0a2138] text-[#b8ddff]'
-                  : 'border-[#2a6fa8]/40 bg-[#081628]/85 text-[#7fc4f0]'
-              }`}
-              onClick={() => setMode('satellite')}
-            >
-              卫星
-            </button>
-            <button
-              type="button"
-              data-testid="globe-mode-explore"
-              aria-label="探索模式"
-              aria-pressed={mode === 'explore'}
-              className={`h-9 w-9 border text-[10px] leading-none tracking-[0.06em] backdrop-blur active:bg-[#0a2138] ${
-                mode === 'explore'
-                  ? 'border-[#5ab4ff]/70 bg-[#0a2138] text-[#b8ddff]'
-                  : 'border-[#2a6fa8]/40 bg-[#081628]/85 text-[#7fc4f0]'
-              }`}
-              onClick={() => setMode('explore')}
-            >
-              探索
-            </button>
-          </div>
-          <button
-            type="button"
-            data-testid="globe-zoom-in"
-            aria-label="放大"
-            className="h-9 w-9 border border-[#2a6fa8]/40 bg-[#081628]/85 text-[17px] leading-none text-[#7fc4f0] backdrop-blur active:bg-[#0a2138]"
-            onClick={() => threeRef.current?.zoomBy(0.55)}
-          >
-            +
-          </button>
-          <button
-            type="button"
-            data-testid="globe-zoom-out"
-            aria-label="缩小"
-            className="h-9 w-9 border border-[#2a6fa8]/40 bg-[#081628]/85 text-[17px] leading-none text-[#7fc4f0] backdrop-blur active:bg-[#0a2138]"
-            onClick={() => threeRef.current?.zoomBy(1.8)}
-          >
-            -
-          </button>
-          <button
-            type="button"
-            data-testid="globe-jump"
-            aria-label="按城市或经纬度跳转"
-            className="h-9 w-9 border border-[#2a6fa8]/40 bg-[#081628]/85 text-[10px] leading-none tracking-[0.06em] text-[#7fc4f0] backdrop-blur active:bg-[#0a2138]"
-            onClick={() => {
-              setJumpOpen(true)
-              setJumpError('')
-            }}
-          >
-            跳转
-          </button>
-          <button
-            type="button"
-            data-testid="globe-reset-view"
-            aria-label="回到全球"
-            className="h-9 w-9 border border-[#2a6fa8]/40 bg-[#081628]/85 text-[10px] leading-none tracking-[0.06em] text-[#7fc4f0] backdrop-blur active:bg-[#0a2138]"
-            onClick={() => threeRef.current?.resetView()}
-          >
-            全球
-          </button>
-        </div>
-
-        {loading ? (
-          <p
-            data-testid="routes-loading"
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[12px] tracking-[0.14em] text-[#3d6f96]"
-          >
-            正在取信...
-          </p>
-        ) : null}
-        {error ? (
-          <p
-            data-testid="routes-error"
-            className="absolute inset-x-6 top-14 border border-[#ff6b9d]/30 bg-[#2a0b16]/80 px-3 py-2 text-center text-[12px] text-[#ffb3cb]"
-          >
-            {error}
-          </p>
-        ) : null}
-        {!loading && !error && routes.length === 0 ? (
-          <p
-            data-testid="routes-empty"
-            className="pointer-events-none absolute inset-x-8 bottom-20 text-center text-[12px] leading-6 text-[#3d6f96]"
-          >
-            {emptyText}
-          </p>
-        ) : null}
-
-        {fallback ? (
-          <div data-testid="globe-fallback" className="absolute inset-0 overflow-y-auto px-5 pt-10 pb-24">
-            <p className="mb-4 text-center text-[11px] text-[#3d6f96]">当前环境不支持 3D，已切换为关系列表</p>
-            {routes.length ? (
-              routes.map((route, index) => (
-                <button
-                  key={route.id}
-                  type="button"
-                  data-testid="route-card"
-                  className="flex w-full items-baseline gap-3 border-b border-[#12324f] px-1 py-3.5 text-left active:bg-[#0a2138]"
-                  onClick={() => setSelectedId(route.authorId)}
+          <ul className="mx-auto max-w-sm">
+            {people.length ? (
+              people.map((person, index) => (
+                <li
+                  key={person.id || index}
+                  className="flex items-baseline gap-3 border-b border-eink-divider px-1 py-3"
                 >
-                  <span className="w-7 shrink-0 text-[11px] tracking-[0.12em] text-[#3d6f96]">
+                  <span className="w-7 shrink-0 text-[11px] tracking-[0.12em] text-eink-faint">
                     {String(index + 1).padStart(2, '0')}
                   </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-[14px] text-[#dff1ff]">{route.name}</span>
-                      <span className="shrink-0 text-[11px] text-[#3d6f96]">
-                        {formatRelativeTime(route.createdAt)}
-                      </span>
-                    </span>
-                    <span className="mt-1 line-clamp-2 block text-[13px] leading-5 text-[#7fc4f0]">
-                      {route.content ||
-                        (route.imageUrl ? '寄来了一张照片' : route.imageCount ? `寄来 ${route.imageCount} 张图` : '寄来了一页信')}
-                    </span>
-                  </span>
-                </button>
+                  <span className="min-w-0 flex-1 truncate text-[14px] text-eink-ink">{person.name}</span>
+                </li>
               ))
             ) : (
-              <p className="py-10 text-center text-[13px] text-[#3d6f96]">还没有人留下信</p>
+              <li className="py-10 text-center text-[13px] text-eink-faint">还没有连接的人</li>
             )}
-          </div>
-        ) : null}
+          </ul>
+        </div>
+      ) : null}
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 flex items-end justify-between px-5">
-          <div className="min-w-0">
-            <p className="text-[11px] leading-5 text-[#3d6f96]">
-              拖动旋转 · 滚轮/双指放大至村镇
-              <br />
-              点击节点看关系 · 地图内点选居中 · 双击回全球
-            </p>
-            <a
-              href={OSM_COPYRIGHT_URL}
-              target="_blank"
-              rel="noreferrer"
-              data-testid="globe-attribution"
-              className="pointer-events-auto mt-1 inline-block text-[9px] tracking-[0.04em] text-[#2f5d7d] underline decoration-[#2f5d7d]/50 underline-offset-2 hover:text-[#7fc4f0]"
-            >
-              {OSM_COPYRIGHT}
-            </a>
-            <span className="mx-1 text-[9px] text-[#2f5d7d]">·</span>
-            <a
-              href={ESRI_COPYRIGHT_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="pointer-events-auto text-[9px] tracking-[0.04em] text-[#2f5d7d] underline decoration-[#2f5d7d]/50 underline-offset-2 hover:text-[#7fc4f0]"
-            >
-              {ESRI_COPYRIGHT}
-            </a>
-          </div>
+      <div className="pointer-events-none absolute inset-x-0 top-3 z-20 text-center">
+        <p className="text-[11px] tracking-[0.08em] text-eink-sub">{meName} 的地球 · 全球实时天气</p>
+        <p data-testid="globe-weather" className="mt-1 text-[10px] tracking-[0.06em] text-eink-faint">
+          此刻 · 本地 {deviceClock(currentDate)} · {deviceDaylight(currentDate)} · 城市实时天气
+        </p>
+        <div className="mt-1.5 flex flex-col items-center gap-1.5">
+          <p
+            ref={coordsRef}
+            data-testid="globe-coords"
+            className="text-[10px] tracking-[0.14em] text-eink-sub tabular-nums"
+          />
           <button
             type="button"
-            data-testid="routes-toggle"
-            className="pointer-events-auto border border-[#2a6fa8]/40 bg-[#081628]/80 px-3 py-1.5 text-[11px] tracking-[0.1em] text-[#7fc4f0] backdrop-blur active:bg-[#0a2138]"
-            onClick={() => setListOpen(true)}
+            data-testid="globe-copy-coords"
+            className="pointer-events-auto border border-eink-line/40 px-1.5 py-0.5 text-[9px] tracking-[0.08em] text-eink-sub active:bg-eink-surface"
+            onClick={copyCoords}
           >
-            本周航线 {routes.length} 页
+            {copied || '复制'}
           </button>
         </div>
       </div>
-
-      {selectedPerson ? (
-        <div
-          className="fixed inset-0 z-40 flex items-end bg-black/70"
-          data-testid="moment-backdrop"
-          onClick={closeSheet}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            data-testid="moment-sheet"
-            className="safe-bottom max-h-[80vh] w-full overflow-y-auto border-t border-[#2a6fa8]/70 bg-[#071a2e] px-5 pt-4 pb-6 text-[#dff1ff]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-baseline justify-between text-[10px] tracking-[0.18em] text-[#3d6f96]">
-              <span>
-                {selectedRoute && routeIndex >= 0 ? `第 ${String(routeIndex + 1).padStart(2, '0')} 页` : '关系'}
-              </span>
-              <button type="button" className="px-1 text-[12px] tracking-normal text-[#7fc4f0]" onClick={closeSheet}>
-                收起
-              </button>
-            </div>
-            <div className="mt-4 flex items-baseline justify-between gap-3">
-              <h2 className="truncate text-[18px] font-medium tracking-[0.04em] text-white">{selectedPerson.name}</h2>
-              {selectedRoute ? (
-                <span className="shrink-0 text-[11px] text-[#3d6f96]">
-                  {formatRelativeTime(selectedRoute.createdAt)}
-                </span>
-              ) : null}
-            </div>
-            {selectedPerson.place ? (
-              <p data-testid="globe-person-place" className="mt-2 text-[12px] tracking-[0.04em] text-[#3d6f96]">
-                {selectedPerson.place} · 城市级位置
-              </p>
-            ) : null}
-            {selectedId === meId ? (
-              <p className="mt-4 text-[13px] leading-6 text-[#7fc4f0]">
-                这是你的坐标。本周航线都从这里出发。
-              </p>
-            ) : selectedRoute ? (
-              <>
-                {selectedRoute.content ? (
-                  <p className="moment-text mt-5 text-[15px] leading-7 break-words whitespace-pre-wrap text-[#e8f6ff]">
-                    {selectedRoute.content}
-                  </p>
-                ) : null}
-                {selectedRoute.imageUrl ? (
-                  <button
-                    type="button"
-                    data-testid="moment-sheet-image"
-                    className="mt-4 block w-full cursor-zoom-in border border-[#12324f]"
-                    onClick={() => setViewerUrl(selectedRoute.imageUrl)}
-                  >
-                    <img src={selectedRoute.imageUrl} alt="信笺图片" className="max-h-[320px] w-full object-cover" />
-                  </button>
-                ) : selectedRoute.imageCount ? (
-                  <div className="mt-4 border border-[#12324f] bg-[#04101f] px-4 py-6 text-center text-[13px] text-[#7fc4f0]">
-                    附 {selectedRoute.imageCount} 张图
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <p className="mt-4 text-[13px] leading-6 text-[#7fc4f0]">本周还没有留下信。</p>
-            )}
-
-            {relationNames.length ? (
-              <div data-testid="moment-relations" className="mt-5 border-t border-[#12324f] pt-3">
-                <p className="text-[10px] tracking-[0.18em] text-[#3d6f96]">
-                  关系 {relationNames.length}
-                </p>
-                <p className="mt-1.5 text-[12px] leading-6 text-[#7fc4f0]">
-                  {relationNames.slice(0, 6).join(' · ')}
-                  {relationNames.length > 6 ? ` · 等 ${relationNames.length} 人` : ''}
-                </p>
-              </div>
-            ) : null}
-
-            {selectedId !== meId ? (
-              <button
-                type="button"
-                data-testid="moment-reply"
-                className="mt-6 h-11 w-full bg-[#4fc3ff] text-[15px] font-medium text-[#03101f] active:bg-[#8fe6ff]"
-                onClick={reply}
-              >
-                回信
-              </button>
-            ) : null}
-            <p className="mt-2 text-center text-[11px] text-[#3d6f96]">回信会进入你们的单聊</p>
-          </div>
-        </div>
-      ) : null}
-
-      {listOpen ? (
-        <div
-          className="fixed inset-0 z-40 flex items-end bg-black/70"
-          data-testid="routes-backdrop"
-          onClick={() => setListOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            data-testid="routes-sheet"
-            className="safe-bottom max-h-[76vh] w-full overflow-y-auto border-t border-[#2a6fa8]/70 bg-[#071a2e] px-5 pt-4 pb-6 text-[#dff1ff]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-baseline justify-between border-b border-[#12324f] pb-3">
-              <h2 className="text-[10px] tracking-[0.22em] text-[#3d6f96]">本周航线</h2>
-              <button type="button" className="text-[12px] text-[#7fc4f0]" onClick={() => setListOpen(false)}>
-                收起
-              </button>
-            </div>
-            {routes.length ? (
-              routes.map((route, index) => (
-                <button
-                  key={route.id}
-                  type="button"
-                  data-testid="route-card"
-                  className="flex w-full items-baseline gap-3 border-b border-[#12324f] px-1 py-3.5 text-left active:bg-[#0a2138]"
-                  onClick={() => {
-                    setListOpen(false)
-                    setSelectedId(route.authorId)
-                  }}
-                >
-                  <span className="w-7 shrink-0 text-[11px] tracking-[0.12em] text-[#3d6f96]">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-[14px] text-[#dff1ff]">{route.name}</span>
-                      <span className="shrink-0 text-[11px] text-[#3d6f96]">
-                        {formatRelativeTime(route.createdAt)}
-                      </span>
-                    </span>
-                    <span className="mt-1 line-clamp-2 block text-[13px] leading-5 text-[#7fc4f0]">
-                      {route.content ||
-                        (route.imageUrl ? '寄来了一张照片' : route.imageCount ? `寄来 ${route.imageCount} 张图` : '寄来了一页信')}
-                    </span>
-                  </span>
-                </button>
-              ))
-            ) : (
-              <p className="py-10 text-center text-[13px] text-[#3d6f96]">{emptyText}</p>
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      {jumpOpen ? (
-        <div
-          className="fixed inset-0 z-40 flex items-end bg-black/70"
-          data-testid="jump-backdrop"
-          onClick={() => setJumpOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            data-testid="jump-sheet"
-            className="safe-bottom max-h-[78vh] w-full overflow-y-auto border-t border-[#2a6fa8]/70 bg-[#071a2e] px-5 pt-4 pb-6 text-[#dff1ff]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-baseline justify-between border-b border-[#12324f] pb-3">
-              <h2 className="text-[10px] tracking-[0.22em] text-[#3d6f96]">跳转地点</h2>
-              <button type="button" className="text-[12px] text-[#7fc4f0]" onClick={() => setJumpOpen(false)}>
-                收起
-              </button>
-            </div>
-            <form className="mt-4 flex gap-2" onSubmit={submitJump}>
-              <input
-                data-testid="jump-input"
-                value={jumpQuery}
-                onChange={(event) => {
-                  setJumpQuery(event.target.value)
-                  setJumpError('')
-                }}
-                placeholder="城市、街道、村镇，或 34.34,108.94"
-                autoFocus
-                className="h-10 min-w-0 flex-1 border border-[#2a6fa8]/45 bg-[#04101f] px-3 text-[14px] text-[#e8f6ff] outline-none placeholder:text-[#3d6f96] focus:border-[#4fc3ff]"
-              />
-              <button
-                type="submit"
-                data-testid="jump-submit"
-                className="h-10 shrink-0 bg-[#4fc3ff] px-4 text-[13px] font-medium text-[#03101f] active:bg-[#8fe6ff]"
-              >
-                {searchLoading ? '搜索中' : '前往'}
-              </button>
-            </form>
-            {jumpError ? (
-              <p data-testid="jump-error" className="mt-2 text-[12px] text-[#ffb3cb]">
-                {jumpError}
-              </p>
-            ) : null}
-            {jumpCoords ? (
-              <button
-                type="button"
-                data-testid="jump-coords"
-                className="mt-3 flex w-full items-baseline justify-between border border-[#2a6fa8]/45 bg-[#04101f] px-3 py-2.5 text-left active:bg-[#0a2138]"
-                onClick={() => goTo(jumpCoords.lat, jumpCoords.lng, 0.0015)}
-              >
-                <span className="text-[14px] text-[#e8f6ff]">前往这组坐标</span>
-                <span className="text-[11px] text-[#7fc4f0] tabular-nums">
-                  {jumpCoords.lat.toFixed(4)}, {jumpCoords.lng.toFixed(4)}
-                </span>
-              </button>
-            ) : null}
-            {jumpMatches.length ? (
-              <div className="mt-3 border-t border-[#12324f] pt-2">
-                {jumpMatches.map((place) => (
-                  <button
-                    key={place.id}
-                    type="button"
-                    data-testid="jump-result"
-                    className="flex w-full items-baseline justify-between border-b border-[#12324f] px-1 py-3 text-left active:bg-[#0a2138]"
-                    onClick={() => goTo(place.lat, place.lng, place.altitude || 0.006)}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-[14px] text-[#dff1ff]">{place.name}</span>
-                      {place.detail ? (
-                        <span className="mt-0.5 block truncate text-[11px] text-[#5d92b8]">{place.detail}</span>
-                      ) : null}
-                    </span>
-                    <span className="ml-3 shrink-0 text-[11px] text-[#3d6f96] tabular-nums">
-                      {formatCoords(place.lat, place.lng)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : !jumpQuery.trim() ? (
-              <div className="mt-3 border-t border-[#12324f] pt-2">
-                <p className="pt-2 text-[10px] tracking-[0.16em] text-[#3d6f96]">常去城市</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {PLACES.filter((place) => place.tier === 1).map((place) => (
-                    <button
-                      key={place.id}
-                      type="button"
-                      data-testid="jump-result"
-                      className="border border-[#2a6fa8]/35 px-2.5 py-1.5 text-[12px] text-[#9ed4f7] active:bg-[#0a2138]"
-                      onClick={() => goTo(place.lat, place.lng, 0.006)}
-                    >
-                      {place.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : !jumpCoords && jumpQuery.trim() ? (
-              <p data-testid="jump-hint" className="mt-3 border-t border-[#12324f] pt-3 text-[12px] text-[#5d92b8]">
-                {searchLoading ? '正在搜索地名…' : searchError || '没有找到匹配的地点，可按回车重试，或直接输入经纬度。'}
-              </p>
-            ) : null}
-            <p className="mt-5 text-[11px] leading-5 text-[#3d6f96]">
-              支持城市、街道、村镇等任意地名与经纬度，选中后直接飞到附近，可继续滚轮放大查看细节。
-            </p>
-          </div>
-        </div>
-      ) : null}
-
-      {viewerUrl ? <ImageViewer url={viewerUrl} onClose={() => setViewerUrl('')} /> : null}
     </div>
   )
 }

@@ -5,6 +5,84 @@ export const RAD = Math.PI / 180
 export const R = 2
 export const PALETTE = [0x4fc3ff, 0x7cffb2, 0xffa94d, 0xff6b9d]
 export const ME_COLOR = 0xffd166
+
+export const GLOBE_THEMES = {
+  light: {
+    clear: 0xe7e3d8,
+    ambientColor: 0xf1ede2, ambientIntensity: 1.2,
+    keyColor: 0xfffdf6, keyIntensity: 1.2,
+    rimColor: 0xc7bfa9, rimIntensity: 0.7,
+    oceanTint: 0xd9d3c2, shadow: 0x6f6a5c, highlight: 0xf8f5ec, grade: 0.82, brightness: 1.05,
+    exploreLand: 0xefe8d4, exploreWater: 0xcdc6b2, exploreBorder: 0x8a8375,
+    cloud: 0xffffff, cloudOpacity: 0.3,
+    grid: 0x191919, gridOpacity: 0.08,
+    glow: 0xbfb8a6,
+    star: 0x54514b, starOpacity: 0,
+    arcBase: 0x1f7fdc, arcActive: 0x0fb4f0,
+    me: 0x9a6b1e, palette: [0x3b5d7a, 0x4e7d63, 0xa9702f, 0x9a4d63],
+    labelText: '#3a3835', labelDot: '#3b5d7a', labelTemp: '#7a756a', labelShadow: '0 1px 3px rgba(255,255,255,0.85)',
+  },
+  sepia: {
+    clear: 0xece0c4,
+    ambientColor: 0xf7ecd2, ambientIntensity: 1.2,
+    keyColor: 0xfff6e0, keyIntensity: 1.2,
+    rimColor: 0xc7ac82, rimIntensity: 0.75,
+    oceanTint: 0xdcc9a2, shadow: 0x6b5942, highlight: 0xfbf1db, grade: 0.82, brightness: 1.05,
+    exploreLand: 0xf3e7c6, exploreWater: 0xdccba6, exploreBorder: 0x8a7550,
+    cloud: 0xfff8ec, cloudOpacity: 0.3,
+    grid: 0x3b2f25, gridOpacity: 0.08,
+    glow: 0xc9b48a,
+    star: 0x6a5b45, starOpacity: 0,
+    arcBase: 0xc8681c, arcActive: 0xf08a2a,
+    me: 0x8a5a1e, palette: [0x8a6a3a, 0x5f7d4f, 0xb0703a, 0x8e4a5a],
+    labelText: '#3b2f25', labelDot: '#7a5c3a', labelTemp: '#8a7550', labelShadow: '0 1px 3px rgba(255,250,238,0.85)',
+  },
+  moss: {
+    clear: 0xe1e8d6,
+    ambientColor: 0xeef1e2, ambientIntensity: 1.2,
+    keyColor: 0xf6f8ee, keyIntensity: 1.2,
+    rimColor: 0xa9be9c, rimIntensity: 0.75,
+    oceanTint: 0xccd8bb, shadow: 0x51614f, highlight: 0xf4f6e9, grade: 0.82, brightness: 1.05,
+    exploreLand: 0xeaf0d8, exploreWater: 0xc4d3b0, exploreBorder: 0x7a8c74,
+    cloud: 0xfbfff4, cloudOpacity: 0.3,
+    grid: 0x3c473e, gridOpacity: 0.08,
+    glow: 0xa9be9c,
+    star: 0x5e6e58, starOpacity: 0,
+    arcBase: 0x2f9c60, arcActive: 0x2fd07e,
+    me: 0x6b7a2e, palette: [0x4f6b52, 0x7c8f4a, 0xb08a3a, 0x8a5a5a],
+    labelText: '#3c473e', labelDot: '#4f6b52', labelTemp: '#7a8c74', labelShadow: '0 1px 3px rgba(247,243,227,0.85)',
+  },
+  blue: {
+    clear: 0xdbe4ee,
+    ambientColor: 0xeaf0f6, ambientIntensity: 1.2,
+    keyColor: 0xffffff, keyIntensity: 1.2,
+    rimColor: 0x9fb6cc, rimIntensity: 0.8,
+    oceanTint: 0xbcd0e2, shadow: 0x5a6f86, highlight: 0xf3f8fd, grade: 0.7, brightness: 1.05,
+    exploreLand: 0xe4edf5, exploreWater: 0xb6cbdf, exploreBorder: 0x7e97b0,
+    cloud: 0xffffff, cloudOpacity: 0.34,
+    grid: 0x2e3440, gridOpacity: 0.08,
+    glow: 0x9fbad6,
+    star: 0x64788c, starOpacity: 0,
+    arcBase: 0x2f8fe6, arcActive: 0x1fc2ee,
+    me: 0x2e6f9e, palette: [0x4c6a8c, 0x3f8f74, 0xc07a3a, 0x9a4d63],
+    labelText: '#2e3440', labelDot: '#4c6a8c', labelTemp: '#7e97b0', labelShadow: '0 1px 3px rgba(250,252,255,0.85)',
+  },
+  dark: {
+    clear: 0x03070f,
+    ambientColor: 0x6fa8dc, ambientIntensity: 1.1,
+    keyColor: 0xffffff, keyIntensity: 1.4,
+    rimColor: 0x2f7fc0, rimIntensity: 1.2,
+    oceanTint: 0x3a77b0, shadow: 0x06121f, highlight: 0xdde8f5, grade: 0.12, brightness: 1,
+    exploreLand: 0xe8ecda, exploreWater: 0xaacbe8, exploreBorder: 0x8fa3b8,
+    cloud: 0xc7dcff, cloudOpacity: 0.48,
+    grid: 0x2a6fa8, gridOpacity: 0.12,
+    glow: 0x3fa9ff,
+    star: 0x9ec8ff, starOpacity: 0.7,
+    arcBase: 0x5fc6ff, arcActive: 0xcaf6ff,
+    me: 0xffd166, palette: [0x4fc3ff, 0x7cffb2, 0xffa94d, 0xff6b9d],
+    labelText: '#b8ddff', labelDot: '#7cffb2', labelTemp: '#6fb8e2', labelShadow: '0 1px 5px rgba(2,8,16,0.92)',
+  },
+}
 export const MIN_DISTANCE = R + MIN_ALTITUDE_WORLD
 export const MAX_DISTANCE = R + MAX_ALTITUDE_WORLD
 export const MAP_DISTANCE = R + 0.06
@@ -198,6 +276,11 @@ export const GLOBE_FRAGMENT_SHADER = `
   uniform sampler2D dayMap;
   uniform sampler2D nightMap;
   uniform vec3 sunDirection;
+  uniform vec3 uOceanTint;
+  uniform vec3 uShadow;
+  uniform vec3 uHighlight;
+  uniform float uGrade;
+  uniform float uBrightness;
   varying vec2 vUv;
   varying vec3 vWorldNormal;
   void main() {
@@ -205,16 +288,19 @@ export const GLOBE_FRAGMENT_SHADER = `
     vec3 sunDir = normalize(sunDirection);
     float sunDot = dot(normal, sunDir);
     vec3 surface = texture2D(dayMap, vUv).rgb;
-    surface = mix(surface, vec3(0.16, 0.42, 0.66), 0.3);
+    surface = mix(surface, uOceanTint, 0.3);
     surface *= vec3(0.78, 0.94, 1.1);
-    vec3 dayColor = surface * (0.58 + 0.5 * max(sunDot, 0.0));
+    float lum = dot(surface, vec3(0.299, 0.587, 0.114));
+    vec3 graded = mix(uShadow, uHighlight, smoothstep(0.02, 0.85, lum));
+    surface = mix(surface, graded, uGrade);
+    vec3 dayColor = surface * (0.58 + 0.5 * max(sunDot, 0.0)) * uBrightness;
     vec3 lights = texture2D(nightMap, vUv).rgb;
     float lightsMask = smoothstep(0.04, 0.6, dot(lights, vec3(0.333)));
-    vec3 nightColor = vec3(0.004, 0.012, 0.026) + vec3(1.0, 0.78, 0.44) * lightsMask * 0.4;
+    vec3 nightColor = uShadow * 0.6 + vec3(1.0, 0.78, 0.44) * lightsMask * 0.4;
     vec3 color = mix(nightColor, dayColor, smoothstep(-0.16, 0.22, sunDot));
     float dusk = exp(-pow((sunDot + 0.02) / 0.13, 2.0));
-    color += vec3(0.3, 0.13, 0.04) * dusk * 0.16;
-    color += vec3(0.3, 0.6, 0.9) * pow(max(sunDot, 0.0), 10.0) * 0.06;
+    color += vec3(0.3, 0.13, 0.04) * dusk * 0.16 * (1.0 - uGrade * 0.7);
+    color += uHighlight * pow(max(sunDot, 0.0), 10.0) * 0.06;
     gl_FragColor = vec4(color, 1.0);
   }`
 
@@ -230,13 +316,15 @@ export const CLOUD_VERTEX_SHADER = `
 export const CLOUD_FRAGMENT_SHADER = `
   uniform sampler2D cloudMap;
   uniform vec3 sunDirection;
+  uniform vec3 uCloudColor;
+  uniform float uCloudOpacity;
   uniform float fade;
   varying vec2 vUv;
   varying vec3 vWorldNormal;
   void main() {
     float alpha = texture2D(cloudMap, vUv).a;
     float lit = 0.2 + 0.8 * smoothstep(-0.14, 0.32, dot(normalize(vWorldNormal), normalize(sunDirection)));
-    gl_FragColor = vec4(vec3(0.78, 0.88, 1.0), alpha * lit * 0.48 * fade);
+    gl_FragColor = vec4(uCloudColor, alpha * lit * uCloudOpacity * fade);
   }`
 
 export const GLOW_VERTEX_SHADER = `

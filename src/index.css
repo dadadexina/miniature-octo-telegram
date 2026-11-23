@@ -348,3 +348,63 @@ html textarea {
     animation: none;
   }
 }
+
+/* MapLibre 控件与气泡跟随电子墨水主题 */
+html[data-theme] .maplibregl-canvas {
+  outline: none;
+}
+
+html[data-theme] .maplibregl-ctrl-group {
+  background: rgb(var(--eink-bar));
+  border: 1px solid rgb(var(--eink-line) / 0.24);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-theme] .maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgb(var(--eink-divider));
+}
+
+html[data-theme] .maplibregl-ctrl-group button:hover {
+  background: rgb(var(--eink-surface));
+}
+
+html[data-theme='dark'] .maplibregl-ctrl-icon {
+  filter: invert(1) brightness(1.6);
+}
+
+html[data-theme] .maplibregl-ctrl-attrib {
+  background: rgb(var(--eink-bar) / 0.86);
+  color: rgb(var(--eink-faint));
+  font-size: 9px;
+}
+
+html[data-theme] .maplibregl-ctrl-attrib a {
+  color: rgb(var(--eink-sub));
+}
+
+html[data-theme] .maplibregl-popup-content {
+  background: rgb(var(--eink-bar));
+  color: rgb(var(--eink-ink));
+  border: 1px solid rgb(var(--eink-line) / 0.32);
+  border-radius: 0;
+  padding: 7px 10px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  box-shadow: none;
+}
+
+html[data-theme] .maplibregl-popup-tip {
+  display: none;
+}
+
+html[data-theme] .maplibregl-popup-close-button {
+  color: rgb(var(--eink-sub));
+  font-size: 15px;
+  padding: 0 5px;
+}
+
+html[data-theme] .maplibregl-popup-close-button:hover {
+  background: transparent;
+  color: rgb(var(--eink-ink));
+}
