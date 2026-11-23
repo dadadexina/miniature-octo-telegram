@@ -718,7 +718,7 @@ export default function DiscoverGlobe({
           lastTs = ts
           return
         }
-        const dt = lastTs ? Math.min(64, ts - lastTs) : 0
+        const dt = lastTs ? Math.min(1000, ts - lastTs) : 0
         lastTs = ts
         if (dragging || ts < pauseUntil || dt <= 0) return
         if (myPosRef.current || destinationRef.current) return
