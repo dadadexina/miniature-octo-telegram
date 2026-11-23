@@ -181,7 +181,7 @@ This file records user instructions, preferences, and teachings for reference in
 - Category: Environment Configuration
 - Instructions:
   - 生产 Supabase ref `ljlvqnhzewzxpyhgumnp`（ap-northeast-1，org `dlqxyvklimrwdexpspei`）；staging ref `ajwkmlpzgvdekjvypuve`（ap-northeast-2，org `cuiinllsqxcslytifwxz`），已执行基线 SQL；staging Auth `site_url=http://localhost:5173`，开启 `mailer_autoconfirm`；`uri_allow_list` 必须包含预览/生产域名（现已加 `https://*.monkeycode-ai.online/**`），否则 recovery 邮件链接会回落到 `site_url`（localhost），线上打开表现为空白页
-  - 沙箱出网白名单：github/api、npm、supabase、vercel、photon.komoot.io（地名搜索）、routing.openstreetmap.de（开车/步行路线规划，FOSSGIS 公共 OSRM，CORS 开放）；`api.supabase.com` 需 `curl -4`；openrelay/peerjs 不可达，WebRTC 成功链路需真实网络双端验证
+  - 沙箱出网白名单：github/api、npm、supabase、vercel、photon.komoot.io（地名搜索）、routing.openstreetmap.de（开车/步行路线规划，FOSSGIS 公共 OSRM，CORS 开放）、api.open-meteo.com（实时天气，无需 key，CORS 开放）；`api.supabase.com` 需 `curl -4`；openrelay/peerjs 不可达，WebRTC 成功链路需真实网络双端验证
   - GitHub Secrets `VITE_SUPABASE_*` 与 `E2E_USER_A/B_*` 指向 staging；本地 `.env.local` 指 staging，`.env.production.local`（gitignore）指生产
   - e2e 用户名须匹配 `^[A-Za-z0-9]{8,15}$` 且含字母数字，否则 `profiles_fill_public_id` 会替换为随机 ID
   - `scripts/export-cloud-sql.mjs` 必须用函数替换 `.replaceAll(k, () => v)`，否则替换串中的 `$$` 折叠为 `$` 破坏 dollar-quote

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mapPhotonFeature, mergePlaceResults, searchAltitude, searchPlacesOnline } from './geocode'
+import {
+  buildQueryVariants,
+  mapPhotonFeature,
+  mergePlaceResults,
+  searchAltitude,
+  searchPlacesOnline,
+} from './geocode'
 
 const feature = (overrides = {}) => ({
   type: 'Feature',
@@ -80,6 +86,75 @@ describe('geocode', () => {
     expect(result.ok).toBe(false)
     expect(result.error).toBeTruthy()
     expect(result.places).toEqual([])
+  })
+
+  it('expands station names into broader variants', () => {
+    expect(buildQueryVariants('人民广场地铁站')).toEqual(['人民广场地铁站', '人民广场站', '人民广场'])
+    expect(buildQueryVariants('上海地铁人民广场站')).toEqual([
+      '上海地铁人民广场站',
+      '人民广场站',
+      '人民广场',
+    ])
+    expect(buildQueryVariants('瑞金医院')).toEqual(['瑞金医院'])
+    expect(buildQueryVariants('')).toEqual([])
+  })
+
+  it('merges results from query variants and dedupes', async () => {
+    const station = feature({
+      name: '人民广场',
+      geometry: { type: 'Point', coordinates: [121.4752, 31.2329] },
+      osm_value: 'station',
+      osm_key: 'railway',
+    })
+    const fetchMock = vi.fn((url) => {
+      const q = new URL(url).searchParams.get('q')
+      if (q === '人民广场地铁站') return Promise.resolve({ ok: true, json: async () => ({ features: [] }) })
+      return Promise.resolve({ ok: true, json: async () => ({ features: [station] }) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await searchPlacesOnline('人民广场地铁站', { lat: 31.2304, lng: 121.4737, limit: 6 })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(result.ok).toBe(true)
+    expect(result.places).toHaveLength(1)
+    expect(result.places[0]).toMatchObject({ name: '人民广场', kind: 'station' })
+  })
+
+  it('prioritises nearby POIs over transit stops', async () => {
+    const make = (osmId, osmValue, coordinates) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates },
+      properties: {
+        name: '中山医院',
+        city: '上海市',
+        osm_type: 'N',
+        osm_id: osmId,
+        osm_value: osmValue,
+      },
+    })
+    const busStop = make(11, 'bus_stop', [121.474, 31.231])
+    const hospital = make(12, 'hospital', [121.46, 31.2])
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ features: [busStop, hospital] }) })
+    )
+    const result = await searchPlacesOnline('中山医院', { lat: 31.2304, lng: 121.4737, limit: 5 })
+    expect(result.places.map((place) => place.kind)).toEqual(['hospital', 'bus_stop'])
+  })
+
+  it('ranks exact name matches above fuzzy matches', async () => {
+    const make = (name, osmId, coordinates) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates },
+      properties: { name, city: '上海市', osm_type: 'N', osm_id: osmId, osm_value: 'hospital' },
+    })
+    const fuzzy = make('中德医院', 21, [121.473, 31.232])
+    const exact = make('中山医院', 22, [121.46, 31.2])
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ features: [fuzzy, exact] }) })
+    )
+    const result = await searchPlacesOnline('中山医院', { lat: 31.2304, lng: 121.4737, limit: 4 })
+    expect(result.places.map((place) => place.name)).toEqual(['中山医院', '中德医院'])
   })
 
   it('does not query for short input', async () => {

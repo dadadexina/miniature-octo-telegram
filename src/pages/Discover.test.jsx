@@ -13,6 +13,11 @@ const users = vi.hoisted(() => ({
 const storeState = vi.hoisted(() => ({ friends: [] }))
 const searchMock = vi.hoisted(() => vi.fn())
 const planRouteMock = vi.hoisted(() => vi.fn())
+const weatherMock = vi.hoisted(() => vi.fn())
+
+vi.mock('../lib/weather', () => ({
+  fetchWeather: weatherMock,
+}))
 
 vi.mock('../lib/routing', async (importOriginal) => {
   const actual = await importOriginal()
@@ -68,6 +73,18 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
   searchMock.mockReset()
   searchMock.mockResolvedValue({ ok: true, places: [] })
+  weatherMock.mockReset()
+  weatherMock.mockResolvedValue({
+    temperature: 9,
+    high: 14,
+    low: 6,
+    feelsLike: 5.5,
+    humidity: 69,
+    windSpeed: 13.6,
+    isDay: true,
+    code: 0,
+    label: '晴',
+  })
   planRouteMock.mockReset()
   planRouteMock.mockImplementation(({ mode }) =>
     Promise.resolve({
@@ -149,6 +166,9 @@ describe('Discover 关系网页', () => {
     expect(screen.getByTestId('globe-coords').textContent).toContain('±6.4 m')
     expect(screen.queryByTestId('globe-locate-prompt')).toBeNull()
     expect(localStorage.getItem('globe.geoAsked')).toBe('1')
+    await waitFor(() =>
+      expect(screen.getByTestId('globe-weather').textContent).toContain('9° 晴 · 6~14° · 湿度 69%')
+    )
 
     cleanup()
     setup()
@@ -235,6 +255,16 @@ describe('Discover 关系网页', () => {
     await waitFor(() => expect(title.textContent).toContain('步行导航 · 外滩'))
     expect(planRouteMock).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'walking' }))
     expect(screen.getByTestId('globe-mode-walk').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('点击我的位置按钮立即定位并放大到当前位置', async () => {
+    setup()
+    const button = await screen.findByTestId('globe-my-location')
+    expect(button.textContent).toContain('我的位置')
+    fireEvent.click(button)
+    await waitFor(() =>
+      expect(screen.getByTestId('globe-coords').textContent).toContain('N 31.230400°  E 121.473700°')
+    )
   })
 
   it('授权后持续接收实时定位并更新坐标', async () => {

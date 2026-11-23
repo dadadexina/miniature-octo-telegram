@@ -1,4 +1,23 @@
+import { haversineKm } from './geo'
+
 const ENDPOINT = 'https://photon.komoot.io/api/'
+const DEMOTED_KINDS = new Set([
+  'bus_stop',
+  'bicycle_rental',
+  'parking',
+  'taxi',
+  'fuel',
+  'service',
+  'residential',
+  'unclassified',
+  'footway',
+  'path',
+  'primary',
+  'secondary',
+  'tertiary',
+  'trunk',
+  'motorway',
+])
 const CACHE_LIMIT = 48
 const cache = new Map()
 
@@ -61,6 +80,35 @@ export function mapPhotonFeature(feature, index = 0) {
   }
 }
 
+const STATION_SUFFIXES = ['地铁站', '轻轨站', '火车站', '站']
+
+function stripStationSuffix(text) {
+  for (const suffix of STATION_SUFFIXES) {
+    if (text.endsWith(suffix)) return text.slice(0, text.length - suffix.length).trim()
+  }
+  return ''
+}
+
+export function buildQueryVariants(query) {
+  const base = String(query || '').trim()
+  if (!base) return []
+  const variants = []
+  const add = (value) => {
+    const text = String(value || '').trim()
+    if (text.length < 2 || text === base || variants.includes(text)) return
+    variants.push(text)
+  }
+  const withoutCityMetro = base.replace(/^[\u4e00-\u9fa5]{2,6}地铁/, '')
+  if (withoutCityMetro !== base) add(withoutCityMetro)
+  const core = stripStationSuffix(withoutCityMetro)
+  if (core) add(core)
+  const withoutMetro = base.replace(/地铁|轨道交通/g, '').trim()
+  if (withoutMetro !== base) add(withoutMetro)
+  add(stripStationSuffix(withoutMetro))
+  add(stripStationSuffix(base))
+  return [base, ...variants].slice(0, 3)
+}
+
 export function mergePlaceResults(online = [], local = []) {
   const merged = []
   const seen = new Set()
@@ -87,6 +135,18 @@ function buildUrl(query, { lat, lng, limit }) {
   return url.toString()
 }
 
+async function requestPlaces(text, { lat, lng, limit, signal }) {
+  const response = await fetch(buildUrl(text, { lat, lng, limit }), {
+    headers: { Accept: 'application/json' },
+    signal,
+  })
+  if (!response.ok) throw new Error('地名搜索暂不可用')
+  const payload = await response.json()
+  return (payload.features || [])
+    .map((feature, index) => mapPhotonFeature(feature, index))
+    .filter(Boolean)
+}
+
 export async function searchPlacesOnline(query, options = {}) {
   const text = String(query || '').trim()
   if (text.length < 2) return { ok: true, places: [] }
@@ -95,6 +155,7 @@ export async function searchPlacesOnline(query, options = {}) {
   const limit = Math.min(12, Math.max(1, Number(options.limit) || 8))
   const key = `${text.toLowerCase()}|${Number.isFinite(lat) ? lat.toFixed(2) : ''}|${Number.isFinite(lng) ? lng.toFixed(2) : ''}|${limit}`
   if (cache.has(key)) return { ok: true, places: cache.get(key) }
+  const variants = buildQueryVariants(text)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 8000)
   const forwardAbort = () => controller.abort()
@@ -103,15 +164,56 @@ export async function searchPlacesOnline(query, options = {}) {
     else options.signal.addEventListener('abort', forwardAbort, { once: true })
   }
   try {
-    const response = await fetch(buildUrl(text, { lat, lng, limit }), {
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
+    const settled = await Promise.allSettled(
+      variants.map((variant) =>
+        requestPlaces(variant, {
+          lat: Number.isFinite(lat) ? lat : undefined,
+          lng: Number.isFinite(lng) ? lng : undefined,
+          limit,
+          signal: controller.signal,
+        })
+      )
+    )
+    const seen = new Set()
+    const candidates = []
+    settled.forEach((result, variantIndex) => {
+      if (result.status !== 'fulfilled') return
+      result.value.forEach((place) => {
+        const placeKey = `${place.name}|${place.lat.toFixed(3)}|${place.lng.toFixed(3)}`
+        if (seen.has(placeKey)) return
+        seen.add(placeKey)
+        candidates.push({ place, variantIndex })
+      })
     })
-    if (!response.ok) throw new Error('地名搜索暂不可用')
-    const payload = await response.json()
-    const places = (payload.features || [])
-      .map((feature, index) => mapPhotonFeature(feature, index))
-      .filter(Boolean)
+    if (!candidates.length) {
+      const failure = settled.find((result) => result.status === 'rejected')
+      throw failure?.reason || new Error('没有找到匹配地点')
+    }
+    const hasBias = Number.isFinite(lat) && Number.isFinite(lng)
+    const normalizedVariants = variants.map((variant) => variant.replace(/\s+/g, ''))
+    const matchRankOf = (place) => {
+      const name = String(place.name || '').replace(/\s+/g, '')
+      if (!name) return 3
+      if (normalizedVariants.includes(name)) return 0
+      if (normalizedVariants.some((variant) => variant.includes(name) || name.includes(variant))) {
+        return 1
+      }
+      return 2
+    }
+    const rankOf = (place) => (DEMOTED_KINDS.has(place.kind) ? 1 : 0)
+    const distanceOf = (place) => (hasBias ? haversineKm({ lat, lng }, place) : 0)
+    candidates.sort((a, b) => {
+      const match = matchRankOf(a.place) - matchRankOf(b.place)
+      if (match !== 0) return match
+      const rank = rankOf(a.place) - rankOf(b.place)
+      if (rank !== 0) return rank
+      if (hasBias) {
+        const distance = distanceOf(a.place) - distanceOf(b.place)
+        if (Math.abs(distance) > 0.0001) return distance
+      }
+      return a.variantIndex - b.variantIndex
+    })
+    const places = candidates.slice(0, limit).map((item) => item.place)
     if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value)
     cache.set(key, places)
     return { ok: true, places }

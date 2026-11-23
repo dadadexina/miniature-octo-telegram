@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { formatCoords } from '../lib/tiles'
 import { canUseWebGL, deviceClock, deviceDaylight } from '../lib/globe'
 import {
@@ -24,6 +25,7 @@ import {
 } from '../lib/geo'
 import { mergePlaceResults, searchPlacesOnline } from '../lib/geocode'
 import { planRoute, routeModeLabel, straightRoute } from '../lib/routing'
+import { fetchWeather } from '../lib/weather'
 import { searchPlaces } from '../lib/places'
 
 const DASH_PATTERNS = [
@@ -118,6 +120,9 @@ export default function DiscoverGlobe({
   const [results, setResults] = useState([])
   const [preview, setPreview] = useState(null)
   const [nav, setNav] = useState(null)
+  const [searchHost, setSearchHost] = useState(null)
+  const [viewCenter, setViewCenter] = useState(null)
+  const [weather, setWeather] = useState({ status: 'idle', data: null, error: '' })
 
   const locate = useCallback(async () => {
     markAskedLocation()
@@ -315,7 +320,15 @@ export default function DiscoverGlobe({
     setSearching(true)
     setSearchError('')
     const timer = setTimeout(async () => {
-      const me = myPosRef.current || meRef.current.coords
+      let me = myPosRef.current || meRef.current.coords
+      if (!me && mapRef.current) {
+        try {
+          const center = mapRef.current.getCenter()
+          me = { lat: center.lat, lng: center.lng }
+        } catch {
+          me = null
+        }
+      }
       const local = localPlaceResults(text)
       const res = await searchPlacesOnline(text, {
         lat: me?.lat,
@@ -356,6 +369,7 @@ export default function DiscoverGlobe({
     let pauseUntil = 0
     let dragging = false
     let markers = []
+    let searchSlot = null
 
     const clearMarkers = () => {
       markers.forEach((marker) => {
@@ -420,6 +434,37 @@ export default function DiscoverGlobe({
       } catch {
         // 控件不可用时忽略
       }
+
+      try {
+        const controlHost = container.querySelector('.maplibregl-ctrl-bottom-right')
+        const zoomGroup = controlHost?.querySelector('.maplibregl-ctrl-group')
+        if (controlHost && zoomGroup) {
+          searchSlot = document.createElement('div')
+          searchSlot.className = 'maplibregl-ctrl maplibregl-ctrl-group'
+          controlHost.insertBefore(searchSlot, zoomGroup)
+          setSearchHost(searchSlot)
+        }
+      } catch {
+        // 控件容器尚未就绪时使用默认位置
+      }
+
+      const syncViewCenter = () => {
+        if (!map) return
+        try {
+          const center = map.getCenter()
+          setViewCenter((prev) =>
+            prev &&
+            Math.abs(prev.lat - center.lat) < 0.002 &&
+            Math.abs(prev.lng - center.lng) < 0.002
+              ? prev
+              : { lat: center.lat, lng: center.lng }
+          )
+        } catch {
+          // 地图尚未就绪时忽略
+        }
+      }
+      map.on('moveend', syncViewCenter)
+      syncViewCenter()
 
       try {
         resizeObserver = new ResizeObserver(() => {
@@ -702,6 +747,11 @@ export default function DiscoverGlobe({
       clearInterval(flowTimer)
       clearMarkers()
       clearDestMarkers()
+      if (searchSlot) {
+        searchSlot.remove()
+        setSearchHost((prev) => (prev === searchSlot ? null : prev))
+        searchSlot = null
+      }
       if (map) {
         try {
           map.remove()
@@ -724,6 +774,31 @@ export default function DiscoverGlobe({
     }
     clearTimeout(copyTimerRef.current)
     copyTimerRef.current = setTimeout(() => setCopied(''), 1500)
+  }
+
+  const goToMyLocation = async () => {
+    const map = mapRef.current
+    const coords = myPosRef.current || meRef.current.coords
+    if (coords) {
+      try {
+        map?.easeTo({ center: [coords.lng, coords.lat], zoom: 16, duration: 900 })
+      } catch {
+        // 地图尚未就绪时忽略
+      }
+      if (!myPosRef.current) locate()
+      return
+    }
+    const res = await locate()
+    if (!res?.ok) return
+    try {
+      mapRef.current?.easeTo({
+        center: [res.location.lng, res.location.lat],
+        zoom: 16,
+        duration: 900,
+      })
+    } catch {
+      // 地图尚未就绪时忽略
+    }
   }
 
   const selectPlace = (place) => {
@@ -792,6 +867,22 @@ export default function DiscoverGlobe({
   }, [])
 
   const currentDate = new Date(now)
+  const weatherSummary =
+    weather.status === 'ready' && weather.data
+      ? `${Math.round(weather.data.temperature)}° ${weather.data.label}${
+          Number.isFinite(weather.data.high) && Number.isFinite(weather.data.low)
+            ? ` · ${Math.round(weather.data.low)}~${Math.round(weather.data.high)}°`
+            : ''
+        } · 湿度 ${Math.round(weather.data.humidity)}%`
+      : weather.status === 'error'
+        ? '天气暂不可用'
+        : '天气加载中'
+  const searchIcon = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="m16 16 4.2 4.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
   const effectiveCoords = myPos || meCoords
   const geoMessage =
     geoState === 'denied' || geoState === 'error' || geoState === 'unsupported' ? geoError : ''
@@ -830,6 +921,34 @@ export default function DiscoverGlobe({
     }
   }, [effectiveCoords, nav, startNav])
 
+  useEffect(() => {
+    const center = viewCenter || myPos || meCoords
+    if (!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lng)) {
+      return undefined
+    }
+    const controller = new AbortController()
+    let alive = true
+    setWeather((prev) => ({ ...prev, status: prev.data ? 'ready' : 'loading' }))
+    const timer = setTimeout(async () => {
+      try {
+        const data = await fetchWeather({
+          lat: center.lat,
+          lng: center.lng,
+          signal: controller.signal,
+        })
+        if (alive) setWeather({ status: 'ready', data, error: '' })
+      } catch (err) {
+        if (!alive || err?.name === 'AbortError') return
+        setWeather({ status: 'error', data: null, error: err?.message || '天气暂不可用' })
+      }
+    }, 400)
+    return () => {
+      alive = false
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [viewCenter?.lat, viewCenter?.lng, myPos?.lat, myPos?.lng, meCoords?.lat, meCoords?.lng])
+
   return (
     <div className="relative h-full overflow-hidden bg-eink-paper text-eink-ink">
       <div
@@ -864,18 +983,32 @@ export default function DiscoverGlobe({
         </div>
       ) : null}
 
-      <button
-        type="button"
-        data-testid="globe-search-toggle"
-        aria-label="搜索地名、商户或经纬度"
-        className="absolute bottom-24 right-14 z-30 flex h-8 w-8 items-center justify-center border border-eink-line/30 bg-eink-bar/95 text-eink-ink shadow-sm active:bg-eink-surface"
-        onClick={() => setSearchOpen(true)}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
-          <path d="m16 16 4.2 4.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      </button>
+      {searchHost
+        ? createPortal(
+            <button
+              type="button"
+              data-testid="globe-search-toggle"
+              aria-label="搜索地名、商户或经纬度"
+              title="搜索地名、商户或经纬度"
+              className="text-eink-ink active:bg-eink-surface"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              onClick={() => setSearchOpen(true)}
+            >
+              {searchIcon}
+            </button>,
+            searchHost
+          )
+        : (
+            <button
+              type="button"
+              data-testid="globe-search-toggle"
+              aria-label="搜索地名、商户或经纬度"
+              className="absolute bottom-24 right-14 z-30 flex h-8 w-8 items-center justify-center border border-eink-line/30 bg-eink-bar/95 text-eink-ink shadow-sm active:bg-eink-surface"
+              onClick={() => setSearchOpen(true)}
+            >
+              {searchIcon}
+            </button>
+          )}
 
       {searchOpen ? (
         <div className="absolute inset-0 z-40">
@@ -965,7 +1098,7 @@ export default function DiscoverGlobe({
       <div className="pointer-events-none absolute inset-x-0 top-3 z-10 text-center">
         <p className="text-[10px] tracking-[0.08em] text-eink-sub">{meName} 的地球 · 全球实时天气</p>
         <p data-testid="globe-weather" className="mt-0.5 text-[10px] tracking-[0.06em] text-eink-faint">
-          此刻 · 本地 {deviceClock(currentDate)} · {deviceDaylight(currentDate)} · 城市实时天气
+          此刻 · 本地 {deviceClock(currentDate)} · {deviceDaylight(currentDate)} · {weatherSummary}
         </p>
       </div>
 
@@ -1122,7 +1255,20 @@ export default function DiscoverGlobe({
 
       <div className="absolute bottom-20 left-2 z-20 max-w-[70%] border border-eink-divider bg-eink-bar/95 px-2 py-1.5 text-[10px] shadow-sm">
         <div className="flex items-center gap-2">
-          <span className="tracking-[0.08em] text-eink-faint">我的位置</span>
+          <button
+            type="button"
+            data-testid="globe-my-location"
+            aria-label="我的位置，点击放大到当前位置"
+            title="回到我的位置"
+            className="flex items-center gap-1 tracking-[0.08em] text-eink-faint active:text-eink-ink"
+            onClick={goToMyLocation}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="6.5" stroke="currentColor" strokeWidth="1.9" />
+              <path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+            </svg>
+            我的位置
+          </button>
           <button
             type="button"
             data-testid="globe-copy-coords"
