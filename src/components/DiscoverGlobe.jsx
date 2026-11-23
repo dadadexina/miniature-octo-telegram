@@ -27,6 +27,7 @@ import { mergePlaceResults, searchPlacesOnline } from '../lib/geocode'
 import { planRoute, routeModeLabel, straightRoute } from '../lib/routing'
 import { fetchWeather } from '../lib/weather'
 import { searchPlaces } from '../lib/places'
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 
 const DASH_PATTERNS = [
   [2, 2],
@@ -397,6 +398,11 @@ export default function DiscoverGlobe({
       let mod
       try {
         const gl = await import('maplibre-gl')
+        try {
+          gl.setWorkerUrl?.(maplibreWorkerUrl)
+        } catch {
+          // 旧版本不支持自定义 worker 地址时沿用默认
+        }
         mod = gl.default || gl
       } catch {
         if (!cancelled) setFallback(true)
