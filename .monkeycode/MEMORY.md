@@ -165,13 +165,14 @@ This file records user instructions, preferences, and teachings for reference in
   - 排序连接的配对键注意 delete 策略也应对双方开放(split 1 或 split 2 命中 auth.uid()),只判 split 1 会造成仅字典序小的一方可删
   - 渲染私有对象一律 `createSignedUrl(path, expiresIn)`(消息图 900s),签名结果不入库;每次挂载组件重新签
 
-[功能完成后推送 GitHub]
-- Date: 2026-11-21
-- Context: 用户要求下次完成或新增功能后，由 Agent 推送到 GitHub 仓库
+[功能完成后推送 GitHub，并代办 SQL 与部署]
+- Date: 2026-11-23（原 2026-11-21，已合并）
+- Context: 用户要求功能完成/修改后由 Agent 推送；并授权 Agent 直接执行 SQL 与部署，无需逐次确认
 - Category: Workflow & Collaboration
 - Instructions:
   - 完成/新增功能后，先 `npm run lint`、`npm run test`、`npm run build` 全部通过，再 commit 并 push 到 `origin/main`
   - 推送前先 `git status`/`git diff` 确认只包含本次改动，推送后在回复中说明 commit 与结果
+  - 用户已授权 Agent 直接执行 SQL 与部署：涉及 schema 的改动同步 `src/lib/sql.js`，默认应用到 staging；生产库变更需在回复中注明已执行/待执行
   - 若当次用户指定分支或 PR 流程，以当次指示为准
 
 [环境配置与部署约束]
@@ -185,5 +186,6 @@ This file records user instructions, preferences, and teachings for reference in
   - e2e 用户名须匹配 `^[A-Za-z0-9]{8,15}$` 且含字母数字，否则 `profiles_fill_public_id` 会替换为随机 ID
   - `scripts/export-cloud-sql.mjs` 必须用函数替换 `.replaceAll(k, () => v)`，否则替换串中的 `$$` 折叠为 `$` 破坏 dollar-quote
   - avatar-sync 实时头像用例默认跳过，`E2E_AVATAR_SYNC=1` 才运行；生产函数 ACL 仅 `authenticated` 可执行四个关系判定函数
-  - 仓库 2026-11-22 曾转私有导致 Vercel 部署被拦截，同日已改回 public；Actions 与 Vercel 均恢复公开仓库模式
-  - 用于自动化的两个 Supabase PAT 已被用户吊销；后续 Management API 操作需用户提供新 PAT
+  - 仓库 2026-11-23 由用户再次转为私有；此前 2026-11-22 转私有曾导致 Vercel 部署被拦截，首次 push 后需确认 Vercel/Actions 是否仍触发，未触发则提示用户授权 Vercel 访问私有仓库
+  - 2026-11-23 用户提供两个组织级 Supabase PAT，均存于 `.monkeycode/secrets/`（gitignore、600）：`supabase-prod-token.txt` 覆盖 org `dlqxyvklimrwdexpspei`（生产 ref `ljlvqnhzewzxpyhgumnp`），另一枚覆盖 staging org `cuiinllsqxcslytifwxz`；Management API 已验证可读项目/keys，`POST /v1/projects/<ref>/database/query` 在生产执行 `select 1` 返回 201
+  - 两个项目名都叫 `dadadexina's Project`，命令行与脚本一律用 ref 区分，勿按 name 匹配
