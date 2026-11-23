@@ -1,11 +1,12 @@
 import { lazy, Suspense } from 'react'
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useStore } from './store'
 import CallProvider from './components/CallProvider'
 import Layout from './pages/Layout'
 import Chats from './pages/Chats'
 import ProfileGate from './pages/ProfileGate'
 import useRoutePreload from './hooks/useRoutePreload'
+import { isRecoveryCallback } from './lib/recovery'
 
 const Login = lazy(() => import('./pages/Login'))
 const Contacts = lazy(() => import('./pages/Contacts'))
@@ -48,12 +49,26 @@ function PageScreen() {
   )
 }
 
+function RecoveryRedirect() {
+  const location = useLocation()
+  if (location.pathname !== '/reset-password' && isRecoveryCallback(location)) {
+    return (
+      <Navigate
+        to={{ pathname: '/reset-password', search: location.search, hash: location.hash }}
+        replace
+      />
+    )
+  }
+  return null
+}
+
 export default function App() {
   const { currentUser, authReady } = useStore()
   useRoutePreload(Boolean(authReady && currentUser))
 
   return (
     <div className="mx-auto h-full max-w-md overflow-hidden border-x border-eink-divider bg-eink-paper">
+      <RecoveryRedirect />
       <CallProvider>
         <Suspense fallback={<BootScreen />}>
           <Routes>

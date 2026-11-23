@@ -10,6 +10,18 @@ export const isSupabaseConfigured = Boolean(
   import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY,
 )
 
+if (typeof window !== 'undefined') {
+  const recoveryHash = window.location.hash || ''
+  const isRecovery = new URLSearchParams(recoveryHash.replace(/^#/, '')).get('type') === 'recovery'
+  if (isRecovery && window.location.pathname !== '/reset-password') {
+    window.history.replaceState(
+      null,
+      '',
+      `/reset-password${window.location.search}${recoveryHash}`,
+    )
+  }
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   realtime: {
     params: {
