@@ -98,6 +98,10 @@ export function earthRotationAngle(elapsedMs) {
   return elapsed * EARTH_ROTATION_RAD_PER_MS * EARTH_ROTATION_SPEED_SCALE
 }
 
+export function earthRotationDegrees(elapsedMs) {
+  return (earthRotationAngle(elapsedMs) * 180) / Math.PI
+}
+
 export function smoothstep(edge0, edge1, value) {
   const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)))
   return t * t * (3 - 2 * t)

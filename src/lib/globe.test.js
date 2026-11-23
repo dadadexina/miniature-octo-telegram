@@ -7,6 +7,7 @@ import {
   buildMapPatchGeometry,
   citySpread,
   earthRotationAngle,
+  earthRotationDegrees,
   hashString,
   pointFor,
   smoothstep,
@@ -95,6 +96,12 @@ describe('earthRotationAngle', () => {
   it('非法时长按零处理', () => {
     expect(earthRotationAngle(Number.NaN)).toBe(0)
     expect(earthRotationAngle(undefined)).toBe(0)
+  })
+
+  it('角度换算成经度度数时一个恒星日为 360 度', () => {
+    expect(earthRotationDegrees(0)).toBe(0)
+    expect(earthRotationDegrees(SIDEREAL_DAY_MS)).toBeCloseTo(360)
+    expect(earthRotationDegrees(SIDEREAL_DAY_MS / 4)).toBeCloseTo(90)
   })
 })
 

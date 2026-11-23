@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { formatCoords } from '../lib/tiles'
-import { canUseWebGL, deviceClock, deviceDaylight } from '../lib/globe'
+import { canUseWebGL, deviceClock, deviceDaylight, earthRotationDegrees } from '../lib/globe'
 import {
   applyMapTheme,
   buildArcsGeoJSON,
@@ -724,7 +724,7 @@ export default function DiscoverGlobe({
         if (myPosRef.current || destinationRef.current) return
         const center = map.getCenter()
         try {
-          map.setCenter([wrapLng(center.lng + dt * 0.0022), center.lat])
+          map.setCenter([wrapLng(center.lng + earthRotationDegrees(dt)), center.lat])
         } catch {
           // 相机被约束时忽略
         }
