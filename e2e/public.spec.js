@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test.describe('公开页冒烟（无需后端凭据）', () => {
   test('登录页渲染与必填校验', async ({ page }) => {
     await page.goto('/login')
-    await expect(page.getByRole('heading', { name: '邮箱登录 / 注册' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '登录 / 注册' })).toBeVisible()
     await page.getByRole('button', { name: '登录', exact: true }).click()
     await expect(page.getByText('请输入邮箱和密码')).toBeVisible()
   })
