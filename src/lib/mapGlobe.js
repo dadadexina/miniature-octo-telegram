@@ -343,7 +343,6 @@ export function buildRouteLine(route) {
         type: 'Feature',
         properties: {
           mode: route.mode === 'driving' ? 'driving' : 'walking',
-          fallback: Boolean(route.fallback),
         },
         geometry: { type: 'LineString', coordinates },
       },

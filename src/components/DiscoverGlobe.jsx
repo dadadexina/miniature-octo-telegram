@@ -25,7 +25,7 @@ import {
   watchLocation,
 } from '../lib/geo'
 import { mergePlaceResults, searchPlacesOnline } from '../lib/geocode'
-import { planRoute, routeModeLabel, straightRoute } from '../lib/routing'
+import { planRoute, routeModeLabel } from '../lib/routing'
 import { fetchWeather } from '../lib/weather'
 import {
   focusLinks,
@@ -42,6 +42,16 @@ import OnlineDot from './OnlineDot'
 import WorldChat from './WorldChat'
 import { searchPlaces } from '../lib/places'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
+
+function friendlyRouteError(message) {
+  const text = String(message || '')
+  if (text.includes('超时')) return '路线服务响应超时，请重试'
+  if (text.includes('429') || text.includes('繁忙')) return '路线服务繁忙，请稍后重试'
+  if (text.includes('未找到')) return '未找到可行路线，请换个目的地或出行方式'
+  if (text.includes('不支持')) return '暂不支持该出行方式'
+  if (text.includes('坐标')) return '缺少起终点坐标，请重新选择地点'
+  return '路线暂时无法获取，请重试'
+}
 
 const DASH_PATTERNS = [
   [2, 2],
@@ -698,11 +708,7 @@ export default function DiscoverGlobe({
         if (!map.getSource('route')) {
           map.addSource('route', { type: 'geojson', data: EMPTY_FC })
           const routeLayout = { 'line-cap': 'round', 'line-join': 'round' }
-          const plannedFilter = (mode) => [
-            'all',
-            ['==', ['get', 'mode'], mode],
-            ['!=', ['get', 'fallback'], true],
-          ]
+          const plannedFilter = (mode) => ['==', ['get', 'mode'], mode]
           map.addLayer({
             id: 'route-driving',
             type: 'line',
@@ -726,19 +732,6 @@ export default function DiscoverGlobe({
               'line-width': 3.2,
               'line-opacity': 0.95,
               'line-dasharray': [1.6, 1.3],
-            },
-          })
-          map.addLayer({
-            id: 'route-fallback',
-            type: 'line',
-            source: 'route',
-            filter: ['==', ['get', 'fallback'], true],
-            layout: routeLayout,
-            paint: {
-              'line-color': ROUTE_COLOR,
-              'line-width': 2.4,
-              'line-opacity': 0.55,
-              'line-dasharray': [0.7, 1.2],
             },
           })
         }
@@ -940,30 +933,27 @@ export default function DiscoverGlobe({
       navSeqRef.current = seq
       const controller = new AbortController()
       navAbortRef.current = controller
-      const previewRoute = straightRoute(from, place, mode)
-      const pendingRoute = previewRoute ? { ...previewRoute, pending: true } : null
-      routeRef.current = pendingRoute
+      routeRef.current = null
       routeSyncRef.current?.()
-      setNav({ place, mode, status: 'ready', route: pendingRoute, origin: from })
+      setNav({ place, mode, status: 'loading', route: null, origin: from, error: '' })
       try {
         const route = await planRoute({ from, to: place, mode, signal: controller.signal })
         if (navSeqRef.current !== seq) return
         routeRef.current = route
-        setNav({ place, mode, status: 'ready', route, origin: from })
+        setNav({ place, mode, status: 'ready', route, origin: from, error: '' })
         routeSyncRef.current?.()
       } catch (err) {
         if (navSeqRef.current !== seq || err?.name === 'AbortError') return
-        if (!pendingRoute) {
-          setNav({ place, mode, status: 'error', route: null, origin: from })
-          return
-        }
-        routeRef.current = {
-          ...pendingRoute,
-          pending: false,
-          error: err?.message || '道路路线不可用',
-        }
-        setNav({ place, mode, status: 'ready', route: routeRef.current, origin: from })
+        routeRef.current = null
         routeSyncRef.current?.()
+        setNav({
+          place,
+          mode,
+          status: 'error',
+          route: null,
+          origin: from,
+          error: err?.message || '',
+        })
       }
     },
     [locate]
@@ -1104,13 +1094,15 @@ export default function DiscoverGlobe({
       ? geoState === 'loading'
         ? '正在获取我的位置...'
         : geoError || '需要先获取你的位置才能规划路线'
-      : nav.status === 'error'
-        ? '路线规划失败，请重试'
-        : arrived
-          ? '已到达目的地附近'
-          : navOrigin && navRoute
-            ? `距目的地 ${formatDistance(navDistanceKm)} · 全程 ${formatDistance(navRoute.distanceKm)} · 约 ${navRoute.durationMin} 分钟 · 向${navHeading}`
-            : '未获取到我的位置'
+      : nav.status === 'loading'
+        ? `正在为你规划${navModeLabel}路线…`
+        : nav.status === 'error'
+          ? friendlyRouteError(nav.error)
+          : arrived
+            ? '已到达目的地附近'
+            : navOrigin && navRoute
+              ? `距目的地 ${formatDistance(navDistanceKm)} · 全程 ${formatDistance(navRoute.distanceKm)} · 约 ${navRoute.durationMin} 分钟 · 向${navHeading}`
+              : '未获取到我的位置'
 
   useEffect(() => {
     if (!nav || !effectiveCoords) return
@@ -1631,23 +1623,18 @@ export default function DiscoverGlobe({
             >
               {nav.status === 'need-location'
                 ? '待定位'
-                : nav.status === 'error'
-                  ? '规划失败'
-                  : arrived
-                    ? '已到达'
-                    : '导航中'}
+                : nav.status === 'loading'
+                  ? '规划中'
+                  : nav.status === 'error'
+                    ? '规划失败'
+                    : arrived
+                      ? '已到达'
+                      : '导航中'}
             </span>
           </div>
           <p data-testid="globe-route-status" className="mt-0.5 text-[10px] text-eink-sub tabular-nums">
             {navStatus}
           </p>
-          {nav.status === 'ready' && navRoute?.fallback ? (
-            <p data-testid="globe-route-fallback" className="mt-0.5 text-[10px] text-eink-faint">
-              {navRoute.pending
-                ? '正在获取道路路线，当前先按直线示意'
-                : '当前按直线示意'}
-            </p>
-          ) : null}
           {usingMapOrigin && nav.status !== 'need-location' ? (
             <p data-testid="globe-route-origin" className="mt-0.5 text-[10px] text-eink-faint">
               未获取定位，暂从地图中心出发
@@ -1680,6 +1667,16 @@ export default function DiscoverGlobe({
             >
               步行
             </button>
+            {nav.status === 'error' ? (
+              <button
+                type="button"
+                data-testid="globe-route-retry"
+                className="min-h-8 border border-eink-line/40 px-2.5 py-1 text-[12px] text-eink-sub active:bg-eink-surface"
+                onClick={() => startNav(nav.place, nav.mode)}
+              >
+                重新规划
+              </button>
+            ) : null}
             {!effectiveCoords ? (
               <button
                 type="button"

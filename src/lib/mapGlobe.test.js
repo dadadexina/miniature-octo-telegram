@@ -83,12 +83,12 @@ describe('mapGlobe', () => {
       [121.48, 31.235],
       [121.49, 31.24],
     ]
-    const geo = buildRouteLine({ mode: 'driving', coordinates, fallback: false })
+    const geo = buildRouteLine({ mode: 'driving', coordinates })
     expect(geo.features).toHaveLength(1)
     expect(geo.features[0].geometry.coordinates).toEqual(coordinates)
-    expect(geo.features[0].properties).toEqual({ mode: 'driving', fallback: false })
-    const walk = buildRouteLine({ mode: 'walking', coordinates, fallback: true })
-    expect(walk.features[0].properties).toEqual({ mode: 'walking', fallback: true })
+    expect(geo.features[0].properties).toEqual({ mode: 'driving' })
+    const walk = buildRouteLine({ mode: 'walking', coordinates })
+    expect(walk.features[0].properties).toEqual({ mode: 'walking' })
     expect(buildRouteLine(null).features).toHaveLength(0)
     expect(buildRouteLine({ coordinates: [[0, 0]] }).features).toHaveLength(0)
     expect(buildRouteLine({ coordinates: [[0, 0], [NaN, 1]] }).features).toHaveLength(0)

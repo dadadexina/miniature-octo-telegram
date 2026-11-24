@@ -97,7 +97,6 @@ beforeEach(() => {
         [121.48, 31.235],
         [121.49, 31.24],
       ],
-      fallback: false,
     })
   )
   Object.defineProperty(navigator, 'permissions', {
@@ -330,7 +329,7 @@ describe('Discover 关系网页', () => {
     expect(planRouteMock).not.toHaveBeenCalled()
   })
 
-  it('点击导航立即显示直线示意，不阻塞等待路线服务', async () => {
+  it('点击导航立即进入真实路线规划且不绘制直线示意', async () => {
     planRouteMock.mockImplementation(() => new Promise(() => {}))
     searchMock.mockResolvedValue({
       ok: true,
@@ -344,14 +343,14 @@ describe('Discover 关系网页', () => {
 
     const title = await screen.findByTestId('globe-route-title')
     expect(title.textContent).toContain('步行导航 · 外滩')
-    expect(title.textContent).not.toContain('正在规划')
-    expect(screen.getByTestId('globe-route-mode').textContent).toBe('导航中')
-    expect(screen.getByTestId('globe-route-status').textContent).toContain('全程 1.9 km')
-    expect(screen.getByTestId('globe-route-fallback').textContent).toContain('正在获取道路路线')
+    expect(screen.getByTestId('globe-route-mode').textContent).toBe('规划中')
+    expect(screen.getByTestId('globe-route-status').textContent).toContain('正在为你规划步行路线')
+    expect(screen.queryByTestId('globe-route-fallback')).toBeNull()
+    expect(screen.getByTestId('globe-route-status').textContent).not.toContain('全程')
   })
 
-  it('路线服务失败后保留直线示意且不显示不可用错误', async () => {
-    planRouteMock.mockRejectedValue(new Error('路线服务返回 503'))
+  it('路线规划失败时给出易懂提示并可重新规划', async () => {
+    planRouteMock.mockRejectedValueOnce(new Error('路线规划超时'))
     searchMock.mockResolvedValue({
       ok: true,
       places: [{ id: 'osm:6', name: '外滩', lat: 31.24, lng: 121.49, kind: 'attraction' }],
@@ -363,12 +362,20 @@ describe('Discover 关系网页', () => {
     fireEvent.click(screen.getByTestId('globe-route-walk'))
 
     await waitFor(() =>
-      expect(screen.getByTestId('globe-route-fallback').textContent).toContain('当前按直线示意')
+      expect(screen.getByTestId('globe-route-status').textContent).toContain(
+        '路线服务响应超时，请重试'
+      )
     )
+    expect(screen.getByTestId('globe-route-mode').textContent).toBe('规划失败')
+    expect(screen.queryByTestId('globe-route-fallback')).toBeNull()
     const info = screen.getByTestId('globe-route-info')
-    expect(info.textContent).not.toContain('路线服务暂不可用')
+    expect(info.textContent).not.toContain('直线')
+
+    fireEvent.click(screen.getByTestId('globe-route-retry'))
+    await waitFor(() =>
+      expect(screen.getByTestId('globe-route-status').textContent).toContain('全程 1.4 km')
+    )
     expect(screen.getByTestId('globe-route-mode').textContent).toBe('导航中')
-    expect(screen.getByTestId('globe-route-status').textContent).toContain('全程 1.9 km')
   })
 
   it('到达目的地附近时提示已到达', async () => {
