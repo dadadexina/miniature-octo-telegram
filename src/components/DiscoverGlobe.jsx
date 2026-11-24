@@ -20,7 +20,6 @@ import {
   getCurrentLocation,
   haversineKm,
   locationPermissionState,
-  navigationUrl,
   parseLatLngQuery,
   walkMinutes,
   watchLocation,
@@ -1099,7 +1098,6 @@ export default function DiscoverGlobe({
   const navHeading = navBearing === null ? '' : compassLabel(navBearing)
   const arrived = Boolean(navPlace && navOrigin && navDistanceKm < 0.03)
   const navModeLabel = nav ? routeModeLabel(nav.mode) : ''
-  const navMapsHref = navPlace ? navigationUrl(navPlace, nav?.mode) : ''
   const navStatus = !nav
     ? ''
     : nav.status === 'need-location'
@@ -1647,7 +1645,7 @@ export default function DiscoverGlobe({
             <p data-testid="globe-route-fallback" className="mt-0.5 text-[10px] text-eink-faint">
               {navRoute.pending
                 ? '正在获取道路路线，当前先按直线示意'
-                : '当前按直线示意，可打开高德导航获取实际路线'}
+                : '当前按直线示意'}
             </p>
           ) : null}
           {usingMapOrigin && nav.status !== 'need-location' ? (
@@ -1691,17 +1689,6 @@ export default function DiscoverGlobe({
               >
                 开启定位
               </button>
-            ) : null}
-            {navMapsHref ? (
-              <a
-                data-testid="globe-open-maps"
-                href={navMapsHref}
-                target="_blank"
-                rel="noreferrer"
-                className="min-h-8 border border-eink-line/40 px-2.5 py-1 text-[12px] text-eink-sub active:bg-eink-surface"
-              >
-                高德导航
-              </a>
             ) : null}
             <button
               type="button"

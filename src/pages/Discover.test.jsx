@@ -230,9 +230,7 @@ describe('Discover 关系网页', () => {
     expect(screen.getByTestId('globe-route-status').textContent).toContain('向')
     expect(screen.getByTestId('globe-route-mode').textContent).toBe('导航中')
     expect(planRouteMock).toHaveBeenCalledWith(expect.objectContaining({ mode: 'walking' }))
-    const maps = screen.getByTestId('globe-open-maps')
-    expect(maps.getAttribute('href')).toContain('uri.amap.com/navigation')
-    expect(maps.getAttribute('href')).toContain('mode=walk')
+    expect(screen.queryByTestId('globe-open-maps')).toBeNull()
     expect(screen.getByTestId('globe-route-clear').textContent).toBe('结束导航')
   })
 
@@ -350,7 +348,6 @@ describe('Discover 关系网页', () => {
     expect(screen.getByTestId('globe-route-mode').textContent).toBe('导航中')
     expect(screen.getByTestId('globe-route-status').textContent).toContain('全程 1.9 km')
     expect(screen.getByTestId('globe-route-fallback').textContent).toContain('正在获取道路路线')
-    expect(screen.getByTestId('globe-open-maps').getAttribute('href')).toContain('mode=walk')
   })
 
   it('路线服务失败后保留直线示意且不显示不可用错误', async () => {
