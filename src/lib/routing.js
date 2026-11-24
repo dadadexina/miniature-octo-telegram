@@ -1,5 +1,3 @@
-import { haversineKm, walkMinutes } from './geo'
-
 const ROUTE_ENDPOINTS = {
   driving: [
     'https://routing.openstreetmap.de/routed-car/route/v1/driving',
@@ -11,10 +9,8 @@ const ROUTE_ENDPOINTS = {
   ],
 }
 
-const DRIVING_SPEED_KMH = 30
-const DEFAULT_ROUTE_TIMEOUT_MS = 4500
-
-export const ROUTE_MODES = ['driving', 'walking']
+const ROUTE_PROXY_PATH = '/api/route'
+const DEFAULT_ROUTE_TIMEOUT_MS = 10000
 
 export function routeModeLabel(mode) {
   return mode === 'driving' ? '开车' : '步行'
@@ -32,36 +28,24 @@ function validCoord(coord) {
   return Array.isArray(coord) && Number.isFinite(coord[0]) && Number.isFinite(coord[1])
 }
 
-export function straightRoute(from, to, mode = 'walking') {
-  if (!validPoint(from) || !validPoint(to)) return null
-  const safeMode = ROUTE_MODES.includes(mode) ? mode : 'walking'
-  const distanceKm = haversineKm(
-    { lat: Number(from.lat), lng: Number(from.lng) },
-    { lat: Number(to.lat), lng: Number(to.lng) }
-  )
-  const durationMin =
-    safeMode === 'driving'
-      ? Math.max(1, Math.round((distanceKm / DRIVING_SPEED_KMH) * 60))
-      : walkMinutes(distanceKm)
-  return {
-    mode: safeMode,
-    distanceKm,
-    durationMin,
-    coordinates: [
-      [Number(from.lng), Number(from.lat)],
-      [Number(to.lng), Number(to.lat)],
-    ],
-    fallback: true,
-    source: 'straight',
-  }
-}
-
 function routeUrl(base, from, to) {
   const coords = [
     `${Number(from.lng).toFixed(6)},${Number(from.lat).toFixed(6)}`,
     `${Number(to.lng).toFixed(6)},${Number(to.lat).toFixed(6)}`,
   ].join(';')
   return `${base}/${coords}?overview=full&geometries=geojson&alternatives=false&steps=false`
+}
+
+function routeUrls(from, to, mode) {
+  const query = new URLSearchParams({
+    from: `${Number(from.lng).toFixed(6)},${Number(from.lat).toFixed(6)}`,
+    to: `${Number(to.lng).toFixed(6)},${Number(to.lat).toFixed(6)}`,
+    mode,
+  })
+  return [
+    `${ROUTE_PROXY_PATH}?${query.toString()}`,
+    ...ROUTE_ENDPOINTS[mode].map((base) => routeUrl(base, from, to)),
+  ]
 }
 
 function parseRoute(data, mode) {
@@ -77,7 +61,6 @@ function parseRoute(data, mode) {
     coordinates,
     distanceKm: Number(route.distance) / 1000,
     durationMin: Math.max(1, Math.round(Number(route.duration) / 60)),
-    fallback: false,
     source: 'osrm',
   }
 }
@@ -88,6 +71,8 @@ async function requestRoute(url, mode, signal) {
     headers: { Accept: 'application/json' },
   })
   if (!res.ok) throw new Error(`路线服务返回 ${res.status}`)
+  const type = res.headers?.get?.('content-type') || ''
+  if (type && !type.includes('json')) throw new Error('路线服务返回异常')
   return parseRoute(await res.json(), mode)
 }
 
@@ -116,7 +101,8 @@ export async function fetchRoute({
   if (!endpoints) throw new Error('不支持的出行方式')
   if (!validPoint(from) || !validPoint(to)) throw new Error('缺少起终点坐标')
 
-  const controllers = endpoints.map(() => new AbortController())
+  const urls = routeUrls(from, to, mode)
+  const controllers = urls.map(() => new AbortController())
   const abortAll = () => controllers.forEach((controller) => controller.abort())
   const forwardAbort = () => abortAll()
   let timedOut = false
@@ -131,17 +117,20 @@ export async function fetchRoute({
 
   try {
     return await Promise.any(
-      endpoints.map((base, index) =>
-        withDeadline(
-          requestRoute(routeUrl(base, from, to), mode, controllers[index].signal),
-          timeoutMs
-        )
+      urls.map((url, index) =>
+        withDeadline(requestRoute(url, mode, controllers[index].signal), timeoutMs)
       )
     )
   } catch (err) {
     if (signal?.aborted) throw abortError()
     if (timedOut) throw new Error('路线规划超时', { cause: err })
     const errors = err?.errors || [err]
+    const network = errors.find((item) =>
+      /Failed to fetch|NetworkError|Load failed|fetch failed|network request failed/i.test(
+        item?.message || ''
+      )
+    )
+    if (network) throw new Error('网络连接异常，请检查网络后重试', { cause: err })
     const first = errors.find((item) => item?.name !== 'AbortError') || errors[0]
     const message = first instanceof Error ? first.message : '路线服务暂不可用'
     throw new Error(message, { cause: err })
@@ -159,19 +148,14 @@ export async function planRoute({
   signal,
   timeoutMs = DEFAULT_ROUTE_TIMEOUT_MS,
 }) {
-  const fallback = straightRoute(from, to, mode)
   let timer = null
   try {
     return await Promise.race([
       fetchRoute({ from, to, mode, signal, timeoutMs }),
       new Promise((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('路线规划超时')), timeoutMs + 300)
+        timer = setTimeout(() => reject(new Error('路线规划超时')), timeoutMs + 600)
       }),
     ])
-  } catch (err) {
-    if (err?.name === 'AbortError' || signal?.aborted) throw err
-    if (!fallback) throw err
-    return { ...fallback, error: err?.message || '道路路线不可用' }
   } finally {
     clearTimeout(timer)
   }

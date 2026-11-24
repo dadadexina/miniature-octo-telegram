@@ -2,12 +2,19 @@ import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { createRouteApiMiddleware } from './api/route.js'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
 export default defineConfig({
   plugins: [
     react(),
+    {
+      name: 'route-api',
+      configureServer(server) {
+        server.middlewares.use(createRouteApiMiddleware())
+      },
+    },
     VitePWA({
       registerType: 'autoUpdate',
       manifest: false,
