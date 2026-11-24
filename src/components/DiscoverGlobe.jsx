@@ -26,6 +26,7 @@ import {
 import { mergePlaceResults, searchPlacesOnline } from '../lib/geocode'
 import { planRoute, routeModeLabel, straightRoute } from '../lib/routing'
 import { fetchWeather } from '../lib/weather'
+import WorldChat from './WorldChat'
 import { searchPlaces } from '../lib/places'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 
@@ -124,6 +125,7 @@ export default function DiscoverGlobe({
   const [searchHost, setSearchHost] = useState(null)
   const [viewCenter, setViewCenter] = useState(null)
   const [weather, setWeather] = useState({ status: 'idle', data: null, error: '' })
+  const [worldChatOpen, setWorldChatOpen] = useState(false)
 
   const locate = useCallback(async () => {
     markAskedLocation()
@@ -964,6 +966,20 @@ export default function DiscoverGlobe({
         className={`h-full w-full ${fallback ? 'hidden' : ''}`}
       />
 
+      <button
+        type="button"
+        data-testid="globe-world-chat"
+        aria-label="打开世界频道"
+        className="absolute left-2 top-3 z-20 flex items-center gap-1 border border-eink-divider bg-eink-bar/95 px-2 py-1 text-[10px] tracking-[0.08em] text-eink-sub shadow-sm active:bg-eink-surface"
+        onClick={() => setWorldChatOpen(true)}
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 5.5h16v10H9l-5 4v-14Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M8 9h8M8 12h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+        世界
+      </button>
+
       {fallback ? (
         <div data-testid="globe-fallback" className="absolute inset-0 overflow-y-auto px-6 pt-24 pb-32">
           <p className="mb-4 text-center text-[11px] tracking-[0.06em] text-eink-faint">
@@ -1258,6 +1274,8 @@ export default function DiscoverGlobe({
           </div>
         </div>
       ) : null}
+
+      {worldChatOpen ? <WorldChat onClose={() => setWorldChatOpen(false)} /> : null}
 
       <div className="absolute bottom-20 left-2 z-20 max-w-[70%] border border-eink-divider bg-eink-bar/95 px-2 py-1.5 text-[10px] shadow-sm">
         <div className="flex items-center gap-2">

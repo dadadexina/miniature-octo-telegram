@@ -2,6 +2,7 @@ import { FRIENDS_SQL } from './friends'
 import { UPGRADE_SQL } from './schema_v2'
 import { supabaseUrl } from './supabase'
 import { CLIENT_ERRORS_SQL } from './telemetry'
+import { WORLD_CHAT_SQL } from './worldChatSql'
 
 function deriveSqlEditorUrl(url) {
   const match = /^https:\/\/([^.]+)\.supabase\.co$/.exec(url || '')
@@ -146,6 +147,9 @@ ${FRIENDS_SQL}
 ${CLIENT_ERRORS_SQL}
 
 ${UPGRADE_SQL}
+
+${WORLD_CHAT_SQL}
+
 create table if not exists public.profile_locations (
   user_id uuid primary key references public.profiles (id) on delete cascade,
   lat double precision not null check (lat between -90 and 90),
