@@ -79,7 +79,8 @@ npm run test
    VITE_SUPABASE_ANON_KEY=your-anon-key
    ```
    可选：用 `VITE_MAP_TILE_URL` 接入自有或商业瓦片服务，模板需包含 `{z}`、`{x}`、`{y}`，例如 `https://your-tile-host/{z}/{x}/{y}.png`。未配置时使用 OpenStreetMap 公共瓦片，仅适合低流量演示，正式上线请遵守瓦片服务条款并保留署名。
-6. 部署生产环境时，在托管平台的构建环境变量中配置同名的 `VITE_SUPABASE_*` 变量，并在 Supabase Auth → URL Configuration 中将生产域名加入 Site URL 与 Redirect URLs。
+   可选：用 `VITE_AMAP_KEY` 接入高德 Web 服务 Key，在中国大陆区域按视口加载餐饮、酒店、购物、景点、交通和住宅小区 POI；未配置或请求失败时回退到 OpenStreetMap 数据。该 Key 会随前端产物公开，请限制日配额并定期轮换。
+6. 部署生产环境时，在托管平台的构建环境变量中配置同名的 `VITE_SUPABASE_*` 与可选的 `VITE_AMAP_KEY` 变量，并在 Supabase Auth → URL Configuration 中将生产域名加入 Site URL 与 Redirect URLs。
 
 云端 SQL 未执行时，应用仍可用演示账号在本地模式下运行。
 

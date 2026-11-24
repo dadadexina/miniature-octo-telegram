@@ -137,7 +137,7 @@ export function isHiddenLayer(layer) {
   const id = layer?.id || ''
   const sourceLayer = layer?.['source-layer'] || ''
   if (layer?.type === 'raster' || layer?.type === 'fill-extrusion') return true
-  if (sourceLayer === 'poi' || sourceLayer === 'aerodrome_label') return true
+  if (sourceLayer === 'aerodrome_label') return true
   if (id === 'road_one_way_arrow' || id === 'road_one_way_arrow_opposite') return true
   return false
 }
