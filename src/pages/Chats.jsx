@@ -7,11 +7,14 @@ import NavBar from '../components/NavBar'
 import { fetchInbox, groupConversations, isUuid } from '../lib/messages'
 import { fetchProfilesByIds } from '../lib/profiles'
 import { callEventText } from '../lib/call'
+import { useCallCenter } from '../lib/callContext'
+import OnlineDot from '../components/OnlineDot'
 import { useStore } from '../store'
 import { formatTime } from '../utils'
 
 export default function Chats() {
   const { conversations, avatarColor, currentUser, getUser, upsertUsers, inbox, mergeInbox, unreadOf, syncTick, hiddenIds, removeThread, drafts, convPrefs, setConversationPref, displayNameOf } = useStore()
+  const { onlineIds } = useCallCenter()
   const [swipedId, setSwipedId] = useState(null)
   const [hint, setHint] = useState('')
   const [needSql, setNeedSql] = useState(false)
@@ -169,6 +172,7 @@ export default function Chats() {
                     {convPrefs[friend.id]?.muted && unreadOf(friend.id) > 0 ? (
                       <span data-testid="muted-dot" className="ml-1.5 inline-block h-1.5 w-1.5 rounded-none bg-eink-sub align-middle" />
                     ) : null}
+                    <OnlineDot online={onlineIds.has(friend.id)} className="ml-1.5" />
                   </span>
                   <span className="ml-3 shrink-0 text-[12px] text-eink-faint">
                     {last ? formatTime(last.time) : ''}
@@ -181,14 +185,18 @@ export default function Chats() {
                       <span className="text-eink-ink">{drafts[friend.id]}</span>
                     </>
                   ) : last ? (
-                    `${last.fromId === currentUser.id ? '我: ' : ''}${
-                      last.text ||
-                      (last.attachments?.type === 'image'
-                        ? '[图片]'
-                        : last.attachments?.type === 'call'
-                          ? callEventText(last.attachments)
-                          : '')
-                    }`
+                    last.attachments?.type === 'knock' ? (
+                      '[敲一敲]'
+                    ) : (
+                      `${last.fromId === currentUser.id ? '我: ' : ''}${
+                        last.text ||
+                        (last.attachments?.type === 'image'
+                          ? '[图片]'
+                          : last.attachments?.type === 'call'
+                            ? callEventText(last.attachments)
+                            : '')
+                      }`
+                    )
                   ) : (
                     '点击开始聊天'
                   )}

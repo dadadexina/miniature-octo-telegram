@@ -32,3 +32,43 @@ export function locationAgeLabel(updatedAt, now = Date.now()) {
   }
   return `${new Date(timestamp).toLocaleDateString('zh-CN')} 更新`
 }
+
+export function groupCities(people = []) {
+  const groups = new Map()
+  for (const person of people) {
+    if (!person?.id || person.located !== true || !person.place) continue
+    if (!Number.isFinite(person.lat) || !Number.isFinite(person.lng)) continue
+    const current = groups.get(person.place) || {
+      name: person.place,
+      count: 0,
+      lat: 0,
+      lng: 0,
+      people: [],
+    }
+    current.count += 1
+    current.lat += person.lat
+    current.lng += person.lng
+    current.people.push(person)
+    groups.set(person.place, current)
+  }
+  return [...groups.values()]
+    .map((city) => ({
+      ...city,
+      lat: city.lat / city.count,
+      lng: city.lng / city.count,
+    }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'))
+}
+
+export function linksForCity(links = [], nodes = [], city = '') {
+  if (!city) return Array.isArray(links) ? links : []
+  const cityIds = new Set(
+    (Array.isArray(nodes) ? nodes : [])
+      .filter((node) => node?.place === city)
+      .map((node) => node.id)
+  )
+  if (!cityIds.size) return []
+  return (Array.isArray(links) ? links : []).filter(
+    (pair) => validPair(pair) && (cityIds.has(pair[0]) || cityIds.has(pair[1]))
+  )
+}

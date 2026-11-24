@@ -5,6 +5,8 @@ import NavBar from '../components/NavBar'
 import { isUuid } from '../lib/messages'
 import { fetchProfilesByIds, searchProfile } from '../lib/profiles'
 import { mergeSearchResults } from '../lib/searchResults'
+import { useCallCenter } from '../lib/callContext'
+import OnlineDot from '../components/OnlineDot'
 import { useStore } from '../store'
 
 export default function Contacts() {
@@ -13,6 +15,7 @@ export default function Contacts() {
     searchUser, suggestedUsers, requests, respondToRequest, cancelRequest, requestFriendFromProfile, refreshFriends,
     upsertUsers, getUser, refreshFriendRequests, syncTick, displayNameOf,
   } = useStore()
+  const { onlineIds } = useCallCenter()
   const [keyword, setKeyword] = useState('')
   const [queried, setQueried] = useState('')
   const [results, setResults] = useState(null)
@@ -330,7 +333,10 @@ export default function Contacts() {
                   <div className="flex items-center gap-3 px-4 py-3">
                     <Avatar name={displayNameOf(friend.id) || friend.nickname} color={avatarColor(friend.id)} size={40} src={friend.avatarUrl || ''} />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[16px]">{displayNameOf(friend.id) || friend.nickname}</div>
+                      <div className="truncate text-[16px]">
+                        {displayNameOf(friend.id) || friend.nickname}
+                        <OnlineDot online={onlineIds.has(friend.id)} className="ml-1.5" />
+                      </div>
                       <div className="truncate text-[12px] text-eink-sub">
                         ID: {friend.publicId || friend.username || ''}
                       </div>
@@ -378,7 +384,10 @@ export default function Contacts() {
                 >
                   <Avatar name={displayNameOf(friend.id) || friend.nickname} color={avatarColor(friend.id)} size={40} src={friend.avatarUrl || ''} />
                   <div className="min-w-0">
-                    <div className="truncate text-[16px]">{displayNameOf(friend.id) || friend.nickname}</div>
+                    <div className="truncate text-[16px]">
+                      {displayNameOf(friend.id) || friend.nickname}
+                      <OnlineDot online={onlineIds.has(friend.id)} className="ml-1.5" />
+                    </div>
                     <div className="truncate text-[12px] text-eink-sub">ID: {friend.publicId || friend.username || ''}</div>
                   </div>
                 </Link>

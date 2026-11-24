@@ -27,11 +27,18 @@ import {
 import { mergePlaceResults, searchPlacesOnline } from '../lib/geocode'
 import { planRoute, routeModeLabel, straightRoute } from '../lib/routing'
 import { fetchWeather } from '../lib/weather'
-import { focusLinks, locationAgeLabel, mutualFriendIds } from '../lib/globeFriends'
+import {
+  focusLinks,
+  groupCities,
+  linksForCity,
+  locationAgeLabel,
+  mutualFriendIds,
+} from '../lib/globeFriends'
 import { isUuid } from '../lib/messages'
 import { useCallCenter } from '../lib/callContext'
 import { useStore } from '../store'
 import Avatar from './Avatar'
+import OnlineDot from './OnlineDot'
 import WorldChat from './WorldChat'
 import { searchPlaces } from '../lib/places'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
@@ -99,8 +106,8 @@ export default function DiscoverGlobe({
   meCoords = null,
 }) {
   const navigate = useNavigate()
-  const { startCall } = useCallCenter()
-  const { avatarColor } = useStore()
+  const { startCall, onlineIds } = useCallCenter()
+  const { avatarColor, sendKnock } = useStore()
   const containerRef = useRef(null)
   const coordsRef = useRef(null)
   const copyTimerRef = useRef(null)
@@ -118,9 +125,13 @@ export default function DiscoverGlobe({
   const navSeqRef = useRef(0)
   const navAbortRef = useRef(null)
   const focusIdRef = useRef('')
+  const cityFocusRef = useRef('')
 
   const [copied, setCopied] = useState('')
   const [selectedId, setSelectedId] = useState('')
+  const [knockHint, setKnockHint] = useState('')
+  const [cityFocus, setCityFocus] = useState('')
+  const [cityOpen, setCityOpen] = useState(false)
   const [fallback, setFallback] = useState(() => !canUseWebGL())
   const [now, setNow] = useState(() => Date.now())
   const [myPos, setMyPos] = useState(null)
@@ -247,6 +258,11 @@ export default function DiscoverGlobe({
     focusIdRef.current = selectedId
     syncRef.current?.()
   }, [selectedId])
+
+  useEffect(() => {
+    cityFocusRef.current = cityFocus
+    syncRef.current?.()
+  }, [cityFocus])
 
   useEffect(() => {
     myPosRef.current = myPos
@@ -509,10 +525,17 @@ export default function DiscoverGlobe({
         const focusId = nodes.some((node) => node.id === focusIdRef.current)
           ? focusIdRef.current
           : ''
+        const city = nodes.some((node) => node.place === cityFocusRef.current)
+          ? cityFocusRef.current
+          : ''
         clearMarkers()
         for (const node of nodes) {
-          const focused = Boolean(focusId) && node.id === focusId
-          const dimmed = Boolean(focusId) && !node.me && !focused
+          const focused = focusId
+            ? node.id === focusId
+            : Boolean(city) && node.place === city
+          const dimmed = focusId
+            ? !node.me && !focused
+            : Boolean(city) && !node.me && node.place !== city
           const el = document.createElement('div')
           el.className = node.me
             ? 'globe-node pointer-events-none flex select-none flex-col items-center gap-0.5'
@@ -536,6 +559,7 @@ export default function DiscoverGlobe({
             el.setAttribute('data-testid', `globe-node-${node.id}`)
             const choose = (event) => {
               event.stopPropagation()
+              setKnockHint('')
               setSelectedId((prev) => (prev === node.id ? '' : node.id))
             }
             el.addEventListener('click', choose)
@@ -554,7 +578,12 @@ export default function DiscoverGlobe({
         try {
           const source = map.getSource('arcs')
           if (source && source.setData) {
-            source.setData(buildArcsGeoJSON(nodes, focusLinks(linksRef.current, focusId)))
+            const visibleLinks = focusId
+              ? focusLinks(linksRef.current, focusId)
+              : city
+                ? linksForCity(linksRef.current, nodes, city)
+                : linksRef.current
+            source.setData(buildArcsGeoJSON(nodes, visibleLinks))
           }
         } catch {
           // 数据源尚未建立时忽略
@@ -729,6 +758,13 @@ export default function DiscoverGlobe({
         if (focusIdRef.current) {
           focusIdRef.current = ''
           setSelectedId('')
+          setKnockHint('')
+          syncRef.current?.()
+          return
+        }
+        if (cityFocusRef.current) {
+          cityFocusRef.current = ''
+          setCityFocus('')
           syncRef.current?.()
           return
         }
@@ -930,6 +966,8 @@ export default function DiscoverGlobe({
     () => people.find((person) => person.id === selectedId) || null,
     [people, selectedId]
   )
+  const cities = useMemo(() => groupCities(people), [people])
+  const activeCity = cities.find((city) => city.name === cityFocus) || null
   const mutualFriends = useMemo(() => {
     if (!selectedPerson) return []
     const ids = new Set(mutualFriendIds(links, meId, selectedPerson.id))
@@ -957,8 +995,16 @@ export default function DiscoverGlobe({
   const closeFriendCard = useCallback(() => {
     focusIdRef.current = ''
     setSelectedId('')
+    setKnockHint('')
     syncRef.current?.()
   }, [])
+
+  const knockSelectedFriend = useCallback(async () => {
+    if (!selectedPerson) return
+    setKnockHint('')
+    const result = await sendKnock(selectedPerson.id)
+    setKnockHint(result.ok ? '已敲了敲对方' : result.error || '敲一敲失败')
+  }, [selectedPerson, sendKnock])
 
   const flyToFriend = useCallback(() => {
     const map = mapRef.current
@@ -973,6 +1019,32 @@ export default function DiscoverGlobe({
       // 地图尚未就绪时忽略
     }
   }, [selectedPerson])
+
+  const enterCity = useCallback((city) => {
+    if (!city) return
+    const map = mapRef.current
+    focusIdRef.current = ''
+    setSelectedId('')
+    setKnockHint('')
+    setCityOpen(false)
+    setCityFocus(city.name)
+    if (!map) return
+    try {
+      map.flyTo({
+        center: [city.lng, city.lat],
+        zoom: Math.max(5.5, Math.min(8, 5 + Math.log2(city.count + 1))),
+        duration: 1400,
+      })
+    } catch {
+      // 地图尚未就绪时忽略
+    }
+  }, [])
+
+  const leaveCity = useCallback(() => {
+    cityFocusRef.current = ''
+    setCityFocus('')
+    syncRef.current?.()
+  }, [])
 
   const currentDate = new Date(now)
   const weatherSummary =
@@ -1079,6 +1151,31 @@ export default function DiscoverGlobe({
         世界
       </button>
 
+      {cities.length ? (
+        <div className="absolute right-2 top-3 z-20 flex items-center gap-1">
+          {activeCity ? (
+            <button
+              type="button"
+              data-testid="globe-city-leave"
+              className="border border-eink-divider bg-eink-bar/95 px-2 py-1 text-[10px] text-eink-sub shadow-sm active:bg-eink-surface"
+              onClick={leaveCity}
+            >
+              退出
+            </button>
+          ) : null}
+          <button
+            type="button"
+            data-testid="globe-city-toggle"
+            className={`border bg-eink-bar/95 px-2 py-1 text-[10px] tracking-[0.08em] shadow-sm active:bg-eink-surface ${
+              activeCity ? 'border-eink-ink text-eink-ink' : 'border-eink-divider text-eink-sub'
+            }`}
+            onClick={() => setCityOpen(true)}
+          >
+            {activeCity ? activeCity.name : `城市 ${cities.length}`}
+          </button>
+        </div>
+      ) : null}
+
       {fallback ? (
         <div data-testid="globe-fallback" className="absolute inset-0 overflow-y-auto px-6 pt-24 pb-32">
           <p className="mb-4 text-center text-[11px] tracking-[0.06em] text-eink-faint">
@@ -1147,9 +1244,10 @@ export default function DiscoverGlobe({
               <div className="flex items-center gap-2">
                 <h2
                   data-testid="globe-friend-name"
-                  className="min-w-0 flex-1 truncate text-[15px] font-medium text-eink-ink"
+                  className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-[15px] font-medium text-eink-ink"
                 >
-                  {selectedPerson.name}
+                  <span className="truncate">{selectedPerson.name}</span>
+                  <OnlineDot online={onlineIds.has(selectedPerson.id)} />
                 </h2>
                 <button
                   type="button"
@@ -1171,6 +1269,11 @@ export default function DiscoverGlobe({
                   ? `你们有 ${mutualFriends.length} 位共同好友`
                   : '暂无共同好友'}
               </p>
+              {knockHint ? (
+                <p data-testid="globe-friend-knock-hint" className="mt-0.5 text-[10px] text-eink-sub">
+                  {knockHint}
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -1182,7 +1285,10 @@ export default function DiscoverGlobe({
                   type="button"
                   data-testid={`globe-mutual-${friend.id}`}
                   className="flex shrink-0 items-center gap-1 border border-eink-divider bg-eink-paper/60 px-1.5 py-0.5 text-[10px] text-eink-sub active:bg-eink-surface"
-                  onClick={() => setSelectedId(friend.id)}
+                  onClick={() => {
+                    setKnockHint('')
+                    setSelectedId(friend.id)
+                  }}
                 >
                   <Avatar name={friend.name} color={avatarColor(friend.id)} size={16} src={friend.avatarUrl} />
                   <span className="max-w-16 truncate">{friend.name}</span>
@@ -1196,11 +1302,11 @@ export default function DiscoverGlobe({
             </div>
           ) : null}
 
-          <div className="mt-2 grid grid-cols-4 gap-1.5">
+          <div className="mt-2 grid grid-cols-5 gap-1">
             <button
               type="button"
               data-testid="globe-friend-chat"
-              className="truncate bg-eink-ink px-1.5 py-1.5 text-[11px] text-eink-paper active:opacity-80"
+              className="truncate bg-eink-ink px-1 py-1.5 text-[10px] text-eink-paper active:opacity-80"
               onClick={() => navigate(`/chat/${selectedPerson.id}`)}
             >
               发消息
@@ -1209,15 +1315,23 @@ export default function DiscoverGlobe({
               type="button"
               data-testid="globe-friend-call"
               disabled={!isUuid(selectedPerson.id) || !isUuid(meId)}
-              className="truncate border border-eink-line/40 px-1.5 py-1.5 text-[11px] text-eink-ink active:bg-eink-surface disabled:text-eink-faint"
+              className="truncate border border-eink-line/40 px-1 py-1.5 text-[10px] text-eink-ink active:bg-eink-surface disabled:text-eink-faint"
               onClick={() => startCall(selectedPerson.id)}
             >
               语音
             </button>
             <button
               type="button"
+              data-testid="globe-friend-knock"
+              className="truncate border border-eink-line/40 px-1 py-1.5 text-[10px] text-eink-ink active:bg-eink-surface"
+              onClick={knockSelectedFriend}
+            >
+              敲一敲
+            </button>
+            <button
+              type="button"
               data-testid="globe-friend-profile"
-              className="truncate border border-eink-line/40 px-1.5 py-1.5 text-[11px] text-eink-ink active:bg-eink-surface"
+              className="truncate border border-eink-line/40 px-1 py-1.5 text-[10px] text-eink-ink active:bg-eink-surface"
               onClick={() => navigate(`/friend/${selectedPerson.id}`)}
             >
               主页
@@ -1226,13 +1340,97 @@ export default function DiscoverGlobe({
               type="button"
               data-testid="globe-friend-fly"
               disabled={!selectedPerson.located}
-              className="truncate border border-eink-line/40 px-1.5 py-1.5 text-[11px] text-eink-ink active:bg-eink-surface disabled:text-eink-faint"
+              className="truncate border border-eink-line/40 px-1 py-1.5 text-[10px] text-eink-ink active:bg-eink-surface disabled:text-eink-faint"
               onClick={flyToFriend}
             >
               飞到
             </button>
           </div>
         </section>
+      ) : null}
+
+      {cityOpen ? (
+        <div className="absolute inset-0 z-40">
+          <button
+            type="button"
+            aria-label="关闭城市漫游"
+            data-testid="globe-city-backdrop"
+            className="absolute inset-0 bg-eink-ink/15"
+            onClick={() => setCityOpen(false)}
+          />
+          <div
+            data-testid="globe-city-sheet"
+            className="absolute inset-x-2 bottom-2 max-h-[58vh] overflow-y-auto border border-eink-line/30 bg-eink-bar shadow-lg"
+          >
+            <div className="flex items-center gap-2 border-b border-eink-divider px-3 py-2">
+              <span className="flex-1 text-[12px] tracking-[0.08em] text-eink-ink">城市漫游</span>
+              {activeCity ? (
+                <button
+                  type="button"
+                  data-testid="globe-city-sheet-leave"
+                  className="border border-eink-line/40 px-2 py-0.5 text-[10px] text-eink-sub active:bg-eink-surface"
+                  onClick={() => {
+                    leaveCity()
+                    setCityOpen(false)
+                  }}
+                >
+                  退出漫游
+                </button>
+              ) : null}
+              <button
+                type="button"
+                data-testid="globe-city-close"
+                className="px-1 text-[11px] text-eink-faint"
+                onClick={() => setCityOpen(false)}
+              >
+                关闭
+              </button>
+            </div>
+            {cities.length ? (
+              cities.map((city) => {
+                const online = city.people.filter((person) => onlineIds.has(person.id)).length
+                const current = activeCity?.name === city.name
+                return (
+                  <button
+                    key={city.name}
+                    type="button"
+                    data-testid={`globe-city-${city.name}`}
+                    className={`flex w-full items-center gap-2.5 border-b border-eink-divider px-3 py-2 text-left active:bg-eink-surface ${
+                      current ? 'bg-eink-surface' : ''
+                    }`}
+                    onClick={() => enterCity(city)}
+                  >
+                    <span className="flex shrink-0 items-center gap-1">
+                      {city.people.slice(0, 3).map((person) => (
+                        <Avatar
+                          key={person.id}
+                          name={person.name}
+                          color={avatarColor(person.id)}
+                          size={24}
+                          src={person.avatarUrl}
+                        />
+                      ))}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] text-eink-ink">{city.name}</span>
+                      <span className="block truncate text-[10px] text-eink-faint">
+                        {city.count} 位好友
+                        {online ? ` · ${online} 在线` : ''}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[10px] text-eink-sub">
+                      {current ? '漫游中' : '进入'}
+                    </span>
+                  </button>
+                )
+              })
+            ) : (
+              <p className="px-4 py-6 text-center text-[12px] leading-5 text-eink-faint">
+                还没有好友共享位置，暂时无法城市漫游
+              </p>
+            )}
+          </div>
+        </div>
       ) : null}
 
       {searchOpen ? (

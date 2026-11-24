@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { focusLinks, locationAgeLabel, mutualFriendIds } from './globeFriends'
+import {
+  focusLinks,
+  groupCities,
+  linksForCity,
+  locationAgeLabel,
+  mutualFriendIds,
+} from './globeFriends'
 
 const LINKS = [
   ['me', 'a'],
@@ -28,6 +34,42 @@ describe('地球好友聚焦', () => {
     expect(mutualFriendIds(LINKS, 'me', 'a')).toEqual(['b', 'c'])
     expect(mutualFriendIds(LINKS, 'me', 'd')).toEqual([])
     expect(mutualFriendIds(LINKS, 'me', '')).toEqual([])
+  })
+
+  it('按城市聚合已共享位置的好友并计算中心点', () => {
+    const cities = groupCities([
+      { id: 'a', name: '阿哲', located: true, place: '上海', lat: 31.2, lng: 121.4 },
+      { id: 'b', name: '阿敏', located: true, place: '上海', lat: 31.4, lng: 121.6 },
+      { id: 'c', name: '阿远', located: true, place: '北京', lat: 39.9, lng: 116.4 },
+      { id: 'd', name: '小未', located: false, place: '上海' },
+    ])
+    expect(cities.map((city) => city.name)).toEqual(['上海', '北京'])
+    expect(cities[0].count).toBe(2)
+    expect(cities[0].lat).toBeCloseTo(31.3)
+    expect(cities[0].lng).toBeCloseTo(121.5)
+    expect(cities[0].people.map((person) => person.id)).toEqual(['a', 'b'])
+  })
+
+  it('城市聚焦时保留城市好友参与的关系线', () => {
+    const nodes = [
+      { id: 'me', place: '北京' },
+      { id: 'a', place: '上海' },
+      { id: 'b', place: '上海' },
+      { id: 'c', place: '北京' },
+    ]
+    const links = [
+      ['me', 'a'],
+      ['a', 'b'],
+      ['b', 'c'],
+      ['me', 'c'],
+    ]
+    expect(linksForCity(links, nodes, '上海')).toEqual([
+      ['me', 'a'],
+      ['a', 'b'],
+      ['b', 'c'],
+    ])
+    expect(linksForCity(links, nodes, '')).toBe(links)
+    expect(linksForCity(links, nodes, '广州')).toEqual([])
   })
 
   it('位置更新时间按距离当前时间生成文案', () => {

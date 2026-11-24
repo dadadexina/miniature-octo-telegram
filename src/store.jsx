@@ -13,7 +13,7 @@ import {
 } from './lib/friendRequests'
 import { applyDraft, loadDrafts, saveDrafts } from './lib/drafts'
 import { fetchConversationPrefs, upsertConversationPref } from './lib/conversationPrefs'
-import { deletePairMessages, fetchHiddenIds, fetchInbox, fetchReceivedSince, hideMessage, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
+import { deletePairMessages, fetchHiddenIds, fetchInbox, fetchReceivedSince, hideMessage, insertMessageWithFriendHeal, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
 import { findAuthIdentity } from './lib/identity'
 import { mapProfile, fetchProfilesByIds } from './lib/profiles'
 import { applyProfileRow, withMappedAvatar } from './lib/profileMerge'
@@ -1450,6 +1450,34 @@ export function StoreProvider({ children }) {
           fromId: me,
           toId: peerId,
           text: content,
+          time: now(),
+        }
+        patch((prev) => ({ ...prev, messages: [...prev.messages, msg] }))
+        return { ok: true, msg }
+      },
+
+      async sendKnock(peerId) {
+        const me = state.currentUserId
+        if (!me || !peerId || me === peerId) return { ok: false, error: '无法敲一敲' }
+        const content = '敲了敲你'
+        const attachments = { type: 'knock', at: now() }
+        if (isUuid(me) && isUuid(peerId)) {
+          const result = await insertMessageWithFriendHeal({
+            senderId: me,
+            receiverId: peerId,
+            content,
+            attachments,
+          })
+          if (result.ok && result.message) mergeInbox([result.message])
+          return result
+        }
+        const msg = {
+          id: uid('msg'),
+          pair: pairKey(me, peerId),
+          fromId: me,
+          toId: peerId,
+          text: content,
+          attachments,
           time: now(),
         }
         patch((prev) => ({ ...prev, messages: [...prev.messages, msg] }))

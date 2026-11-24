@@ -47,6 +47,7 @@ vi.mock('../store', () => ({
     friendsOf: () => storeState.friends,
     momentsFeed: () => [],
     publishMoment: vi.fn(() => ({ ok: true })),
+    sendKnock: vi.fn(() => Promise.resolve({ ok: true })),
   }),
 }))
 

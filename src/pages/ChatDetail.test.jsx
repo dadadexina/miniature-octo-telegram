@@ -23,6 +23,7 @@ const stableMocks = {
   avatarColor: () => '#191919',
   logout: vi.fn(),
   mergeInbox: vi.fn(),
+  sendKnock: vi.fn(async () => ({ ok: true })),
   openPeer: vi.fn(),
   readReceiptOf: () => 0,
   isBlocked: (id) => storeHolder.blockedIds.includes(id),
@@ -186,6 +187,34 @@ describe('ChatDetail 图片消息不额外套气泡边框', () => {
     const bubble = screen.getByText('图片说明').closest('.chat-bubble-text')
     expect(bubble).toBeTruthy()
     expect(bubble.contains(pending)).toBe(false)
+  })
+})
+
+describe('ChatDetail 敲一敲', () => {
+  it('收到敲一敲时展示提示文案，不渲染普通文字气泡', async () => {
+    storeHolder.inbox = [
+      {
+        id: 'm-knock',
+        fromId: PEER,
+        toId: ME,
+        text: '敲了敲你',
+        time: Date.now(),
+        attachments: { type: 'knock', at: Date.now() },
+      },
+    ]
+    setup()
+
+    const event = await screen.findByTestId('knock-event')
+    expect(event.textContent).toBe('小红 敲了敲你')
+    expect(document.querySelectorAll('.chat-bubble-text')).toHaveLength(0)
+  })
+
+  it('聊天菜单可以敲一敲对方', async () => {
+    setup()
+
+    fireEvent.click(await screen.findByTestId('chat-menu'))
+    fireEvent.click(screen.getByTestId('chat-knock'))
+    await waitFor(() => expect(stableMocks.sendKnock).toHaveBeenCalledWith(PEER))
   })
 })
 

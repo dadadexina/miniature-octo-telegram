@@ -11,6 +11,7 @@ const setFriendRemarkMock = vi.fn(async (friendId, remark) => {
   storeHolder.meta = { ...(storeHolder.meta || {}), remark }
   return { ok: true }
 })
+const sendKnockMock = vi.fn(async () => ({ ok: true }))
 
 vi.mock('../store', () => ({
   useStore: () => ({
@@ -20,6 +21,7 @@ vi.mock('../store', () => ({
     friendMetaOf: () => storeHolder.meta,
     displayNameOf: (id) => storeHolder.meta?.remark || storeHolder.friends[id]?.nickname || '',
     setFriendRemark: setFriendRemarkMock,
+    sendKnock: sendKnockMock,
   }),
 }))
 
@@ -35,6 +37,7 @@ beforeEach(() => {
   storeHolder.friends = {}
   storeHolder.meta = null
   setFriendRemarkMock.mockClear()
+  sendKnockMock.mockClear()
   fetchProfileById.mockReset()
 })
 
@@ -87,6 +90,21 @@ describe('FriendProfile 好友资料页', () => {
     await waitFor(() => expect(screen.getByTestId('send-message-btn')).toBeTruthy())
     fireEvent.click(screen.getByTestId('send-message-btn'))
     expect(screen.getByTestId('chat-page')).toBeTruthy()
+  })
+
+  it('点击敲一敲发送提醒并展示结果', async () => {
+    storeHolder.meta = { remark: '', createdAt: '' }
+    fetchProfileById.mockResolvedValue({
+      ok: true,
+      profile: { id: 'u1', nickname: '李四', username: 'lisi', avatarUrl: '' },
+    })
+    setup()
+    await waitFor(() => expect(screen.getByTestId('knock-btn')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('knock-btn'))
+    await waitFor(() =>
+      expect(screen.getByTestId('knock-hint').textContent).toContain('已敲了敲 李四')
+    )
+    expect(sendKnockMock).toHaveBeenCalledWith('u1')
   })
 
   it('非好友资料页隐藏发送信息并给出提示', async () => {

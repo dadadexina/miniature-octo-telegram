@@ -35,6 +35,7 @@ export default function useVoiceCall({ myId, remoteId, enabled, onCallEnded }) {
   const [muted, setMuted] = useState(false)
   const [remoteStream, setRemoteStream] = useState(null)
   const [remoteUserId, setRemoteUserId] = useState('')
+  const [onlineIds, setOnlineIds] = useState(() => new Set())
 
   const statusRef = useRef(CALL_STATUS.IDLE)
   const pcRef = useRef(null)
@@ -572,8 +573,10 @@ export default function useVoiceCall({ myId, remoteId, enabled, onCallEnded }) {
       config: { presence: { key: myId, enabled: true } },
     })
     channel.on('presence', { event: 'sync' }, () => {
-      presenceRef.current = channel.presenceState()
+      const state = channel.presenceState()
+      presenceRef.current = state
       presenceReadyRef.current = true
+      setOnlineIds(new Set(Object.keys(state)))
     })
     channel.subscribe((state) => {
       if (state === 'SUBSCRIBED') {
@@ -587,6 +590,7 @@ export default function useVoiceCall({ myId, remoteId, enabled, onCallEnded }) {
     return () => {
       presenceRef.current = {}
       presenceReadyRef.current = false
+      setOnlineIds(new Set())
       try {
         supabase.removeChannel(channel)
       } catch {
@@ -603,6 +607,7 @@ export default function useVoiceCall({ myId, remoteId, enabled, onCallEnded }) {
     muted,
     remoteStream,
     remoteUserId,
+    onlineIds,
     start,
     answer,
     decline,

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import NavBar from '../components/NavBar'
+import OnlineDot from '../components/OnlineDot'
 import useSwipeBack from '../hooks/useSwipeBack'
 import { REMARK_MAX, normalizeRemark } from '../lib/friends'
 import { goBackOr } from '../lib/navigation'
@@ -12,12 +13,14 @@ import {
   registrationDays,
 } from '../lib/profileMeta'
 import { fetchProfileById } from '../lib/profiles'
+import { useCallCenter } from '../lib/callContext'
 import { useStore } from '../store'
 
 export default function FriendProfile() {
   const { userId } = useParams()
   const navigate = useNavigate()
-  const { currentUser, getUser, avatarColor, friendMetaOf, displayNameOf, setFriendRemark } = useStore()
+  const { currentUser, getUser, avatarColor, friendMetaOf, displayNameOf, setFriendRemark, sendKnock } = useStore()
+  const { onlineIds } = useCallCenter()
   const cached = getUser(userId)
   const meta = friendMetaOf(currentUser?.id, userId)
   const [profile, setProfile] = useState(null)
@@ -27,6 +30,8 @@ export default function FriendProfile() {
   const [remarkDraft, setRemarkDraft] = useState('')
   const [remarkSaving, setRemarkSaving] = useState(false)
   const [remarkHint, setRemarkHint] = useState('')
+  const [knockBusy, setKnockBusy] = useState(false)
+  const [knockHint, setKnockHint] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -83,6 +88,15 @@ export default function FriendProfile() {
     setEditingFor(userId)
   }
 
+  const onKnock = async () => {
+    if (knockBusy || !meta) return
+    setKnockBusy(true)
+    setKnockHint('')
+    const result = await sendKnock(userId)
+    setKnockBusy(false)
+    setKnockHint(result.ok ? `已敲了敲 ${heading}` : result.error || '敲一敲失败')
+  }
+
   const submitRemark = async (e) => {
     e.preventDefault()
     if (remarkSaving) return
@@ -108,6 +122,12 @@ export default function FriendProfile() {
             <h2 data-testid="friend-nickname" className="mt-4 text-center text-[22px] font-medium text-[#191919]">
               {heading}
             </h2>
+            {meta && onlineIds.has(userId) ? (
+              <p data-testid="friend-online" className="mt-1 flex items-center gap-1 text-[11px] text-eink-sub">
+                <OnlineDot online />
+                在线
+              </p>
+            ) : null}
             {meta?.remark ? (
               <p data-testid="friend-original-nickname" className="mt-1 text-center text-[12px] text-eink-faint">
                 昵称：{originalName}
@@ -205,15 +225,33 @@ export default function FriendProfile() {
 
       <div className="shrink-0 border-t border-eink-divider bg-eink-bar p-4 safe-bottom">
         {meta ? (
-          <button
-            type="button"
-            data-testid="send-message-btn"
-            disabled={!userId}
-            className="h-12 w-full rounded-none bg-eink-ink text-[16px] font-medium text-eink-paper active:bg-eink-pressed disabled:bg-eink-disabled"
-            onClick={() => navigate(`/chat/${userId}`)}
-          >
-            发送信息
-          </button>
+          <div className="space-y-2">
+            {knockHint ? (
+              <p data-testid="knock-hint" className="text-center text-[11px] text-eink-faint">
+                {knockHint}
+              </p>
+            ) : null}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                data-testid="knock-btn"
+                disabled={knockBusy || !userId}
+                className="h-12 rounded-none border border-eink-line/40 bg-eink-bar text-[15px] font-medium text-eink-ink active:bg-eink-pressed disabled:text-eink-disabled"
+                onClick={onKnock}
+              >
+                {knockBusy ? '敲响中...' : '敲一敲'}
+              </button>
+              <button
+                type="button"
+                data-testid="send-message-btn"
+                disabled={!userId}
+                className="h-12 rounded-none bg-eink-ink text-[16px] font-medium text-eink-paper active:bg-eink-pressed disabled:bg-eink-disabled"
+                onClick={() => navigate(`/chat/${userId}`)}
+              >
+                发送信息
+              </button>
+            </div>
+          </div>
         ) : info ? (
           <p data-testid="not-friend-hint" className="text-center text-[13px] leading-5 text-eink-sub">
             你们还不是好友，无法发送消息

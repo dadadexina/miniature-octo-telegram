@@ -58,7 +58,10 @@ export default function CallProvider({ children }) {
     call.abort(hit.attachments.event === 'declined' ? '对方已拒绝通话' : '对方已挂断')
   }, [call, inbox, targetId])
 
-  const value = useMemo(() => ({ startCall, status: call.status }), [call.status, startCall])
+  const value = useMemo(
+    () => ({ startCall, status: call.status, onlineIds: call.onlineIds }),
+    [call.status, call.onlineIds, startCall]
+  )
 
   return (
     <CallContext.Provider value={value}>

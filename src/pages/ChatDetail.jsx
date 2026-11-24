@@ -5,6 +5,7 @@ import Avatar from '../components/Avatar'
 import CopySql from '../components/CopySql'
 import ImageViewer from '../components/ImageViewer'
 import NavBar from '../components/NavBar'
+import OnlineDot from '../components/OnlineDot'
 import LongTextBody from '../components/LongTextBody'
 import ReportSheet from '../components/ReportSheet'
 import SignedImage from '../components/SignedImage'
@@ -48,7 +49,7 @@ export default function ChatDetail() {
   const {
     currentUser, getUser, messagesWith, sendMessage, receiveMessage, avatarColor, logout, profile,
     inbox, mergeInbox, openPeer, readReceiptOf, isBlocked, setBlockedFor, syncTick, drafts, setDraft,
-    displayNameOf,
+    displayNameOf, sendKnock,
   } = useStore()
   const meName = profile?.nickname || currentUser?.nickname
   const text = drafts?.[peerId] || ''
@@ -94,7 +95,7 @@ export default function ChatDetail() {
     isSuppressed: isLongPressSuppressed,
     contextMenu: onMsgContextMenu,
   } = useLongPress({ onLongPress: (msg) => setActiveMsgId(msg.id) })
-  const { startCall } = useCallCenter()
+  const { startCall, onlineIds } = useCallCenter()
   const peer = getUser(peerId) || (peerId ? { id: peerId, nickname: '用户', publicId: '' } : null)
   const cloudReady = Boolean(currentUser) && isUuid(currentUser.id) && isUuid(peerId)
   const localMessages = currentUser && peer ? messagesWith(peerId) : []
@@ -534,6 +535,7 @@ export default function ChatDetail() {
             >
               <Avatar name={peerDisplayName} color={avatarColor(peerId)} size={22} src={peer?.avatarUrl || ''} />
               <span className="truncate">{peerDisplayName}</span>
+              <OnlineDot online={onlineIds.has(peerId)} />
             </Link>
           )
         }
@@ -573,6 +575,18 @@ export default function ChatDetail() {
             ) : null}
             {menuOpen ? (
               <div className="absolute right-0 top-9 z-40 w-36 border border-eink-divider bg-eink-bar">
+                <button
+                  type="button"
+                  data-testid="chat-knock"
+                  className="block w-full border-b border-eink-divider px-3 py-2.5 text-left text-[14px] text-eink-ink active:bg-eink-pressed"
+                  onClick={async () => {
+                    setMenuOpen(false)
+                    const result = await sendKnock(peerId)
+                    if (!result.ok) setHint(result.error || '敲一敲失败')
+                  }}
+                >
+                  敲一敲
+                </button>
                 <button
                   type="button"
                   data-testid="block-toggle"
@@ -684,6 +698,19 @@ export default function ChatDetail() {
                       className="my-2 text-center text-[12px] text-eink-faint"
                     >
                       {mine ? '你撤回了一条消息' : '对方撤回了一条消息'}
+                    </p>
+                  </div>
+                )
+              }
+              if (msg.attachments?.type === 'knock') {
+                return (
+                  <div key={msg.id} data-msg-id={msg.id}>
+                    {showTime ? <TimeDivider time={msg.time} /> : null}
+                    <p
+                      data-testid="knock-event"
+                      className="my-2 text-center text-[12px] text-eink-faint"
+                    >
+                      {mine ? '你敲了敲对方' : `${peerDisplayName} 敲了敲你`}
                     </p>
                   </div>
                 )
