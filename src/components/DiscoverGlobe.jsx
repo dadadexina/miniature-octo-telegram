@@ -47,6 +47,10 @@ function friendlyRouteError(message) {
   const text = String(message || '')
   if (text.includes('超时')) return '路线服务响应超时，请重试'
   if (text.includes('429') || text.includes('繁忙')) return '路线服务繁忙，请稍后重试'
+  if (/离线|网络连接异常|Failed to fetch|NetworkError|Load failed/i.test(text)) {
+    return '网络连接异常，请检查网络后重试'
+  }
+  if (/50[234]|返回异常/.test(text)) return '路线服务暂时不可用，请稍后重试'
   if (text.includes('未找到')) return '未找到可行路线，请换个目的地或出行方式'
   if (text.includes('不支持')) return '暂不支持该出行方式'
   if (text.includes('坐标')) return '缺少起终点坐标，请重新选择地点'
@@ -931,6 +935,19 @@ export default function DiscoverGlobe({
       navAbortRef.current?.abort()
       const seq = navSeqRef.current + 1
       navSeqRef.current = seq
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        routeRef.current = null
+        routeSyncRef.current?.()
+        setNav({
+          place,
+          mode,
+          status: 'error',
+          route: null,
+          origin: from,
+          error: '当前设备离线',
+        })
+        return
+      }
       const controller = new AbortController()
       navAbortRef.current = controller
       routeRef.current = null
@@ -1579,7 +1596,8 @@ export default function DiscoverGlobe({
               ? '选择出行方式后开始规划路线'
               : `距你 ${formatDistance(previewDistance)} · 开车约 ${previewDriveMin} 分钟 · 步行约 ${previewWalkMin} 分钟`}
           </p>
-          <div className="mt-1.5 flex items-center gap-1.5">
+          <p className="mt-1.5 text-[10px] tracking-[0.08em] text-eink-faint">开始导航</p>
+          <div className="mt-1 flex items-center gap-1.5">
             <button
               type="button"
               data-testid="globe-route-drive"

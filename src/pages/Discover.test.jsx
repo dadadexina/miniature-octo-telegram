@@ -103,6 +103,7 @@ beforeEach(() => {
     configurable: true,
     value: { query: vi.fn(() => Promise.resolve({ state: 'prompt' })) },
   })
+  Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
   geoWatch = { success: null, error: null, cleared: 0 }
   Object.defineProperty(navigator, 'geolocation', {
     configurable: true,
@@ -203,6 +204,7 @@ describe('Discover 关系网页', () => {
     expect(card.textContent).toContain('目的地 外滩')
     expect(card.textContent).toContain('开车约')
     expect(card.textContent).toContain('步行约')
+    expect(card.textContent).toContain('开始导航')
     expect(screen.queryByTestId('globe-route-info')).toBeNull()
     expect(planRouteMock).not.toHaveBeenCalled()
     expect(screen.queryByTestId('globe-open-maps')).toBeNull()
@@ -347,6 +349,27 @@ describe('Discover 关系网页', () => {
     expect(screen.getByTestId('globe-route-status').textContent).toContain('正在为你规划步行路线')
     expect(screen.queryByTestId('globe-route-fallback')).toBeNull()
     expect(screen.getByTestId('globe-route-status').textContent).not.toContain('全程')
+  })
+
+  it('设备离线时提示检查网络且不发起路线请求', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    searchMock.mockResolvedValue({
+      ok: true,
+      places: [{ id: 'osm:7', name: '外滩', lat: 31.24, lng: 121.49, kind: 'attraction' }],
+    })
+    setup()
+    fireEvent.click(await screen.findByTestId('globe-search-toggle'))
+    fireEvent.change(await screen.findByTestId('globe-search-input'), { target: { value: '外滩' } })
+    fireEvent.click(await screen.findByTestId('globe-place-result'))
+    fireEvent.click(screen.getByTestId('globe-route-walk'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('globe-route-status').textContent).toContain(
+        '网络连接异常，请检查网络后重试'
+      )
+    )
+    expect(screen.getByTestId('globe-route-mode').textContent).toBe('规划失败')
+    expect(planRouteMock).not.toHaveBeenCalled()
   })
 
   it('路线规划失败时给出易懂提示并可重新规划', async () => {

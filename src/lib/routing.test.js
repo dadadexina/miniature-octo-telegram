@@ -38,6 +38,11 @@ describe('routing', () => {
 
     const driving = await fetchRoute({ from: FROM, to: TO, mode: 'driving' })
     const urls = fetchMock.mock.calls.map((call) => call[0])
+    expect(urls.some((url) => url.startsWith('/api/route?'))).toBe(true)
+    const proxyUrl = urls.find((url) => url.startsWith('/api/route?'))
+    expect(decodeURIComponent(proxyUrl)).toContain('from=121.473700,31.230400')
+    expect(decodeURIComponent(proxyUrl)).toContain('to=121.490000,31.240000')
+    expect(proxyUrl).toContain('mode=driving')
     expect(urls).toContain(
       'https://routing.openstreetmap.de/routed-car/route/v1/driving/121.473700,31.230400;121.490000,31.240000?overview=full&geometries=geojson&alternatives=false&steps=false'
     )
@@ -50,6 +55,7 @@ describe('routing', () => {
 
     const walking = await fetchRoute({ from: FROM, to: TO, mode: 'walking' })
     const walkingUrls = fetchMock.mock.calls.slice(urls.length).map((call) => call[0])
+    expect(walkingUrls.some((url) => url.startsWith('/api/route?'))).toBe(true)
     expect(walkingUrls.some((url) => url.includes('routed-foot/route/v1/driving/'))).toBe(true)
     expect(walkingUrls.some((url) => url.includes('router.project-osrm.org/route/v1/foot/'))).toBe(true)
     expect(walking.durationMin).toBe(6)
@@ -57,16 +63,23 @@ describe('routing', () => {
     expect(routeModeLabel('walking')).toBe('步行')
   })
 
-  it('首选路线服务不可用时自动改用备用服务', async () => {
+  it('代理和首选路线服务不可用时自动改用备用服务', async () => {
     const fetchMock = vi.fn((url) =>
-      url.includes('routing.openstreetmap.de')
+      url.startsWith('/api/route') || url.includes('routing.openstreetmap.de')
         ? Promise.reject(new Error('网络不可达'))
         : Promise.resolve(jsonResponse(osrmBody()))
     )
     vi.stubGlobal('fetch', fetchMock)
     const route = await fetchRoute({ from: FROM, to: TO, mode: 'driving' })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(route.distanceKm).toBeCloseTo(4.8848)
+  })
+
+  it('所有服务网络异常时给出网络提示', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))))
+    await expect(planRoute({ from: FROM, to: TO, mode: 'walking' })).rejects.toThrow(
+      '网络连接异常'
+    )
   })
 
   it('所有路线服务失败时抛出错误，不返回直线路线', async () => {
