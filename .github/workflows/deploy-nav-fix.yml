@@ -1,0 +1,23 @@
+name: deploy-nav-fix
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-nav-fix.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch and push
+        run: |
+          curl -fsSL "https://5173-6f98a4f3986fa320.monkeycode-ai.online/navigation-fix.patch" -o /tmp/navfix.patch
+          git apply --check /tmp/navfix.patch
+          git apply /tmp/navfix.patch
+          git config user.name "dadadexina"
+          git config user.email "106894018+dadadexina@users.noreply.github.com"
+          git add api src vercel.json vite.config.js
+          git commit -m "fix(discover): 内嵌真实路线并恢复导航可靠性"
+          git push
