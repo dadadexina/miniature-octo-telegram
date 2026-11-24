@@ -109,13 +109,21 @@ export async function fetchRoute({ from, to, mode = 'walking', signal, timeoutMs
   }
 }
 
-export async function planRoute({ from, to, mode = 'walking', signal, timeoutMs }) {
+export async function planRoute({ from, to, mode = 'walking', signal, timeoutMs = 12000 }) {
+  const fallback = straightRoute(from, to, mode)
+  let timer = null
   try {
-    return await fetchRoute({ from, to, mode, signal, timeoutMs })
+    return await Promise.race([
+      fetchRoute({ from, to, mode, signal, timeoutMs }),
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('路线规划超时')), timeoutMs + 500)
+      }),
+    ])
   } catch (err) {
     if (err?.name === 'AbortError' || signal?.aborted) throw err
-    const fallback = straightRoute(from, to, mode)
     if (!fallback) throw err
     return { ...fallback, error: err?.message || '路线服务暂不可用' }
+  } finally {
+    clearTimeout(timer)
   }
 }

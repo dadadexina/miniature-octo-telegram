@@ -323,8 +323,29 @@ describe('Discover 关系网页', () => {
     const status = await screen.findByTestId('globe-route-status')
     await waitFor(() => expect(status.textContent).toContain('定位权限被拒绝'))
     expect(screen.getByTestId('globe-route-locate')).toBeTruthy()
+    expect(screen.getByTestId('globe-route-title').textContent).toContain('步行导航 · 人民广场')
+    expect(screen.getByTestId('globe-route-title').textContent).not.toContain('正在规划')
+    expect(screen.getByTestId('globe-route-mode').textContent).toBe('待定位')
     expect(status.textContent).not.toContain('正在获取我的位置')
     expect(planRouteMock).not.toHaveBeenCalled()
+  })
+
+  it('路线服务迟迟无响应时先显示直线示意', async () => {
+    planRouteMock.mockImplementation(() => new Promise(() => {}))
+    searchMock.mockResolvedValue({
+      ok: true,
+      places: [{ id: 'osm:5', name: '外滩', lat: 31.24, lng: 121.49, kind: 'attraction' }],
+    })
+    setup()
+    fireEvent.click(await screen.findByTestId('globe-search-toggle'))
+    fireEvent.change(await screen.findByTestId('globe-search-input'), { target: { value: '外滩' } })
+    fireEvent.click(await screen.findByTestId('globe-place-result'))
+    fireEvent.click(screen.getByTestId('globe-route-walk'))
+
+    const title = await screen.findByTestId('globe-route-title')
+    expect(title.textContent).toContain('正在规划步行路线')
+    expect(screen.getByTestId('globe-route-status').textContent).toContain('已显示直线示意')
+    expect(screen.getByTestId('globe-route-mode').textContent).toBe('规划中')
   })
 
   it('到达目的地附近时提示已到达', async () => {

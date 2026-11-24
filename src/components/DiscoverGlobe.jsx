@@ -120,6 +120,7 @@ export default function DiscoverGlobe({
   const linksRef = useRef(links)
   const meRef = useRef({ id: meId, name: meName, coords: meCoords })
   const myPosRef = useRef(null)
+  const manualOriginRef = useRef(null)
   const destinationRef = useRef(null)
   const routeRef = useRef(null)
   const navSeqRef = useRef(0)
@@ -144,6 +145,7 @@ export default function DiscoverGlobe({
   const [results, setResults] = useState([])
   const [preview, setPreview] = useState(null)
   const [nav, setNav] = useState(null)
+  const [usingMapOrigin, setUsingMapOrigin] = useState(false)
   const [searchHost, setSearchHost] = useState(null)
   const [viewCenter, setViewCenter] = useState(null)
   const [weather, setWeather] = useState({ status: 'idle', data: null, error: '' })
@@ -899,6 +901,14 @@ export default function DiscoverGlobe({
 
   const selectPlace = (place) => {
     if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return
+    if (!myPosRef.current && !meRef.current.coords && mapRef.current) {
+      try {
+        const center = mapRef.current.getCenter()
+        manualOriginRef.current = { lat: center.lat, lng: center.lng }
+      } catch {
+        manualOriginRef.current = null
+      }
+    }
     navSeqRef.current += 1
     navAbortRef.current?.abort()
     navAbortRef.current = null
@@ -915,8 +925,11 @@ export default function DiscoverGlobe({
   const startNav = useCallback(
     async (place, mode) => {
       if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return
-      const from = myPosRef.current || meRef.current.coords
+      const preciseFrom = myPosRef.current || meRef.current.coords
+      const from = preciseFrom || manualOriginRef.current
+      const fromMap = !preciseFrom && Boolean(manualOriginRef.current)
       setPreview(null)
+      setUsingMapOrigin(fromMap)
       if (!from) {
         setNav({ place, mode, status: 'need-location', route: null })
         locate()
@@ -927,9 +940,10 @@ export default function DiscoverGlobe({
       navSeqRef.current = seq
       const controller = new AbortController()
       navAbortRef.current = controller
-      routeRef.current = null
+      const previewRoute = straightRoute(from, place, mode)
+      routeRef.current = previewRoute
       routeSyncRef.current?.()
-      setNav({ place, mode, status: 'loading', route: null })
+      setNav({ place, mode, status: 'loading', route: previewRoute })
       try {
         const route = await planRoute({ from, to: place, mode, signal: controller.signal })
         if (navSeqRef.current !== seq) return
@@ -938,12 +952,11 @@ export default function DiscoverGlobe({
         routeSyncRef.current?.()
       } catch (err) {
         if (navSeqRef.current !== seq || err?.name === 'AbortError') return
-        const fallback = straightRoute(from, place, mode)
-        if (!fallback) {
+        if (!previewRoute) {
           setNav({ place, mode, status: 'error', route: null })
           return
         }
-        routeRef.current = { ...fallback, error: err?.message }
+        routeRef.current = { ...previewRoute, error: err?.message }
         setNav({ place, mode, status: 'ready', route: routeRef.current })
         routeSyncRef.current?.()
       }
@@ -957,6 +970,8 @@ export default function DiscoverGlobe({
     navAbortRef.current = null
     routeRef.current = null
     destinationRef.current = null
+    manualOriginRef.current = null
+    setUsingMapOrigin(false)
     setNav(null)
     setPreview(null)
     routeSyncRef.current?.()
@@ -1081,7 +1096,9 @@ export default function DiscoverGlobe({
   const navStatus = !nav
     ? ''
     : nav.status === 'loading'
-      ? `正在规划${navModeLabel}路线...`
+      ? navRoute
+        ? `正在规划${navModeLabel}路线 · 已显示直线示意`
+        : `正在规划${navModeLabel}路线...`
       : nav.status === 'need-location'
         ? geoState === 'loading'
           ? '正在获取我的位置...'
@@ -1095,10 +1112,11 @@ export default function DiscoverGlobe({
               : '未获取到我的位置'
 
   useEffect(() => {
-    if (nav?.status === 'need-location' && effectiveCoords) {
+    if (!nav || !effectiveCoords) return
+    if (nav.status === 'need-location' || usingMapOrigin) {
       startNav(nav.place, nav.mode)
     }
-  }, [effectiveCoords, nav, startNav])
+  }, [effectiveCoords, nav, startNav, usingMapOrigin])
 
   useEffect(() => {
     const center = viewCenter || myPos || meCoords
@@ -1572,7 +1590,7 @@ export default function DiscoverGlobe({
             <button
               type="button"
               data-testid="globe-route-drive"
-              className="border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
+              className="min-h-8 border border-eink-line/40 px-2.5 py-1 text-[12px] text-eink-sub active:bg-eink-surface"
               onClick={() => startNav(preview, 'driving')}
             >
               开车导航
@@ -1580,7 +1598,7 @@ export default function DiscoverGlobe({
             <button
               type="button"
               data-testid="globe-route-walk"
-              className="border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
+              className="min-h-8 border border-eink-line/40 px-2.5 py-1 text-[12px] text-eink-sub active:bg-eink-surface"
               onClick={() => startNav(preview, 'walking')}
             >
               步行导航
@@ -1588,7 +1606,7 @@ export default function DiscoverGlobe({
             <button
               type="button"
               data-testid="globe-preview-close"
-              className="ml-auto border border-eink-line/40 px-2 py-0.5 text-eink-faint active:bg-eink-surface"
+              className="ml-auto min-h-8 border border-eink-line/40 px-2.5 py-1 text-[12px] text-eink-faint active:bg-eink-surface"
               onClick={() => setPreview(null)}
             >
               关闭
@@ -1604,7 +1622,7 @@ export default function DiscoverGlobe({
         >
           <div className="flex items-baseline justify-between gap-2">
             <p data-testid="globe-route-title" className="min-w-0 truncate text-eink-ink">
-              {nav.status === 'loading' || nav.status === 'need-location'
+              {nav.status === 'loading'
                 ? `正在规划${navModeLabel}路线`
                 : `${navModeLabel}导航 · ${nav.place.name}`}
             </p>
@@ -1612,11 +1630,13 @@ export default function DiscoverGlobe({
               data-testid="globe-route-mode"
               className="shrink-0 text-[9px] tracking-[0.08em] text-eink-faint"
             >
-              {nav.status === 'loading' || nav.status === 'need-location'
+              {nav.status === 'loading'
                 ? '规划中'
-                : arrived
-                  ? '已到达'
-                  : '导航中'}
+                : nav.status === 'need-location'
+                  ? '待定位'
+                  : arrived
+                    ? '已到达'
+                    : '导航中'}
             </span>
           </div>
           <p data-testid="globe-route-status" className="mt-0.5 text-[10px] text-eink-sub tabular-nums">
@@ -1627,12 +1647,17 @@ export default function DiscoverGlobe({
               路线服务暂不可用，当前以直线距离示意
             </p>
           ) : null}
+          {usingMapOrigin && nav.status !== 'need-location' ? (
+            <p data-testid="globe-route-origin" className="mt-0.5 text-[10px] text-eink-faint">
+              未获取定位，暂从地图中心出发
+            </p>
+          ) : null}
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               data-testid="globe-mode-drive"
               aria-pressed={nav.mode === 'driving'}
-              className={`border px-2 py-0.5 active:bg-eink-surface ${
+              className={`min-h-8 border px-3 py-1 text-[12px] active:bg-eink-surface ${
                 nav.mode === 'driving'
                   ? 'border-eink-ink text-eink-ink'
                   : 'border-eink-line/40 text-eink-sub'
@@ -1645,7 +1670,7 @@ export default function DiscoverGlobe({
               type="button"
               data-testid="globe-mode-walk"
               aria-pressed={nav.mode === 'walking'}
-              className={`border px-2 py-0.5 active:bg-eink-surface ${
+              className={`min-h-8 border px-3 py-1 text-[12px] active:bg-eink-surface ${
                 nav.mode === 'walking'
                   ? 'border-eink-ink text-eink-ink'
                   : 'border-eink-line/40 text-eink-sub'
@@ -1658,16 +1683,16 @@ export default function DiscoverGlobe({
               <button
                 type="button"
                 data-testid="globe-route-locate"
-                className="border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
+                className="min-h-8 border border-eink-line/40 px-2.5 py-1 text-[12px] text-eink-sub active:bg-eink-surface"
                 onClick={() => locate()}
               >
-                重试定位
+                开启定位
               </button>
             ) : null}
             <button
               type="button"
               data-testid="globe-route-clear"
-              className="ml-auto border border-eink-line/40 px-2 py-0.5 text-eink-sub active:bg-eink-surface"
+              className="ml-auto min-h-8 border border-eink-line/40 px-2.5 py-1 text-[12px] text-eink-sub active:bg-eink-surface"
               onClick={endNav}
             >
               结束导航

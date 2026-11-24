@@ -71,6 +71,14 @@ describe('routing', () => {
     expect(routeModeLabel('other')).toBe('步行')
   })
 
+  it('路线服务不响应时仍按时回退为直线', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+    const route = await planRoute({ from: FROM, to: TO, mode: 'walking', timeoutMs: 20 })
+    expect(route.fallback).toBe(true)
+    expect(route.error).toContain('超时')
+    expect(route.coordinates).toHaveLength(2)
+  })
+
   it('主动取消时抛出 AbortError 而不是回退', async () => {
     vi.stubGlobal(
       'fetch',
