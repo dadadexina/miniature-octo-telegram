@@ -98,6 +98,11 @@ vi.mock('../components/LongTextBody', () => ({
 vi.mock('../components/SignedImage', () => ({
   default: ({ attachment }) => <img data-testid="signed-image" data-path={attachment?.path || ''} alt="" />,
 }))
+vi.mock('../components/SignedAudio', () => ({
+  default: ({ attachment }) => (
+    <div data-testid="signed-audio" data-path={attachment?.path || ''} data-duration={attachment?.duration || 0} />
+  ),
+}))
 
 function setup() {
   render(
@@ -187,6 +192,52 @@ describe('ChatDetail 图片消息不额外套气泡边框', () => {
     const bubble = screen.getByText('图片说明').closest('.chat-bubble-text')
     expect(bubble).toBeTruthy()
     expect(bubble.contains(pending)).toBe(false)
+  })
+})
+
+describe('ChatDetail 语音消息', () => {
+  it('语音与文字切换按钮位于输入框最左侧', async () => {
+    setup()
+
+    const input = await screen.findByPlaceholderText('发送消息')
+    const toggle = screen.getByTestId('voice-mode-toggle')
+    expect(toggle.parentElement.contains(input)).toBe(true)
+    expect(toggle.className).toContain('left-0')
+
+    fireEvent.click(toggle)
+    expect(screen.getByTestId('voice-hold').textContent).toContain('按住 说话')
+    expect(screen.queryByPlaceholderText('发送消息')).toBeNull()
+
+    fireEvent.click(toggle)
+    expect(screen.getByPlaceholderText('发送消息')).toBeTruthy()
+  })
+
+  it('语音消息展示播放器且不额外套文字气泡', async () => {
+    storeHolder.inbox = [
+      {
+        id: 'm-audio',
+        fromId: PEER,
+        toId: ME,
+        text: '',
+        time: Date.now(),
+        attachments: { type: 'audio', path: 'chat/a.webm', duration: 3, mime: 'audio/webm' },
+      },
+    ]
+    setup()
+
+    const audio = await screen.findByTestId('signed-audio')
+    expect(audio.getAttribute('data-duration')).toBe('3')
+    expect(audio.closest('.chat-bubble-text')).toBeNull()
+    expect(document.querySelectorAll('.chat-bubble-text')).toHaveLength(0)
+  })
+
+  it('浏览器不支持录音时按住说话给出提示', async () => {
+    setup()
+
+    fireEvent.click(await screen.findByTestId('voice-mode-toggle'))
+    fireEvent.pointerDown(screen.getByTestId('voice-hold'))
+
+    await screen.findByText('当前浏览器不支持录音')
   })
 })
 

@@ -13,7 +13,7 @@ import {
 } from './lib/friendRequests'
 import { applyDraft, loadDrafts, saveDrafts } from './lib/drafts'
 import { fetchConversationPrefs, upsertConversationPref } from './lib/conversationPrefs'
-import { deletePairMessages, fetchHiddenIds, fetchInbox, fetchReceivedSince, hideMessage, insertMessageWithFriendHeal, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, peerIdOf } from './lib/messages'
+import { deletePairMessages, fetchHiddenIds, fetchInbox, fetchReceivedSince, hideMessage, insertMessageWithFriendHeal, involvesUser, isPairMessage, isUuid, mapMessage, mergeMessages, parseAttachments, peerIdOf } from './lib/messages'
 import { findAuthIdentity } from './lib/identity'
 import { mapProfile, fetchProfilesByIds } from './lib/profiles'
 import { applyProfileRow, withMappedAvatar } from './lib/profileMerge'
@@ -646,7 +646,13 @@ export function StoreProvider({ children }) {
             }
           }
           if (fromId && toId === me && fromId !== me && fromId !== activePeerRef.current) {
-            const body = raw.content || raw.text || raw.body || ''
+            const attachmentType = parseAttachments(raw.attachments)?.type
+            const body =
+              attachmentType === 'audio'
+                ? '[语音]'
+                : attachmentType === 'image'
+                  ? '[图片]'
+                  : raw.content || raw.text || raw.body || ''
             const meta = stateRef.current.friendships.find(
               (f) => f.userId === me && f.friendId === fromId
             )
@@ -1440,10 +1446,10 @@ export function StoreProvider({ children }) {
         return state.messages.filter((m) => m.pair === key)
       },
 
-      sendMessage(peerId, text) {
+      sendMessage(peerId, text, attachments = null) {
         const me = state.currentUserId
-        const content = text.trim()
-        if (!me || !content) return { ok: false }
+        const content = String(text || '').trim()
+        if (!me || !peerId || (!content && !attachments)) return { ok: false }
         const msg = {
           id: uid('msg'),
           pair: pairKey(me, peerId),
@@ -1452,6 +1458,7 @@ export function StoreProvider({ children }) {
           text: content,
           time: now(),
         }
+        if (attachments) msg.attachments = attachments
         patch((prev) => ({ ...prev, messages: [...prev.messages, msg] }))
         return { ok: true, msg }
       },

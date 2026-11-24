@@ -8,9 +8,11 @@ import NavBar from '../components/NavBar'
 import OnlineDot from '../components/OnlineDot'
 import LongTextBody from '../components/LongTextBody'
 import ReportSheet from '../components/ReportSheet'
+import SignedAudio from '../components/SignedAudio'
 import SignedImage from '../components/SignedImage'
 import useKeyboardInset from '../hooks/useKeyboardInset'
 import useLongPress from '../hooks/useLongPress'
+import useVoiceRecorder, { blobToDataUrl, formatRecordingTime } from '../hooks/useVoiceRecorder'
 import useSwipeBack from '../hooks/useSwipeBack'
 import { goBackOr } from '../lib/navigation'
 import {
@@ -33,6 +35,8 @@ import { supabase } from '../lib/supabase'
 import { friendlyInsertError } from '../lib/syncHelpers'
 import { useStore } from '../store'
 import { formatChatTime, quoteExcerpt } from '../utils'
+
+const MAX_LOCAL_VOICE_BYTES = 2 * 1024 * 1024
 
 const REPLIES = [
   '收到，我稍后回你。',
@@ -79,6 +83,18 @@ export default function ChatDetail() {
   const [attach, setAttach] = useState(null)
   const [viewerUrl, setViewerUrl] = useState(null)
   const fileInputRef = useRef(null)
+  const [voiceMode, setVoiceMode] = useState(false)
+  const [voiceHint, setVoiceHint] = useState('')
+  const {
+    recording,
+    starting: voiceStarting,
+    elapsed: voiceElapsed,
+    start: startVoice,
+    stop: stopVoice,
+  } = useVoiceRecorder({
+    onRecorded: sendVoiceClip,
+    onError: (message) => setVoiceHint(message),
+  })
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmBlock, setConfirmBlock] = useState(false)
   const listRef = useRef(null)
@@ -117,7 +133,7 @@ export default function ChatDetail() {
     const excerpted = quoteExcerpt(q.text || '')
     return {
       name: nameOfSender(q.fromId),
-      text: excerpted || (q.attachments?.type === 'image' ? '[图片]' : ''),
+      text: excerpted || attachmentExcerpt(q.attachments),
     }
   }
 
@@ -298,6 +314,8 @@ export default function ChatDetail() {
 
   const sendCloudMessage = async (content, tmpId, replyToId = '', media = null) => {
     let attachments = null
+    const mediaKind = media?.kind === 'audio' ? 'audio' : 'image'
+    const uploadFailed = mediaKind === 'audio' ? '语音上传失败' : '图片上传失败'
     if (media?.blob) {
       setPendingList((prev) =>
         prev.map((item) => (item.tmpId === tmpId ? { ...item, status: 'uploading', error: '' } : item))
@@ -308,16 +326,25 @@ export default function ChatDetail() {
         height: media.height || 0,
         meId: currentUser.id,
         peerId,
+        contentType: media.mime || media.blob.type || '',
       })
       if (!up.ok) {
         setPendingList((prev) =>
           prev.map((item) =>
-            item.tmpId === tmpId ? { ...item, status: 'failed', error: up.error || '图片上传失败' } : item
+            item.tmpId === tmpId ? { ...item, status: 'failed', error: up.error || uploadFailed } : item
           )
         )
         return
       }
-      attachments = { type: 'image', path: up.path, width: up.width, height: up.height }
+      attachments =
+        mediaKind === 'audio'
+          ? {
+              type: 'audio',
+              path: up.path,
+              duration: media.duration || 0,
+              mime: media.mime || up.contentType || 'audio/webm',
+            }
+          : { type: 'image', path: up.path, width: up.width, height: up.height }
     }
     setPendingList((prev) =>
       prev.map((item) => (item.tmpId === tmpId ? { ...item, status: 'sending', error: '' } : item))
@@ -405,7 +432,7 @@ export default function ChatDetail() {
     const content = text.trim()
     const media =
       attach?.status === 'ready' && attach.blob
-        ? { blob: attach.blob, width: attach.width, height: attach.height, url: attach.url }
+        ? { kind: 'image', blob: attach.blob, width: attach.width, height: attach.height, url: attach.url }
         : null
     if (!content && !media) return
     if (cloudReady) {
@@ -417,8 +444,7 @@ export default function ChatDetail() {
             text:
               quoteMsg.recalledAt
                 ? '[已撤回的消息]'
-                : quoteExcerpt(quoteMsg.text || '') ||
-                  (quoteMsg.attachments?.type === 'image' ? '[图片]' : ''),
+                : quoteExcerpt(quoteMsg.text || '') || attachmentExcerpt(quoteMsg.attachments),
           }
         : null
       setPendingList((prev) => [
@@ -453,6 +479,59 @@ export default function ChatDetail() {
     }, 700)
   }
 
+  async function sendVoiceClip(clip) {
+    if (!clip?.blob || !currentUser || !peerId) return
+    setVoiceHint('')
+    if (cloudReady) {
+      const tmpId = makeTmpId()
+      const url =
+        typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(clip.blob) : ''
+      const media = {
+        kind: 'audio',
+        blob: clip.blob,
+        duration: clip.duration,
+        mime: clip.mime,
+        url,
+      }
+      setPendingList((prev) => [
+        ...prev,
+        {
+          tmpId,
+          text: '',
+          time: Date.now(),
+          status: 'uploading',
+          error: '',
+          reply: null,
+          image: '',
+          audio: { url, duration: clip.duration },
+          media,
+        },
+      ])
+      requestAnimationFrame(() => scrollToBottom(true))
+      await sendCloudMessage('', tmpId, '', media)
+      return
+    }
+    if (clip.blob.size > MAX_LOCAL_VOICE_BYTES) {
+      setVoiceHint('本地体验暂不支持过长语音')
+      return
+    }
+    const dataUrl = await blobToDataUrl(clip.blob)
+    if (!dataUrl) {
+      setVoiceHint('语音处理失败，请重试')
+      return
+    }
+    const result = sendMessage(peerId, '', {
+      type: 'audio',
+      url: dataUrl,
+      duration: clip.duration,
+      mime: clip.mime,
+    })
+    if (!result.ok) {
+      setVoiceHint('语音发送失败，请重试')
+      return
+    }
+    requestAnimationFrame(() => scrollToBottom(true))
+  }
   const onRecall = async (msg) => {
     setActiveMsgId(null)
     const result = await recallMessage(msg.id)
@@ -731,8 +810,9 @@ export default function ChatDetail() {
               }
               const read = mine && peerReadTs > 0 && peerReadTs >= msg.time
               const hasImage = msg.attachments?.type === 'image'
+              const hasAudio = msg.attachments?.type === 'audio'
               const hasText = Boolean(String(msg.text || '').trim())
-              const showBubble = !hasImage || hasText || Boolean(msg.replyToId)
+              const showBubble = (!hasImage && !hasAudio) || hasText || Boolean(msg.replyToId)
               return (
                 <div
                   key={msg.id}
@@ -778,6 +858,7 @@ export default function ChatDetail() {
                       {hasImage ? (
                         <SignedImage attachment={msg.attachments} onView={setViewerUrl} />
                       ) : null}
+                      {hasAudio ? <SignedAudio attachment={msg.attachments} mine={mine} /> : null}
                       {showBubble ? (
                         <Bubble mine={mine}>
                           {msg.replyToId ? <QuoteStrip mine={mine} quote={resolveQuote(msg.replyToId)} /> : null}
@@ -871,6 +952,14 @@ export default function ChatDetail() {
                           style={{ width: 160 }}
                         />
                       ) : null}
+                      {item.audio ? (
+                        <span
+                          data-testid="pending-audio"
+                          className="inline-flex items-center border border-eink-line/25 bg-eink-bar px-2.5 py-2 text-[12px] text-eink-sub"
+                        >
+                          语音 {item.audio.duration || 1}"
+                        </span>
+                      ) : null}
                       {item.text || item.reply ? (
                         <Bubble mine>
                           {item.reply ? <QuoteStrip mine quote={item.reply} /> : null}
@@ -892,7 +981,11 @@ export default function ChatDetail() {
                       </div>
                     ) : (
                       <span className="mt-0.5 px-1 text-[11px] text-eink-faint">
-                        {item.status === 'uploading' ? '图片上传中...' : '发送中...'}
+                        {item.status === 'uploading'
+                          ? item.media?.kind === 'audio'
+                            ? '语音上传中...'
+                            : '图片上传中...'
+                          : '发送中...'}
                       </span>
                     )}
                   </div>
@@ -907,6 +1000,11 @@ export default function ChatDetail() {
         className="composer safe-bottom border-t border-eink-divider bg-eink-bar"
         onSubmit={submit}
       >
+        {voiceHint ? (
+          <p data-testid="voice-hint" className="px-2 pt-1.5 text-[12px] text-eink-sub">
+            {voiceHint}
+          </p>
+        ) : null}
         {attach ? (
           <div
             data-testid="attach-preview"
@@ -941,7 +1039,7 @@ export default function ChatDetail() {
               data-testid="quote-bar"
               className="min-w-0 flex-1 truncate border-l-2 border-eink-line bg-eink-paper px-2 py-1 text-[12px] text-eink-sub"
             >
-              {nameOfSender(quoteMsg.fromId)}: {quoteMsg.recalledAt ? '[已撤回的消息]' : quoteExcerpt(quoteMsg.text || '')}
+              {nameOfSender(quoteMsg.fromId)}: {quoteMsg.recalledAt ? '[已撤回的消息]' : quoteExcerpt(quoteMsg.text || '') || attachmentExcerpt(quoteMsg.attachments)}
             </div>
             <button
               type="button"
@@ -978,29 +1076,91 @@ export default function ChatDetail() {
             />
           </>
         ) : null}
-        <input
-          ref={inputRef}
-          className="h-9 min-w-0 flex-1 rounded-none border border-eink-line/25 bg-eink-bar px-3 text-[16px] outline-none"
-          type="text"
-          enterKeyHint="send"
-          autoComplete="off"
-          placeholder="发送消息"
-          maxLength={4000}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            announceTyping()
-          }}
-          onBlur={stopTypingSignal}
-          onFocus={() => setTimeout(() => scrollToBottom(true), 80)}
-        />
-        <button
-          type="submit"
-          className="h-9 shrink-0 rounded-none bg-eink-ink px-3.5 text-[15px] text-eink-paper active:bg-eink-pressed disabled:bg-eink-disabled"
-          disabled={!text.trim() && !(attach?.status === 'ready' && attach.blob)}
-        >
-          发送
-        </button>
+        <div className="relative min-w-0 flex-1">
+          <button
+            type="button"
+            data-testid="voice-mode-toggle"
+            aria-label={voiceMode ? '切换到文字输入' : '切换到语音消息'}
+            className="absolute left-0 top-0 z-10 flex h-9 w-9 items-center justify-center text-eink-sub active:bg-eink-pressed"
+            onClick={() => {
+              if (recording || voiceStarting) stopVoice(true)
+              setVoiceHint('')
+              setVoiceMode((value) => !value)
+            }}
+          >
+            {voiceMode ? <KeyboardIcon /> : <MicIcon />}
+          </button>
+          {voiceMode ? (
+            <button
+              type="button"
+              data-testid="voice-hold"
+              className={`h-9 w-full select-none rounded-none border pl-9 pr-3 text-[15px] active:bg-eink-pressed ${
+                recording
+                  ? 'border-eink-ink bg-eink-pressed text-eink-ink'
+                  : 'border-eink-line/25 bg-eink-bar text-eink-ink'
+              }`}
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.currentTarget.setPointerCapture?.(event.pointerId)
+                void startVoice()
+              }}
+              onPointerUp={(event) => {
+                event.preventDefault()
+                stopVoice(false)
+              }}
+              onPointerCancel={() => stopVoice(true)}
+              onBlur={() => stopVoice(true)}
+              onKeyDown={(event) => {
+                if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
+                  event.preventDefault()
+                  void startVoice()
+                }
+              }}
+              onKeyUp={(event) => {
+                if (event.key === ' ' || event.key === 'Enter') {
+                  event.preventDefault()
+                  stopVoice(false)
+                }
+              }}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <span className="flex items-center justify-center gap-1.5">
+                {recording ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-eink-ink" /> : null}
+                {recording
+                  ? `松开发送 ${formatRecordingTime(voiceElapsed)}`
+                  : voiceStarting
+                    ? '准备录音...'
+                    : '按住 说话'}
+              </span>
+            </button>
+          ) : (
+            <input
+              ref={inputRef}
+              className="h-9 w-full rounded-none border border-eink-line/25 bg-eink-bar pl-9 pr-3 text-[16px] outline-none"
+              type="text"
+              enterKeyHint="send"
+              autoComplete="off"
+              placeholder="发送消息"
+              maxLength={4000}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value)
+                announceTyping()
+              }}
+              onBlur={stopTypingSignal}
+              onFocus={() => setTimeout(() => scrollToBottom(true), 80)}
+            />
+          )}
+        </div>
+        {voiceMode && !(attach?.status === 'ready' && attach.blob) ? null : (
+          <button
+            type="submit"
+            className="h-9 shrink-0 rounded-none bg-eink-ink px-3.5 text-[15px] text-eink-paper active:bg-eink-pressed disabled:bg-eink-disabled"
+            disabled={!text.trim() && !(attach?.status === 'ready' && attach.blob)}
+          >
+            发送
+          </button>
+        )}
         </div>
       </form>
 
@@ -1080,6 +1240,12 @@ function QuoteStrip({ mine, quote }) {
   )
 }
 
+function attachmentExcerpt(attachments) {
+  if (attachments?.type === 'image') return '[图片]'
+  if (attachments?.type === 'audio') return '[语音]'
+  return ''
+}
+
 function makeTmpId() {
   return `tmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
@@ -1140,6 +1306,24 @@ function PhoneIcon() {
   )
 }
 
+
+function MicIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" />
+    </svg>
+  )
+}
+
+function KeyboardIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="6" width="18" height="12" rx="1.5" />
+      <path d="M7 10h.01M10.5 10h.01M14 10h.01M17.5 10h.01M7 13.5h.01M10.5 13.5h.01M14 13.5h.01M17.5 13.5h.01M8 17h8" />
+    </svg>
+  )
+}
 
 function Back({ onClick }) {
   return (

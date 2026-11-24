@@ -187,6 +187,8 @@ export default function Chats() {
                   ) : last ? (
                     last.attachments?.type === 'knock' ? (
                       '[敲一敲]'
+                    ) : last.attachments?.type === 'audio' ? (
+                      '[语音]'
                     ) : (
                       `${last.fromId === currentUser.id ? '我: ' : ''}${
                         last.text ||

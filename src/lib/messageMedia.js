@@ -16,6 +16,13 @@ const MIME_EXT = {
   'image/avif': 'avif',
   'image/heic': 'heic',
   'image/heif': 'heif',
+  'audio/webm': 'webm',
+  'audio/mp4': 'm4a',
+  'audio/ogg': 'ogg',
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/aac': 'aac',
 }
 
 export function pairFolder(a, b) {
@@ -37,7 +44,7 @@ export function makeMediaRand() {
 }
 
 export async function uploadMessageBlob({ blob, width = 0, height = 0, meId, peerId, contentType }) {
-  if (!blob) return { ok: false, error: '缺少图片数据' }
+  if (!blob) return { ok: false, error: '缺少媒体数据' }
   const type = contentType || blob.type || 'image/jpeg'
   const path = buildMediaPath(pairFolder(meId, peerId), Date.now(), makeMediaRand(), extensionForMime(type))
   try {
@@ -48,7 +55,7 @@ export async function uploadMessageBlob({ blob, width = 0, height = 0, meId, pee
   } catch (err) {
     return { ok: false, error: err?.message || '上传失败' }
   }
-  return { ok: true, path, width, height }
+  return { ok: true, path, width, height, contentType: type }
 }
 
 // 发送原图:readImageFile 只读取尺寸,blob 保持原始字节,不做任何压缩。
