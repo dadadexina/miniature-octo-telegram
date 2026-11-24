@@ -75,8 +75,14 @@ const VIEW_TITLES = {
   notify: '通知',
   display: '界面显示',
   security: '账号安全',
+  password: '修改密码',
+  realname: '实名认证',
+  report: '举报',
+  export: '导出我的数据',
   other: '其他设置',
 }
+
+const SECURITY_SUBVIEWS = new Set(['password', 'realname', 'report', 'export'])
 
 const REPORT_TARGET_LIMIT = 120
 
@@ -92,6 +98,13 @@ const NOTIFY_ITEMS = [
   { key: 'notifyMessages', title: '新消息提醒', desc: '收到新消息时在通知栏提醒' },
   { key: 'notifySound', title: '声音', desc: '新消息到达时播放提示音' },
   { key: 'notifyVibrate', title: '震动', desc: '新消息到达时震动提醒' },
+]
+
+const SECURITY_ITEMS = [
+  { key: 'password', title: '修改密码', desc: '验证当前密码后更新登录密码' },
+  { key: 'realname', title: '实名认证', desc: '提交身份证信息并查看审核状态' },
+  { key: 'report', title: '举报', desc: '举报违规用户并提交处理' },
+  { key: 'export', title: '导出我的数据', desc: '打包下载资料、消息与朋友圈' },
 ]
 
 const FONT_OPTIONS = [
@@ -127,6 +140,7 @@ export default function Settings() {
     logout,
   } = useStore()
   const [view, setView] = useState('main')
+  const [notifyMoreOpen, setNotifyMoreOpen] = useState(false)
   const [settings, setSettings] = useState(() => loadSettings())
   const [notice, setNotice] = useState('')
   const [coverBusy, setCoverBusy] = useState(false)
@@ -338,6 +352,10 @@ export default function Settings() {
     }
     if (notice) {
       setNotice('')
+      return
+    }
+    if (SECURITY_SUBVIEWS.has(view)) {
+      setView('security')
       return
     }
     if (view !== 'main') {
@@ -642,6 +660,67 @@ export default function Settings() {
                   </div>
                 </li>
               ))}
+              <li className="border-t border-eink-divider" data-testid="settings-dnd">
+                <div className="flex items-center justify-between px-4 py-3.5">
+                  <span className="min-w-0">
+                    <span className="block text-[16px] text-eink-text">免打扰</span>
+                    <span className="mt-0.5 block text-[12px] text-eink-sub">
+                      在设定时段内不逐条提醒，可合并为收件摘要
+                    </span>
+                  </span>
+                  <Switch
+                    checked={settings.dndEnabled}
+                    onChange={(value) => update({ dndEnabled: value })}
+                    label="免打扰"
+                  />
+                </div>
+                {settings.dndEnabled ? (
+                  <div className="border-t border-eink-divider px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <label htmlFor="dnd-start" className="text-[14px] text-eink-text">
+                        开始时间
+                      </label>
+                      <input
+                        id="dnd-start"
+                        data-testid="settings-dnd-start"
+                        type="time"
+                        value={settings.dndStart}
+                        onChange={(e) => update({ dndStart: e.target.value })}
+                        className="h-9 border border-eink-line/30 bg-eink-paper px-2 text-[14px] text-eink-text outline-none"
+                      />
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      <label htmlFor="dnd-end" className="text-[14px] text-eink-text">
+                        结束时间
+                      </label>
+                      <input
+                        id="dnd-end"
+                        data-testid="settings-dnd-end"
+                        type="time"
+                        value={settings.dndEnd}
+                        onChange={(e) => update({ dndEnd: e.target.value })}
+                        className="h-9 border border-eink-line/30 bg-eink-paper px-2 text-[14px] text-eink-text outline-none"
+                      />
+                    </div>
+                    <p className="mt-2 text-[12px] leading-5 text-eink-sub">
+                      支持跨午夜，例如 22:00 至 08:00；开始与结束相同表示全天免打扰。
+                    </p>
+                    <div className="mt-3 flex items-center justify-between gap-3 border-t border-eink-divider pt-3">
+                      <span className="min-w-0">
+                        <span className="block text-[14px] text-eink-text">收件摘要</span>
+                        <span className="mt-0.5 block text-[12px] text-eink-sub">
+                          免打扰结束后合并提示未读数量与来源
+                        </span>
+                      </span>
+                      <Switch
+                        checked={settings.digestEnabled}
+                        onChange={(value) => update({ digestEnabled: value })}
+                        label="收件摘要"
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </li>
               <li className="border-t border-eink-divider px-4 py-3 text-[12px] leading-5 text-eink-sub">
                 提醒偏好保存在本机，重新登录后仍会保留。
               </li>
@@ -665,237 +744,195 @@ export default function Settings() {
               </div>
             ) : null}
 
-            <div className="mt-6 px-4" data-testid="settings-dnd">
-              <p className="text-[16px] text-eink-text">免打扰</p>
-              <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
-                在设定时段内不逐条提醒，开启收件摘要后在免打扰结束后合并提示一次。
-              </p>
-              <div className="mt-3 border border-eink-divider bg-eink-bar">
-                <div className="flex items-center justify-between px-3 py-2.5">
-                  <span className="text-[14px] text-eink-text">开启免打扰</span>
-                  <Switch
-                    checked={settings.dndEnabled}
-                    onChange={(value) => update({ dndEnabled: value })}
-                    label="开启免打扰"
-                  />
-                </div>
-                {settings.dndEnabled ? (
-                  <>
-                    <div className="border-t border-eink-divider px-3 py-2.5">
-                      <div className="flex items-center justify-between gap-3">
-                        <label htmlFor="dnd-start" className="text-[14px] text-eink-text">
-                          开始时间
-                        </label>
-                        <input
-                          id="dnd-start"
-                          data-testid="settings-dnd-start"
-                          type="time"
-                          value={settings.dndStart}
-                          onChange={(e) => update({ dndStart: e.target.value })}
-                          className="h-9 border border-eink-line/30 bg-eink-paper px-2 text-[14px] text-eink-text outline-none"
-                        />
-                      </div>
-                      <div className="mt-2 flex items-center justify-between gap-3">
-                        <label htmlFor="dnd-end" className="text-[14px] text-eink-text">
-                          结束时间
-                        </label>
-                        <input
-                          id="dnd-end"
-                          data-testid="settings-dnd-end"
-                          type="time"
-                          value={settings.dndEnd}
-                          onChange={(e) => update({ dndEnd: e.target.value })}
-                          className="h-9 border border-eink-line/30 bg-eink-paper px-2 text-[14px] text-eink-text outline-none"
-                        />
-                      </div>
-                      <p className="mt-2 text-[12px] leading-5 text-eink-sub">
-                        支持跨午夜，例如 22:00 至 08:00；开始与结束相同表示全天免打扰。
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-eink-divider px-3 py-2.5">
-                      <span className="min-w-0">
-                        <span className="block text-[14px] text-eink-text">收件摘要</span>
-                        <span className="mt-0.5 block text-[12px] text-eink-sub">
-                          免打扰结束后合并提示未读数量与来源
-                        </span>
-                      </span>
-                      <Switch
-                        checked={settings.digestEnabled}
-                        onChange={(value) => update({ digestEnabled: value })}
-                        label="收件摘要"
-                      />
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="mt-6 px-4">
-              <p className="text-[16px] text-eink-text">新通知</p>
-              <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
-                发送一条测试通知，确认提示音、震动与通知权限是否正常。
-              </p>
-              <div
-                data-testid="settings-notification-permission"
-                className="mt-3 flex items-center justify-between border border-eink-divider bg-eink-bar px-3 py-2.5"
+            <div className="mt-6 border-y border-eink-divider bg-eink-bar" data-testid="settings-notify-more">
+              <button
+                type="button"
+                data-testid="settings-notify-more-toggle"
+                aria-expanded={notifyMoreOpen}
+                className="flex w-full items-center justify-between px-4 py-3.5 text-left active:bg-[#E7E5DD]"
+                onClick={() => setNotifyMoreOpen((open) => !open)}
               >
                 <span className="min-w-0">
-                  <span className="block text-[14px] text-eink-text">通知权限</span>
+                  <span className="block text-[16px] text-eink-text">新通知</span>
                   <span className="mt-0.5 block text-[12px] text-eink-sub">
-                    {PERMISSION_TEXT[notificationPermission] || PERMISSION_TEXT.default}
+                    通知权限、测试、提示音与来电铃声
                   </span>
                 </span>
-                {notificationPermission === 'default' ? (
-                  <button
-                    type="button"
-                    data-testid="settings-enable-notifications"
-                    className="ml-3 h-8 shrink-0 border border-eink-ink px-3 text-[12px] text-eink-ink active:bg-[#E7E5DD]"
-                    onClick={enableNotifications}
+                <span
+                  className={`ml-3 shrink-0 text-[18px] text-eink-faint transition-transform ${
+                    notifyMoreOpen ? 'rotate-90' : ''
+                  }`}
+                >
+                  ›
+                </span>
+              </button>
+              {notifyMoreOpen ? (
+                <div className="border-t border-eink-divider" data-testid="settings-notify-more-panel">
+                  <div
+                    data-testid="settings-notification-permission"
+                    className="flex items-center justify-between border-b border-eink-divider px-4 py-3"
                   >
-                    开启
-                  </button>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                data-testid="settings-test-notification"
-                className="mt-3 h-10 w-full border border-eink-ink text-[14px] text-eink-ink active:bg-[#E7E5DD]"
-                onClick={sendTestNotification}
-              >
-                发送测试通知
-              </button>
-              <button
-                type="button"
-                data-testid="settings-test-vibration"
-                className="mt-2 h-10 w-full border border-eink-divider text-[14px] text-eink-sub active:bg-[#E7E5DD]"
-                onClick={testVibration}
-              >
-                测试震动
-              </button>
-              <p className="mt-2 text-[12px] leading-5 text-eink-sub">
-                震动需要手机浏览器支持，且页面保持在前台。
-              </p>
-            </div>
-
-            <div className="mt-6 px-4 pb-8" data-testid="settings-sound-list">
-              <p className="text-[16px] text-eink-text">提示音</p>
-              <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
-                默认提供 10 个提示音，点击即可试听并设为新消息提示音。
-              </p>
-              <ul className="mt-3 border border-eink-divider bg-eink-bar">
-                {NOTIFICATION_SOUNDS.map((sound, index) => {
-                  const active = settings.notifySoundId === sound.id
-                  return (
-                    <li key={sound.id} className={index ? 'border-t border-eink-divider' : ''}>
+                    <span className="min-w-0">
+                      <span className="block text-[14px] text-eink-text">通知权限</span>
+                      <span className="mt-0.5 block text-[12px] text-eink-sub">
+                        {PERMISSION_TEXT[notificationPermission] || PERMISSION_TEXT.default}
+                      </span>
+                    </span>
+                    {notificationPermission === 'default' ? (
                       <button
                         type="button"
-                        data-testid={`settings-sound-${sound.id}`}
-                        aria-pressed={active}
-                        className="flex w-full items-center justify-between px-3 py-2.5 text-left active:bg-[#E7E5DD]"
-                        onClick={() => {
-                          update({ notifySoundId: sound.id })
-                          previewSound(sound.id)
-                        }}
+                        data-testid="settings-enable-notifications"
+                        className="ml-3 h-8 shrink-0 border border-eink-ink px-3 text-[12px] text-eink-ink active:bg-[#E7E5DD]"
+                        onClick={enableNotifications}
                       >
-                        <span className="flex min-w-0 items-center gap-2 text-[15px] text-eink-text">
-                          <span
-                            className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-                              active ? 'bg-eink-ink' : 'bg-eink-disabled'
-                            }`}
-                          />
-                          <span className="truncate">{sound.name}</span>
-                        </span>
-                        <span className="ml-3 shrink-0 text-[12px] text-eink-sub">
-                          {active ? '使用中 · 试听' : '试听'}
-                        </span>
+                        开启
                       </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
-
-            <div className="mt-6 px-4 pb-8" data-testid="settings-ringtone-list">
-              <p className="text-[16px] text-eink-text">来电铃声</p>
-              <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
-                默认提供 10 条来电铃声，点击即可试听；也可以上传自己的音频。
-              </p>
-              <ul className="mt-3 border border-eink-divider bg-eink-bar">
-                {RINGTONES.map((ringtone, index) => {
-                  const active = settings.callRingtoneId === ringtone.id
-                  return (
-                    <li key={ringtone.id} className={index ? 'border-t border-eink-divider' : ''}>
-                      <button
-                        type="button"
-                        data-testid={`settings-ringtone-${ringtone.id}`}
-                        aria-pressed={active}
-                        className="flex w-full items-center justify-between px-3 py-2.5 text-left active:bg-[#E7E5DD]"
-                        onClick={() => onSelectRingtone(ringtone.id)}
-                      >
-                        <span className="flex min-w-0 items-center gap-2 text-[15px] text-eink-text">
-                          <span
-                            className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-                              active ? 'bg-eink-ink' : 'bg-eink-disabled'
-                            }`}
-                          />
-                          <span className="truncate">{ringtone.name}</span>
-                        </span>
-                        <span className="ml-3 shrink-0 text-[12px] text-eink-sub">
-                          {active ? '使用中 · 试听' : '试听'}
-                        </span>
-                      </button>
-                    </li>
-                  )
-                })}
-                {customRingtone ? (
-                  <li className="border-t border-eink-divider">
+                    ) : null}
+                  </div>
+                  <div className="px-4 py-3">
                     <button
                       type="button"
-                      data-testid="settings-ringtone-custom"
-                      aria-pressed={settings.callRingtoneId === CUSTOM_RINGTONE_ID}
-                      className="flex w-full items-center justify-between px-3 py-2.5 text-left active:bg-[#E7E5DD]"
-                      onClick={() => onSelectRingtone(CUSTOM_RINGTONE_ID)}
+                      data-testid="settings-test-notification"
+                      className="h-10 w-full border border-eink-ink text-[14px] text-eink-ink active:bg-[#E7E5DD]"
+                      onClick={sendTestNotification}
                     >
-                      <span className="flex min-w-0 items-center gap-2 text-[15px] text-eink-text">
-                        <span
-                          className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-                            settings.callRingtoneId === CUSTOM_RINGTONE_ID ? 'bg-eink-ink' : 'bg-eink-disabled'
-                          }`}
-                        />
-                        <span className="truncate">自定义：{customRingtone.name}</span>
-                      </span>
-                      <span className="ml-3 shrink-0 text-[12px] text-eink-sub">
-                        {settings.callRingtoneId === CUSTOM_RINGTONE_ID ? '使用中 · 试听' : '试听'}
-                      </span>
+                      发送测试通知
                     </button>
-                  </li>
-                ) : null}
-              </ul>
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  data-testid="settings-upload-ringtone"
-                  className="h-10 flex-1 border border-eink-ink text-[14px] text-eink-ink active:bg-[#E7E5DD] disabled:opacity-60"
-                  onClick={() => ringtoneFileRef.current?.click()}
-                  disabled={ringtoneBusy}
-                >
-                  {ringtoneBusy ? '正在保存...' : customRingtone ? '更换自定义铃声' : '上传自定义铃声'}
-                </button>
-                {customRingtone ? (
-                  <button
-                    type="button"
-                    data-testid="settings-remove-ringtone"
-                    className="h-10 border border-eink-divider px-4 text-[14px] text-eink-sub active:bg-[#E7E5DD]"
-                    onClick={onRemoveCustomRingtone}
-                  >
-                    移除
-                  </button>
-                ) : null}
-              </div>
-              {customRingtone ? (
-                <p className="mt-2 text-[12px] text-eink-sub">
-                  文件大小 {formatRingtoneSize(customRingtone.size)}，保存在本机。
-                </p>
+                    <button
+                      type="button"
+                      data-testid="settings-test-vibration"
+                      className="mt-2 h-10 w-full border border-eink-divider text-[14px] text-eink-sub active:bg-[#E7E5DD]"
+                      onClick={testVibration}
+                    >
+                      测试震动
+                    </button>
+                    <p className="mt-2 text-[12px] leading-5 text-eink-sub">
+                      震动需要手机浏览器支持，且页面保持在前台。
+                    </p>
+                  </div>
+
+                  <div className="border-t border-eink-divider px-4 py-3" data-testid="settings-sound-list">
+                    <p className="text-[16px] text-eink-text">提示音</p>
+                    <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                      默认提供 10 个提示音，点击即可试听并设为新消息提示音。
+                    </p>
+                    <ul className="mt-3 border border-eink-divider bg-eink-bar">
+                      {NOTIFICATION_SOUNDS.map((sound, index) => {
+                        const active = settings.notifySoundId === sound.id
+                        return (
+                          <li key={sound.id} className={index ? 'border-t border-eink-divider' : ''}>
+                            <button
+                              type="button"
+                              data-testid={`settings-sound-${sound.id}`}
+                              aria-pressed={active}
+                              className="flex w-full items-center justify-between px-3 py-2.5 text-left active:bg-[#E7E5DD]"
+                              onClick={() => {
+                                update({ notifySoundId: sound.id })
+                                previewSound(sound.id)
+                              }}
+                            >
+                              <span className="flex min-w-0 items-center gap-2 text-[15px] text-eink-text">
+                                <span
+                                  className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                                    active ? 'bg-eink-ink' : 'bg-eink-disabled'
+                                  }`}
+                                />
+                                <span className="truncate">{sound.name}</span>
+                              </span>
+                              <span className="ml-3 shrink-0 text-[12px] text-eink-sub">
+                                {active ? '使用中 · 试听' : '试听'}
+                              </span>
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+
+                  <div className="border-t border-eink-divider px-4 pb-5 pt-3" data-testid="settings-ringtone-list">
+                    <p className="text-[16px] text-eink-text">来电铃声</p>
+                    <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
+                      默认提供 10 条来电铃声，点击即可试听；也可以上传自己的音频。
+                    </p>
+                    <ul className="mt-3 border border-eink-divider bg-eink-bar">
+                      {RINGTONES.map((ringtone, index) => {
+                        const active = settings.callRingtoneId === ringtone.id
+                        return (
+                          <li key={ringtone.id} className={index ? 'border-t border-eink-divider' : ''}>
+                            <button
+                              type="button"
+                              data-testid={`settings-ringtone-${ringtone.id}`}
+                              aria-pressed={active}
+                              className="flex w-full items-center justify-between px-3 py-2.5 text-left active:bg-[#E7E5DD]"
+                              onClick={() => onSelectRingtone(ringtone.id)}
+                            >
+                              <span className="flex min-w-0 items-center gap-2 text-[15px] text-eink-text">
+                                <span
+                                  className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                                    active ? 'bg-eink-ink' : 'bg-eink-disabled'
+                                  }`}
+                                />
+                                <span className="truncate">{ringtone.name}</span>
+                              </span>
+                              <span className="ml-3 shrink-0 text-[12px] text-eink-sub">
+                                {active ? '使用中 · 试听' : '试听'}
+                              </span>
+                            </button>
+                          </li>
+                        )
+                      })}
+                      {customRingtone ? (
+                        <li className="border-t border-eink-divider">
+                          <button
+                            type="button"
+                            data-testid="settings-ringtone-custom"
+                            aria-pressed={settings.callRingtoneId === CUSTOM_RINGTONE_ID}
+                            className="flex w-full items-center justify-between px-3 py-2.5 text-left active:bg-[#E7E5DD]"
+                            onClick={() => onSelectRingtone(CUSTOM_RINGTONE_ID)}
+                          >
+                            <span className="flex min-w-0 items-center gap-2 text-[15px] text-eink-text">
+                              <span
+                                className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                                  settings.callRingtoneId === CUSTOM_RINGTONE_ID ? 'bg-eink-ink' : 'bg-eink-disabled'
+                                }`}
+                              />
+                              <span className="truncate">自定义：{customRingtone.name}</span>
+                            </span>
+                            <span className="ml-3 shrink-0 text-[12px] text-eink-sub">
+                              {settings.callRingtoneId === CUSTOM_RINGTONE_ID ? '使用中 · 试听' : '试听'}
+                            </span>
+                          </button>
+                        </li>
+                      ) : null}
+                    </ul>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        data-testid="settings-upload-ringtone"
+                        className="h-10 flex-1 border border-eink-ink text-[14px] text-eink-ink active:bg-[#E7E5DD] disabled:opacity-60"
+                        onClick={() => ringtoneFileRef.current?.click()}
+                        disabled={ringtoneBusy}
+                      >
+                        {ringtoneBusy ? '正在保存...' : customRingtone ? '更换自定义铃声' : '上传自定义铃声'}
+                      </button>
+                      {customRingtone ? (
+                        <button
+                          type="button"
+                          data-testid="settings-remove-ringtone"
+                          className="h-10 border border-eink-divider px-4 text-[14px] text-eink-sub active:bg-[#E7E5DD]"
+                          onClick={onRemoveCustomRingtone}
+                        >
+                          移除
+                        </button>
+                      ) : null}
+                    </div>
+                    {customRingtone ? (
+                      <p className="mt-2 text-[12px] text-eink-sub">
+                        文件大小 {formatRingtoneSize(customRingtone.size)}，保存在本机。
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
               ) : null}
             </div>
           </div>
@@ -1007,11 +1044,87 @@ export default function Settings() {
               </p>
             ) : null}
 
-            <form className="mt-4 border-y border-eink-divider bg-eink-bar" onSubmit={onChangePassword}>
+            <ul className="mt-4 border-y border-eink-divider bg-eink-bar" data-testid="settings-security-list">
+              {SECURITY_ITEMS.map((item, index) => (
+                <li key={item.key} className={index ? 'border-t border-eink-divider' : ''}>
+                  <button
+                    type="button"
+                    data-testid={`settings-security-${item.key}`}
+                    className="flex w-full items-center justify-between px-4 py-3.5 text-left active:bg-[#E7E5DD]"
+                    onClick={() => setView(item.key)}
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-[16px] text-eink-text">{item.title}</span>
+                      <span className="mt-0.5 block text-[12px] text-eink-sub">{item.desc}</span>
+                    </span>
+                    <span className="ml-3 shrink-0 text-[18px] text-eink-faint">›</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-6 px-4" data-testid="blacklist-section">
+              <h2 className="text-[15px] font-medium text-eink-ink">黑名单</h2>
+              <p className="mt-2 text-[12px] leading-5 text-eink-sub">
+                拉黑后对方无法给你发消息或查看/参与你的公开内容。可在对方聊天页右上角菜单中拉黑或解除。
+              </p>
+              {blockedIds.length === 0 ? (
+                <p className="mt-3 text-[12px] text-eink-sub" data-testid="blacklist-empty">暂无拉黑的用户。</p>
+              ) : (
+                <ul className="mt-3 divide-y divide-eink-divider/60 border border-eink-line/30 bg-eink-paper" data-testid="blacklist">
+                  {blockedIds.map((id) => {
+                    const info = blockedProfiles?.find((p) => p.id === id)
+                    return (
+                      <li key={id} className="flex items-center justify-between px-4 py-3" data-testid="blacklist-item">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Avatar name={info?.nickname || '?'} color={avatarColor(id)} size={40} src={info?.avatarUrl || ''} />
+                          <div className="min-w-0">
+                            <p className="truncate text-[14px] font-medium" data-testid="blacklist-nickname">{info?.nickname || id.slice(0, 8)}</p>
+                            {info?.username ? <p className="truncate text-[11px] text-eink-sub">{info.username}</p> : null}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="h-8 shrink-0 border border-eink-line/40 px-3 text-[12px] text-eink-ink"
+                          onClick={() => setBlockedFor(id, false)}
+                        >
+                          移除
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <div className="mt-8 px-4 pb-8">
+              <button
+                type="button"
+                data-testid="settings-signout-all"
+                className="h-11 w-full border border-eink-divider text-[15px] text-eink-sub active:bg-[#E7E5DD]"
+                onClick={() => (cloudAccount ? setConfirmSignOutAll(true) : setNotice('演示账号无需退出所有设备'))}
+              >
+                退出所有设备
+              </button>
+              <p className="mt-2 text-center text-[12px] text-eink-sub">在所有手机和电脑上退出当前账号，需要重新登录。</p>
+              <button
+                type="button"
+                data-testid="settings-delete-account"
+                className="mt-6 h-11 w-full border border-eink-ink text-[15px] text-eink-ink active:bg-[#E7E5DD]"
+                onClick={() => (cloudAccount ? setConfirmDelete(true) : setNotice('演示账号无需注销'))}
+              >
+                注销账号
+              </button>
+              <p className="mt-2 text-center text-[12px] leading-5 text-eink-sub">提交后 7 天内登录可撤销，逾期自动删除且不可恢复。</p>
+            </div>
+          </div>
+        ) : null}
+
+        {view === 'password' ? (
+          <div data-testid="settings-password">
+            <form className="mt-3 border-y border-eink-divider bg-eink-bar" onSubmit={onChangePassword}>
               <div className="px-4 py-3">
-                <label className="block text-[16px] text-eink-text" htmlFor="old-password">
-                  修改密码
-                </label>
+                <p className="text-[16px] text-eink-text">修改密码</p>
                 <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
                   需要先验证当前密码，再输入邮箱或手机验证码，无法直接修改。
                 </p>
@@ -1084,47 +1197,21 @@ export default function Settings() {
                 </button>
               </div>
             </form>
+          </div>
+        ) : null}
 
-            <div className="mt-6">
+        {view === 'realname' ? (
+          <div data-testid="settings-realname" className="pb-8">
+            <div className="mt-3">
               <RealNamePanel />
             </div>
+          </div>
+        ) : null}
 
-            <div className="mt-6 px-4" data-testid="blacklist-section">
-              <h2 className="text-[15px] font-medium text-eink-ink">黑名单</h2>
-              <p className="mt-2 text-[12px] leading-5 text-eink-sub">
-                拉黑后对方无法给你发消息或查看/参与你的公开内容。可在对方聊天页右上角菜单中拉黑或解除。
-              </p>
-              {blockedIds.length === 0 ? (
-                <p className="mt-3 text-[12px] text-eink-sub" data-testid="blacklist-empty">暂无拉黑的用户。</p>
-              ) : (
-                <ul className="mt-3 divide-y divide-eink-divider/60 border border-eink-line/30 bg-eink-paper" data-testid="blacklist">
-                  {blockedIds.map((id) => {
-                    const info = blockedProfiles?.find((p) => p.id === id)
-                    return (
-                      <li key={id} className="flex items-center justify-between px-4 py-3" data-testid="blacklist-item">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <Avatar name={info?.nickname || '?'} color={avatarColor(id)} size={40} src={info?.avatarUrl || ''} />
-                          <div className="min-w-0">
-                            <p className="truncate text-[14px] font-medium" data-testid="blacklist-nickname">{info?.nickname || id.slice(0, 8)}</p>
-                            {info?.username ? <p className="truncate text-[11px] text-eink-sub">{info.username}</p> : null}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          className="h-8 shrink-0 border border-eink-line/40 px-3 text-[12px] text-eink-ink"
-                          onClick={() => setBlockedFor(id, false)}
-                        >
-                          移除
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </div>
-
+        {view === 'report' ? (
+          <div data-testid="settings-report-view">
             <form
-              className="mt-6 border-y border-eink-divider bg-eink-bar"
+              className="mt-3 border-y border-eink-divider bg-eink-bar"
               data-testid="settings-report"
               onSubmit={(e) => {
                 e.preventDefault()
@@ -1182,8 +1269,12 @@ export default function Settings() {
                 ) : null}
               </div>
             </form>
+          </div>
+        ) : null}
 
-            <div className="mt-8 border-y border-eink-divider bg-eink-bar">
+        {view === 'export' ? (
+          <div data-testid="settings-export">
+            <div className="mt-3 border-y border-eink-divider bg-eink-bar">
               <div className="px-4 py-3.5">
                 <p className="text-[16px] text-eink-text">导出我的数据</p>
                 <p className="mt-0.5 text-[12px] leading-5 text-eink-sub">
@@ -1211,27 +1302,6 @@ export default function Settings() {
                   压缩包包含 data.json 与头像、朋友圈、消息图片，单文件上限 15MB，总量上限 80MB。
                 </p>
               </div>
-            </div>
-
-            <div className="mt-8 px-4 pb-8">
-              <button
-                type="button"
-                data-testid="settings-signout-all"
-                className="h-11 w-full border border-eink-divider text-[15px] text-eink-sub active:bg-[#E7E5DD]"
-                onClick={() => (cloudAccount ? setConfirmSignOutAll(true) : setNotice('演示账号无需退出所有设备'))}
-              >
-                退出所有设备
-              </button>
-              <p className="mt-2 text-center text-[12px] text-eink-sub">在所有手机和电脑上退出当前账号，需要重新登录。</p>
-              <button
-                type="button"
-                data-testid="settings-delete-account"
-                className="mt-6 h-11 w-full border border-eink-ink text-[15px] text-eink-ink active:bg-[#E7E5DD]"
-                onClick={() => (cloudAccount ? setConfirmDelete(true) : setNotice('演示账号无需注销'))}
-              >
-                注销账号
-              </button>
-              <p className="mt-2 text-center text-[12px] leading-5 text-eink-sub">提交后 7 天内登录可撤销，逾期自动删除且不可恢复。</p>
             </div>
           </div>
         ) : null}

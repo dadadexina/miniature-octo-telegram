@@ -158,6 +158,10 @@ function openView(index) {
   fireEvent.click(screen.getByTestId(`settings-item-${index}`))
 }
 
+function expandNotifyMore() {
+  fireEvent.click(screen.getByTestId('settings-notify-more-toggle'))
+}
+
 function useCloudAccount() {
   storeState.currentUser = { id: CLOUD_USER_ID, nickname: '云用户' }
   storeState.authUser = { id: CLOUD_USER_ID, email: 'alice@example.com', phone: '13800001234' }
@@ -210,7 +214,7 @@ describe('Settings 设置页', () => {
     openView(0)
 
     expect(screen.queryByTestId('settings-dnd-start')).toBeNull()
-    fireEvent.click(screen.getByRole('switch', { name: '开启免打扰' }))
+    fireEvent.click(screen.getByRole('switch', { name: '免打扰' }))
 
     fireEvent.change(screen.getByTestId('settings-dnd-start'), { target: { value: '21:30' } })
     fireEvent.change(screen.getByTestId('settings-dnd-end'), { target: { value: '07:15' } })
@@ -223,6 +227,16 @@ describe('Settings 设置页', () => {
       dndEnd: '07:15',
       digestEnabled: false,
     })
+  })
+
+  it('新通知默认收起并可展开二级设置', () => {
+    setup()
+    openView(0)
+    expect(screen.queryByTestId('settings-sound-list')).toBeNull()
+
+    expandNotifyMore()
+    expect(screen.getByTestId('settings-sound-list')).toBeTruthy()
+    expect(screen.getByTestId('settings-ringtone-list')).toBeTruthy()
   })
 
   it('通知面板提供十个提示音并支持试听与切换', () => {
@@ -243,6 +257,7 @@ describe('Settings 设置页', () => {
 
     setup()
     openView(0)
+    expandNotifyMore()
 
     expect(screen.getByTestId('settings-sound-list').querySelectorAll('button')).toHaveLength(10)
     expect(screen.getByTestId('settings-sound-bell').getAttribute('aria-pressed')).toBe('true')
@@ -268,6 +283,7 @@ describe('Settings 设置页', () => {
 
     setup()
     openView(0)
+    expandNotifyMore()
     fireEvent.click(screen.getByTestId('settings-test-notification'))
 
     expect(screen.getByTestId('settings-notice')).toBeTruthy()
@@ -277,6 +293,7 @@ describe('Settings 设置页', () => {
   it('关闭新消息提醒后发送测试通知会提示先开启', () => {
     setup()
     openView(0)
+    expandNotifyMore()
     fireEvent.click(screen.getByRole('switch', { name: '新消息提醒' }))
     fireEvent.click(screen.getByTestId('settings-test-notification'))
 
@@ -289,6 +306,7 @@ describe('Settings 设置页', () => {
 
     setup()
     openView(0)
+    expandNotifyMore()
     fireEvent.click(screen.getByTestId('settings-test-vibration'))
     expect(vibrate).toHaveBeenCalledWith([120, 60, 120])
     expect(screen.getByText('已触发震动')).toBeTruthy()
@@ -300,6 +318,7 @@ describe('Settings 设置页', () => {
 
     setup()
     openView(0)
+    expandNotifyMore()
     expect(screen.getByText('尚未授权，开启后才能收到系统通知')).toBeTruthy()
 
     fireEvent.click(screen.getByTestId('settings-enable-notifications'))
@@ -312,6 +331,7 @@ describe('Settings 设置页', () => {
 
     setup()
     openView(0)
+    expandNotifyMore()
     fireEvent.click(screen.getByTestId('settings-test-vibration'))
     expect(screen.getByText('当前设备不支持震动，请使用手机浏览器并保持页面前台')).toBeTruthy()
   })
@@ -319,6 +339,7 @@ describe('Settings 设置页', () => {
   it('来电铃声提供十条默认选项并持久化选择', () => {
     setup()
     openView(0)
+    expandNotifyMore()
 
     expect(screen.getByTestId('settings-ringtone-list').querySelectorAll('button')).toHaveLength(11)
     expect(screen.getByTestId('settings-ringtone-marimba-ringtone').getAttribute('aria-pressed')).toBe('true')
@@ -332,6 +353,7 @@ describe('Settings 设置页', () => {
   it('支持上传与移除自定义来电铃声', async () => {
     setup()
     openView(0)
+    expandNotifyMore()
 
     const file = new File(['abc'], 'my-ring.mp3', { type: 'audio/mpeg' })
     fireEvent.change(screen.getByTestId('settings-ringtone-input'), { target: { files: [file] } })
@@ -401,12 +423,31 @@ describe('Settings 设置页', () => {
     expect(storeMocks.logout).toHaveBeenCalled()
   })
 
+  it('账号安全功能可进入二级页面并逐级返回', () => {
+    setup()
+    openView(2)
+    expect(screen.getByTestId('settings-security-password')).toBeTruthy()
+    expect(screen.getByTestId('settings-security-realname')).toBeTruthy()
+    expect(screen.getByTestId('settings-security-report')).toBeTruthy()
+    expect(screen.getByTestId('settings-security-export')).toBeTruthy()
+
+    fireEvent.click(screen.getByTestId('settings-security-password'))
+    expect(screen.getByTestId('settings-password')).toBeTruthy()
+
+    fireEvent.click(screen.getByLabelText('返回'))
+    expect(screen.getByTestId('settings-security')).toBeTruthy()
+
+    fireEvent.click(screen.getByLabelText('返回'))
+    expect(screen.getByTestId('settings-list')).toBeTruthy()
+  })
+
   it('账号安全面板对演示账号给出限制提示', () => {
     setup()
     openView(2)
     expect(screen.getByTestId('settings-security')).toBeTruthy()
     expect(screen.getByTestId('settings-demo-security')).toBeTruthy()
 
+    fireEvent.click(screen.getByTestId('settings-security-password'))
     fireEvent.change(screen.getByTestId('settings-new-password'), { target: { value: '123456' } })
     fireEvent.change(screen.getByTestId('settings-confirm-password'), { target: { value: '123456' } })
     fireEvent.submit(screen.getByTestId('settings-save-password').closest('form'))
@@ -434,6 +475,7 @@ describe('Settings 设置页', () => {
     useCloudAccount()
     setup()
     openView(2)
+    fireEvent.click(screen.getByTestId('settings-security-report'))
 
     const input = screen.getByTestId('settings-report-target')
     fireEvent.change(input, { target: { value: 'bob@example.com' } })
@@ -447,6 +489,7 @@ describe('Settings 设置页', () => {
   it('演示账号举报时给出登录提示', () => {
     setup()
     openView(2)
+    fireEvent.click(screen.getByTestId('settings-security-report'))
     fireEvent.change(screen.getByTestId('settings-report-target'), { target: { value: '12345' } })
     fireEvent.click(screen.getByTestId('settings-report-next'))
     expect(screen.getByTestId('settings-notice').textContent).toContain('演示账号不支持举报')
@@ -456,6 +499,7 @@ describe('Settings 设置页', () => {
     useCloudAccount()
     setup()
     openView(2)
+    fireEvent.click(screen.getByTestId('settings-security-password'))
 
     fireEvent.change(screen.getByTestId('settings-old-password'), { target: { value: 'oldpass' } })
     fireEvent.change(screen.getByTestId('settings-new-password'), { target: { value: 'newpass' } })
@@ -473,6 +517,7 @@ describe('Settings 设置页', () => {
 
     expect(screen.getByTestId('settings-phone').textContent).toContain('138****1234')
 
+    fireEvent.click(screen.getByTestId('settings-security-password'))
     fireEvent.change(screen.getByTestId('settings-old-password'), { target: { value: 'oldpass' } })
     fireEvent.change(screen.getByTestId('settings-new-password'), { target: { value: 'newpass' } })
     fireEvent.change(screen.getByTestId('settings-confirm-password'), { target: { value: 'newpass' } })
@@ -503,6 +548,7 @@ describe('Settings 设置页', () => {
 
     setup()
     openView(2)
+    fireEvent.click(screen.getByTestId('settings-security-password'))
     fireEvent.change(screen.getByTestId('settings-old-password'), { target: { value: 'wrong' } })
     fireEvent.change(screen.getByTestId('settings-new-password'), { target: { value: 'newpass' } })
     fireEvent.change(screen.getByTestId('settings-confirm-password'), { target: { value: 'newpass' } })
@@ -583,6 +629,7 @@ describe('Settings 设置页', () => {
     useCloudAccount()
     setup()
     openView(2)
+    fireEvent.click(screen.getByTestId('settings-security-export'))
 
     fireEvent.click(screen.getByTestId('settings-export-data'))
 
@@ -608,6 +655,7 @@ describe('Settings 设置页', () => {
     })
     setup()
     openView(2)
+    fireEvent.click(screen.getByTestId('settings-security-export'))
 
     fireEvent.click(screen.getByTestId('settings-export-archive'))
 
@@ -624,6 +672,7 @@ describe('Settings 设置页', () => {
     dataExportMock.collectUserData.mockResolvedValue({ ok: false, error: 'messages: denied' })
     setup()
     openView(2)
+    fireEvent.click(screen.getByTestId('settings-security-export'))
 
     fireEvent.click(screen.getByTestId('settings-export-data'))
 
@@ -634,6 +683,7 @@ describe('Settings 设置页', () => {
   it('演示账号导出时提示无云端数据', () => {
     setup()
     openView(2)
+    fireEvent.click(screen.getByTestId('settings-security-export'))
 
     fireEvent.click(screen.getByTestId('settings-export-data'))
 
