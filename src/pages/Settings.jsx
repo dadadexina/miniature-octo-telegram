@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import NavBar from '../components/NavBar'
+import PhoneBindPanel from '../components/PhoneBindPanel'
+import RealNamePanel from '../components/RealNamePanel'
 import ReportSheet from '../components/ReportSheet'
 import { scheduleAccountDeletion } from '../lib/accountDeletion'
 import useSwipeBack from '../hooks/useSwipeBack'
@@ -998,6 +1000,7 @@ export default function Settings() {
             <p data-testid="settings-phone" className="px-4 pt-1 text-[12px] text-eink-sub">
               绑定手机：{phone ? maskPhone(phone) : '未绑定'}
             </p>
+            {cloudAccount ? <PhoneBindPanel /> : null}
             {!cloudAccount ? (
               <p data-testid="settings-demo-security" className="mx-4 mt-2 border border-eink-divider bg-eink-bar px-3 py-2 text-[12px] leading-5 text-eink-sub">
                 演示账号不支持修改密码与注销，请登录云端账号后使用。
@@ -1081,6 +1084,10 @@ export default function Settings() {
                 </button>
               </div>
             </form>
+
+            <div className="mt-6">
+              <RealNamePanel />
+            </div>
 
             <div className="mt-6 px-4" data-testid="blacklist-section">
               <h2 className="text-[15px] font-medium text-eink-ink">黑名单</h2>

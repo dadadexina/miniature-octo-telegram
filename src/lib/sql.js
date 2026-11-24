@@ -2,6 +2,7 @@ import { FRIENDS_SQL } from './friends'
 import { UPGRADE_SQL } from './schema_v2'
 import { supabaseUrl } from './supabase'
 import { CLIENT_ERRORS_SQL } from './telemetry'
+import { REAL_NAME_SQL } from './realNameSql'
 import { WORLD_CHAT_SQL } from './worldChatSql'
 
 function deriveSqlEditorUrl(url) {
@@ -149,6 +150,8 @@ ${CLIENT_ERRORS_SQL}
 ${UPGRADE_SQL}
 
 ${WORLD_CHAT_SQL}
+
+${REAL_NAME_SQL}
 
 create table if not exists public.profile_locations (
   user_id uuid primary key references public.profiles (id) on delete cascade,

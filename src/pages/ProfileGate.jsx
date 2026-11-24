@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import SetupProfile from './SetupProfile'
-import { fetchProfileById, insertProfile, updateProfileNickname } from '../lib/profiles'
+import { profilePhoneOf } from '../lib/phoneAuth'
+import { fetchProfileById, insertProfile, updateProfileNickname, updateProfileSettings } from '../lib/profiles'
 import { useStore } from '../store'
 
 export default function ProfileGate({ children }) {
@@ -54,6 +55,23 @@ export default function ProfileGate({ children }) {
       alive = false
     }
   }, [userId, setCloudProfile])
+
+  useEffect(() => {
+    const authPhone = profilePhoneOf(authUser?.phone || '')
+    if (!userId || !profile || !authPhone || profile.phone) return undefined
+    let alive = true
+    updateProfileSettings(userId, {
+      phone: authPhone,
+      allowEmailSearch: profile.allowEmailSearch !== false,
+      allowPhoneSearch: profile.allowPhoneSearch !== false,
+    }).then((result) => {
+      if (!alive || !result.ok || !result.profile) return
+      setCloudProfile(result.profile, true)
+    })
+    return () => {
+      alive = false
+    }
+  }, [userId, profile, authUser?.phone, setCloudProfile])
 
   if (!profileReady) {
     return (

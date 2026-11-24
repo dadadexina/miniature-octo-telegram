@@ -37,12 +37,14 @@ const friends = readTemplate('src/lib/friends.js', 'FRIENDS_SQL')
 const clientErrors = readTemplate('src/lib/telemetry.js', 'CLIENT_ERRORS_SQL')
 const upgrade = readTemplate('src/lib/schema_v2.js', 'UPGRADE_SQL')
 const worldChat = readTemplate('src/lib/worldChatSql.js', 'WORLD_CHAT_SQL')
+const realName = readTemplate('src/lib/realNameSql.js', 'REAL_NAME_SQL')
 
 const sql = cloud
   .replaceAll('${FRIENDS_SQL}', () => friends)
   .replaceAll('${CLIENT_ERRORS_SQL}', () => clientErrors)
   .replaceAll('${UPGRADE_SQL}', () => upgrade)
   .replaceAll('${WORLD_CHAT_SQL}', () => worldChat)
+  .replaceAll('${REAL_NAME_SQL}', () => realName)
 
 if (/\$\{/.test(sql)) throw new Error('导出结果仍残留未解析插值')
 

@@ -10,6 +10,8 @@ DDL 由 `src/lib/` 下的模板常量拼接而成：
 - `src/lib/friends.js`：`FRIENDS_SQL`。
 - `src/lib/telemetry.js`：`CLIENT_ERRORS_SQL`。
 - `src/lib/schema_v2.js`：`UPGRADE_SQL`（关系函数、朋友圈、存储策略等）。
+- `src/lib/worldChatSql.js`：`WORLD_CHAT_SQL`（世界频道表、限流与清理）。
+- `src/lib/realNameSql.js`：`REAL_NAME_SQL`（实名认证表、管理员、审核 RPC、私有证件照桶）。
 
 所有 DDL 幂等：`create table if not exists`、`create or replace function`、策略前 `drop policy if exists`、约束用 `do $$ ... exception when duplicate_object` 补丁。
 
@@ -40,7 +42,28 @@ supabase db diff --db-url "$SUPABASE_DB_URL"
 
 - 表启用 RLS，策略面向 `authenticated`。
 - `are_contacts`、`can_view_profile`、`can_message`、`can_view_moment` 为 `security definer`，仅 `authenticated` 可执行（`revoke ... from public, anon` + `grant ... to authenticated`）。
-- `message_media` 为私有桶；`avatars`、`moments` 读取按路径 RLS 控制。
+- `message_media`、`realname` 为私有桶；`avatars`、`moments` 读取按路径 RLS 控制。
+- `realname` 仅允许本人读写，管理员可读取待审证件照；实名状态由 `submit_real_name` / `admin_review_real_name` 维护，客户端不能直接改表。
+
+## 手机号短信（Send SMS Hook）
+
+`supabase/functions/send-sms-hook/index.ts` 接收 Supabase Auth 的 Send SMS Hook，转调阿里云短信。
+
+```bash
+# 部署到目标项目（函数不需要 JWT，签名由 Hook 的 Standard Webhooks 校验）
+SUPABASE_ACCESS_TOKEN=... npx supabase functions deploy send-sms-hook --remote=<project-ref> --use-api --no-verify-jwt --yes
+
+# 必填密钥
+SUPABASE_ACCESS_TOKEN=... npx supabase secrets set \
+  SEND_SMS_HOOK_SECRET=v1,whsec_... \
+  ALIYUN_SMS_ACCESS_KEY_ID=... \
+  ALIYUN_SMS_ACCESS_KEY_SECRET=... \
+  ALIYUN_SMS_SIGN_NAME=... \
+  ALIYUN_SMS_TEMPLATE_CODE=... \
+  --project-ref <project-ref> --yes
+```
+
+在 Supabase Dashboard 的 Auth Hooks 中启用 Send SMS Hook，URL 填 `https://<project-ref>.supabase.co/functions/v1/send-sms-hook`，密钥与 `SEND_SMS_HOOK_SECRET` 一致。随后在 Auth 设置中开启 Phone provider，并关闭 `sms_autoconfirm` 以走验证码校验。
 
 ## 回滚
 
