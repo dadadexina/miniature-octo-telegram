@@ -37,17 +37,38 @@ describe('routing', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const driving = await fetchRoute({ from: FROM, to: TO, mode: 'driving' })
-    expect(fetchMock.mock.calls[0][0]).toContain('routed-car/route/v1/driving/121.473700,31.230400;121.490000,31.240000')
+    const urls = fetchMock.mock.calls.map((call) => call[0])
+    expect(urls).toContain(
+      'https://routing.openstreetmap.de/routed-car/route/v1/driving/121.473700,31.230400;121.490000,31.240000?overview=full&geometries=geojson&alternatives=false&steps=false'
+    )
+    expect(urls).toContain(
+      'https://router.project-osrm.org/route/v1/driving/121.473700,31.230400;121.490000,31.240000?overview=full&geometries=geojson&alternatives=false&steps=false'
+    )
     expect(driving.fallback).toBe(false)
     expect(driving.distanceKm).toBeCloseTo(4.8848)
     expect(driving.durationMin).toBe(6)
     expect(driving.coordinates).toHaveLength(3)
 
     const walking = await fetchRoute({ from: FROM, to: TO, mode: 'walking' })
-    expect(fetchMock.mock.calls[1][0]).toContain('routed-foot/route/v1/driving/')
+    const walkingUrls = fetchMock.mock.calls.slice(urls.length).map((call) => call[0])
+    expect(walkingUrls.some((url) => url.includes('routed-foot/route/v1/driving/'))).toBe(true)
+    expect(walkingUrls.some((url) => url.includes('router.project-osrm.org/route/v1/foot/'))).toBe(true)
     expect(walking.durationMin).toBe(6)
     expect(routeModeLabel('driving')).toBe('开车')
     expect(routeModeLabel('walking')).toBe('步行')
+  })
+
+  it('首选路线服务不可用时自动改用备用服务', async () => {
+    const fetchMock = vi.fn((url) =>
+      url.includes('routing.openstreetmap.de')
+        ? Promise.reject(new Error('网络不可达'))
+        : Promise.resolve(jsonResponse(osrmBody()))
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const route = await fetchRoute({ from: FROM, to: TO, mode: 'driving' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(route.fallback).toBe(false)
+    expect(route.distanceKm).toBeCloseTo(4.8848)
   })
 
   it('路线服务失败时回退为直线并给出提示', async () => {

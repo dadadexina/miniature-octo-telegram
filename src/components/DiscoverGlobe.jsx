@@ -20,6 +20,7 @@ import {
   getCurrentLocation,
   haversineKm,
   locationPermissionState,
+  navigationUrl,
   parseLatLngQuery,
   walkMinutes,
   watchLocation,
@@ -931,7 +932,7 @@ export default function DiscoverGlobe({
       setPreview(null)
       setUsingMapOrigin(fromMap)
       if (!from) {
-        setNav({ place, mode, status: 'need-location', route: null })
+        setNav({ place, mode, status: 'need-location', route: null, origin: null })
         locate()
         return
       }
@@ -941,23 +942,28 @@ export default function DiscoverGlobe({
       const controller = new AbortController()
       navAbortRef.current = controller
       const previewRoute = straightRoute(from, place, mode)
-      routeRef.current = previewRoute
+      const pendingRoute = previewRoute ? { ...previewRoute, pending: true } : null
+      routeRef.current = pendingRoute
       routeSyncRef.current?.()
-      setNav({ place, mode, status: 'loading', route: previewRoute })
+      setNav({ place, mode, status: 'ready', route: pendingRoute, origin: from })
       try {
         const route = await planRoute({ from, to: place, mode, signal: controller.signal })
         if (navSeqRef.current !== seq) return
         routeRef.current = route
-        setNav({ place, mode, status: 'ready', route })
+        setNav({ place, mode, status: 'ready', route, origin: from })
         routeSyncRef.current?.()
       } catch (err) {
         if (navSeqRef.current !== seq || err?.name === 'AbortError') return
-        if (!previewRoute) {
-          setNav({ place, mode, status: 'error', route: null })
+        if (!pendingRoute) {
+          setNav({ place, mode, status: 'error', route: null, origin: from })
           return
         }
-        routeRef.current = { ...previewRoute, error: err?.message }
-        setNav({ place, mode, status: 'ready', route: routeRef.current })
+        routeRef.current = {
+          ...pendingRoute,
+          pending: false,
+          error: err?.message || '道路路线不可用',
+        }
+        setNav({ place, mode, status: 'ready', route: routeRef.current, origin: from })
         routeSyncRef.current?.()
       }
     },
@@ -1087,29 +1093,26 @@ export default function DiscoverGlobe({
   const previewDriveMin =
     previewDistance === null ? null : Math.max(1, Math.round((previewDistance / 30) * 60))
   const previewWalkMin = previewDistance === null ? null : walkMinutes(previewDistance)
-  const navDistanceKm = navPlace && effectiveCoords ? haversineKm(effectiveCoords, navPlace) : 0
-  const navBearing =
-    navPlace && effectiveCoords ? bearingDegrees(effectiveCoords, navPlace) : null
+  const navOrigin = nav?.origin || effectiveCoords
+  const navDistanceKm = navPlace && navOrigin ? haversineKm(navOrigin, navPlace) : 0
+  const navBearing = navPlace && navOrigin ? bearingDegrees(navOrigin, navPlace) : null
   const navHeading = navBearing === null ? '' : compassLabel(navBearing)
-  const arrived = Boolean(navPlace && effectiveCoords && navDistanceKm < 0.03)
+  const arrived = Boolean(navPlace && navOrigin && navDistanceKm < 0.03)
   const navModeLabel = nav ? routeModeLabel(nav.mode) : ''
+  const navMapsHref = navPlace ? navigationUrl(navPlace, nav?.mode) : ''
   const navStatus = !nav
     ? ''
-    : nav.status === 'loading'
-      ? navRoute
-        ? `正在规划${navModeLabel}路线 · 已显示直线示意`
-        : `正在规划${navModeLabel}路线...`
-      : nav.status === 'need-location'
-        ? geoState === 'loading'
-          ? '正在获取我的位置...'
-          : geoError || '需要先获取你的位置才能规划路线'
-        : nav.status === 'error'
-          ? '路线规划失败，请重试'
-          : arrived
-            ? '已到达目的地附近'
-            : effectiveCoords && navRoute
-              ? `距目的地 ${formatDistance(navDistanceKm)} · 全程 ${formatDistance(navRoute.distanceKm)} · 约 ${navRoute.durationMin} 分钟 · 向${navHeading}`
-              : '未获取到我的位置'
+    : nav.status === 'need-location'
+      ? geoState === 'loading'
+        ? '正在获取我的位置...'
+        : geoError || '需要先获取你的位置才能规划路线'
+      : nav.status === 'error'
+        ? '路线规划失败，请重试'
+        : arrived
+          ? '已到达目的地附近'
+          : navOrigin && navRoute
+            ? `距目的地 ${formatDistance(navDistanceKm)} · 全程 ${formatDistance(navRoute.distanceKm)} · 约 ${navRoute.durationMin} 分钟 · 向${navHeading}`
+            : '未获取到我的位置'
 
   useEffect(() => {
     if (!nav || !effectiveCoords) return
@@ -1622,18 +1625,16 @@ export default function DiscoverGlobe({
         >
           <div className="flex items-baseline justify-between gap-2">
             <p data-testid="globe-route-title" className="min-w-0 truncate text-eink-ink">
-              {nav.status === 'loading'
-                ? `正在规划${navModeLabel}路线`
-                : `${navModeLabel}导航 · ${nav.place.name}`}
+              {`${navModeLabel}导航 · ${nav.place.name}`}
             </p>
             <span
               data-testid="globe-route-mode"
               className="shrink-0 text-[9px] tracking-[0.08em] text-eink-faint"
             >
-              {nav.status === 'loading'
-                ? '规划中'
-                : nav.status === 'need-location'
-                  ? '待定位'
+              {nav.status === 'need-location'
+                ? '待定位'
+                : nav.status === 'error'
+                  ? '规划失败'
                   : arrived
                     ? '已到达'
                     : '导航中'}
@@ -1644,7 +1645,9 @@ export default function DiscoverGlobe({
           </p>
           {nav.status === 'ready' && navRoute?.fallback ? (
             <p data-testid="globe-route-fallback" className="mt-0.5 text-[10px] text-eink-faint">
-              路线服务暂不可用，当前以直线距离示意
+              {navRoute.pending
+                ? '正在获取道路路线，当前先按直线示意'
+                : '当前按直线示意，可打开高德导航获取实际路线'}
             </p>
           ) : null}
           {usingMapOrigin && nav.status !== 'need-location' ? (
@@ -1688,6 +1691,17 @@ export default function DiscoverGlobe({
               >
                 开启定位
               </button>
+            ) : null}
+            {navMapsHref ? (
+              <a
+                data-testid="globe-open-maps"
+                href={navMapsHref}
+                target="_blank"
+                rel="noreferrer"
+                className="min-h-8 border border-eink-line/40 px-2.5 py-1 text-[12px] text-eink-sub active:bg-eink-surface"
+              >
+                高德导航
+              </a>
             ) : null}
             <button
               type="button"

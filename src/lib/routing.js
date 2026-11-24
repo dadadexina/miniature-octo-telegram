@@ -1,11 +1,18 @@
 import { haversineKm, walkMinutes } from './geo'
 
 const ROUTE_ENDPOINTS = {
-  driving: 'https://routing.openstreetmap.de/routed-car/route/v1/driving',
-  walking: 'https://routing.openstreetmap.de/routed-foot/route/v1/driving',
+  driving: [
+    'https://routing.openstreetmap.de/routed-car/route/v1/driving',
+    'https://router.project-osrm.org/route/v1/driving',
+  ],
+  walking: [
+    'https://routing.openstreetmap.de/routed-foot/route/v1/driving',
+    'https://router.project-osrm.org/route/v1/foot',
+  ],
 }
 
 const DRIVING_SPEED_KMH = 30
+const DEFAULT_ROUTE_TIMEOUT_MS = 4500
 
 export const ROUTE_MODES = ['driving', 'walking']
 
@@ -49,80 +56,122 @@ export function straightRoute(from, to, mode = 'walking') {
   }
 }
 
-function routeUrl(from, to, mode) {
+function routeUrl(base, from, to) {
   const coords = [
     `${Number(from.lng).toFixed(6)},${Number(from.lat).toFixed(6)}`,
     `${Number(to.lng).toFixed(6)},${Number(to.lat).toFixed(6)}`,
   ].join(';')
-  return `${ROUTE_ENDPOINTS[mode]}/${coords}?overview=full&geometries=geojson&alternatives=false&steps=false`
+  return `${base}/${coords}?overview=full&geometries=geojson&alternatives=false&steps=false`
 }
 
-export async function fetchRoute({ from, to, mode = 'walking', signal, timeoutMs = 12000 }) {
-  if (!ROUTE_ENDPOINTS[mode]) throw new Error('不支持的出行方式')
+function parseRoute(data, mode) {
+  if (data?.code !== 'Ok' || !Array.isArray(data.routes) || !data.routes.length) {
+    throw new Error('未找到可行路线')
+  }
+  const route = data.routes[0]
+  const coordinates = (route.geometry?.coordinates || []).filter(validCoord)
+  if (coordinates.length < 2) throw new Error('路线数据不完整')
+  if (!(Number(route.distance) > 0)) throw new Error('路线距离无效')
+  return {
+    mode,
+    coordinates,
+    distanceKm: Number(route.distance) / 1000,
+    durationMin: Math.max(1, Math.round(Number(route.duration) / 60)),
+    fallback: false,
+    source: 'osrm',
+  }
+}
+
+async function requestRoute(url, mode, signal) {
+  const res = await fetch(url, {
+    signal,
+    headers: { Accept: 'application/json' },
+  })
+  if (!res.ok) throw new Error(`路线服务返回 ${res.status}`)
+  return parseRoute(await res.json(), mode)
+}
+
+function withDeadline(promise, timeoutMs) {
+  let timer = null
+  const deadline = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error('路线规划超时')), timeoutMs)
+  })
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer))
+}
+
+function abortError() {
+  const error = new Error('已取消路线规划')
+  error.name = 'AbortError'
+  return error
+}
+
+export async function fetchRoute({
+  from,
+  to,
+  mode = 'walking',
+  signal,
+  timeoutMs = DEFAULT_ROUTE_TIMEOUT_MS,
+}) {
+  const endpoints = ROUTE_ENDPOINTS[mode]
+  if (!endpoints) throw new Error('不支持的出行方式')
   if (!validPoint(from) || !validPoint(to)) throw new Error('缺少起终点坐标')
 
-  const controller = new AbortController()
+  const controllers = endpoints.map(() => new AbortController())
+  const abortAll = () => controllers.forEach((controller) => controller.abort())
+  const forwardAbort = () => abortAll()
   let timedOut = false
-  const timer = setTimeout(() => {
-    timedOut = true
-    controller.abort()
-  }, timeoutMs)
-  const forwardAbort = () => controller.abort()
   if (signal) {
-    if (signal.aborted) controller.abort()
+    if (signal.aborted) abortAll()
     else signal.addEventListener('abort', forwardAbort)
   }
+  const timer = setTimeout(() => {
+    timedOut = true
+    abortAll()
+  }, timeoutMs)
 
   try {
-    const res = await fetch(routeUrl(from, to, mode), {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    })
-    if (!res.ok) throw new Error(`路线服务返回 ${res.status}`)
-    const data = await res.json()
-    if (data?.code !== 'Ok' || !Array.isArray(data.routes) || !data.routes.length) {
-      throw new Error('未找到可行路线')
-    }
-    const route = data.routes[0]
-    const coordinates = (route.geometry?.coordinates || []).filter(validCoord)
-    if (coordinates.length < 2) throw new Error('路线数据不完整')
-    if (!(Number(route.distance) > 0)) throw new Error('路线距离无效')
-    return {
-      mode,
-      coordinates,
-      distanceKm: Number(route.distance) / 1000,
-      durationMin: Math.max(1, Math.round(Number(route.duration) / 60)),
-      fallback: false,
-      source: 'osrm',
-    }
+    return await Promise.any(
+      endpoints.map((base, index) =>
+        withDeadline(
+          requestRoute(routeUrl(base, from, to), mode, controllers[index].signal),
+          timeoutMs
+        )
+      )
+    )
   } catch (err) {
-    if (signal?.aborted) {
-      const abort = new Error('已取消路线规划')
-      abort.name = 'AbortError'
-      throw abort
-    }
+    if (signal?.aborted) throw abortError()
     if (timedOut) throw new Error('路线规划超时', { cause: err })
-    throw err
+    const errors = err?.errors || [err]
+    const first = errors.find((item) => item?.name !== 'AbortError') || errors[0]
+    const message = first instanceof Error ? first.message : '路线服务暂不可用'
+    throw new Error(message, { cause: err })
   } finally {
     clearTimeout(timer)
     if (signal) signal.removeEventListener('abort', forwardAbort)
+    abortAll()
   }
 }
 
-export async function planRoute({ from, to, mode = 'walking', signal, timeoutMs = 12000 }) {
+export async function planRoute({
+  from,
+  to,
+  mode = 'walking',
+  signal,
+  timeoutMs = DEFAULT_ROUTE_TIMEOUT_MS,
+}) {
   const fallback = straightRoute(from, to, mode)
   let timer = null
   try {
     return await Promise.race([
       fetchRoute({ from, to, mode, signal, timeoutMs }),
       new Promise((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('路线规划超时')), timeoutMs + 500)
+        timer = setTimeout(() => reject(new Error('路线规划超时')), timeoutMs + 300)
       }),
     ])
   } catch (err) {
     if (err?.name === 'AbortError' || signal?.aborted) throw err
     if (!fallback) throw err
-    return { ...fallback, error: err?.message || '路线服务暂不可用' }
+    return { ...fallback, error: err?.message || '道路路线不可用' }
   } finally {
     clearTimeout(timer)
   }

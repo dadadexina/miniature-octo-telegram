@@ -230,7 +230,9 @@ describe('Discover 关系网页', () => {
     expect(screen.getByTestId('globe-route-status').textContent).toContain('向')
     expect(screen.getByTestId('globe-route-mode').textContent).toBe('导航中')
     expect(planRouteMock).toHaveBeenCalledWith(expect.objectContaining({ mode: 'walking' }))
-    expect(screen.queryByTestId('globe-open-maps')).toBeNull()
+    const maps = screen.getByTestId('globe-open-maps')
+    expect(maps.getAttribute('href')).toContain('uri.amap.com/navigation')
+    expect(maps.getAttribute('href')).toContain('mode=walk')
     expect(screen.getByTestId('globe-route-clear').textContent).toBe('结束导航')
   })
 
@@ -330,7 +332,7 @@ describe('Discover 关系网页', () => {
     expect(planRouteMock).not.toHaveBeenCalled()
   })
 
-  it('路线服务迟迟无响应时先显示直线示意', async () => {
+  it('点击导航立即显示直线示意，不阻塞等待路线服务', async () => {
     planRouteMock.mockImplementation(() => new Promise(() => {}))
     searchMock.mockResolvedValue({
       ok: true,
@@ -343,9 +345,33 @@ describe('Discover 关系网页', () => {
     fireEvent.click(screen.getByTestId('globe-route-walk'))
 
     const title = await screen.findByTestId('globe-route-title')
-    expect(title.textContent).toContain('正在规划步行路线')
-    expect(screen.getByTestId('globe-route-status').textContent).toContain('已显示直线示意')
-    expect(screen.getByTestId('globe-route-mode').textContent).toBe('规划中')
+    expect(title.textContent).toContain('步行导航 · 外滩')
+    expect(title.textContent).not.toContain('正在规划')
+    expect(screen.getByTestId('globe-route-mode').textContent).toBe('导航中')
+    expect(screen.getByTestId('globe-route-status').textContent).toContain('全程 1.9 km')
+    expect(screen.getByTestId('globe-route-fallback').textContent).toContain('正在获取道路路线')
+    expect(screen.getByTestId('globe-open-maps').getAttribute('href')).toContain('mode=walk')
+  })
+
+  it('路线服务失败后保留直线示意且不显示不可用错误', async () => {
+    planRouteMock.mockRejectedValue(new Error('路线服务返回 503'))
+    searchMock.mockResolvedValue({
+      ok: true,
+      places: [{ id: 'osm:6', name: '外滩', lat: 31.24, lng: 121.49, kind: 'attraction' }],
+    })
+    setup()
+    fireEvent.click(await screen.findByTestId('globe-search-toggle'))
+    fireEvent.change(await screen.findByTestId('globe-search-input'), { target: { value: '外滩' } })
+    fireEvent.click(await screen.findByTestId('globe-place-result'))
+    fireEvent.click(screen.getByTestId('globe-route-walk'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('globe-route-fallback').textContent).toContain('当前按直线示意')
+    )
+    const info = screen.getByTestId('globe-route-info')
+    expect(info.textContent).not.toContain('路线服务暂不可用')
+    expect(screen.getByTestId('globe-route-mode').textContent).toBe('导航中')
+    expect(screen.getByTestId('globe-route-status').textContent).toContain('全程 1.9 km')
   })
 
   it('到达目的地附近时提示已到达', async () => {
