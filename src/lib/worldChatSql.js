@@ -17,6 +17,8 @@ create index if not exists world_messages_channel_created_idx
   on public.world_messages (channel, created_at desc);
 create index if not exists world_messages_created_idx
   on public.world_messages (created_at);
+create index if not exists world_messages_author_created_idx
+  on public.world_messages (author_id, created_at desc);
 
 alter table public.world_messages enable row level security;
 alter table public.world_messages replica identity full;
