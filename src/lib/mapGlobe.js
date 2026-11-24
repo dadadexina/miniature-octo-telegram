@@ -282,7 +282,16 @@ export function buildNodes(people = [], me = {}) {
   const meLat = Number.isFinite(me.coords?.lat) ? me.coords.lat : pseudoCoords(me.id || 'me').lat
   const meLng = Number.isFinite(me.coords?.lng) ? me.coords.lng : pseudoCoords(me.id || 'me').lng
   const meId = me.id || '__me'
-  nodes.push({ id: meId, name: me.name || '你', lat: meLat, lng: meLng, me: true })
+  nodes.push({
+    id: meId,
+    name: me.name || '你',
+    lat: meLat,
+    lng: meLng,
+    me: true,
+    located: Number.isFinite(me.coords?.lat) && Number.isFinite(me.coords?.lng),
+    place: me.coords?.label || '',
+    updatedAt: me.coords?.updatedAt || '',
+  })
   seen.add(meId)
   for (const person of people) {
     if (!person?.id || seen.has(person.id)) continue
@@ -294,6 +303,9 @@ export function buildNodes(people = [], me = {}) {
       lat: Number.isFinite(person.lat) ? person.lat : fallback.lat,
       lng: Number.isFinite(person.lng) ? person.lng : fallback.lng,
       me: false,
+      located: person.located === true,
+      place: person.place || '',
+      updatedAt: person.updatedAt || '',
     })
   }
   return nodes

@@ -73,7 +73,16 @@ function useLocatedPeople(people, meId) {
     () =>
       people.map((person) => {
         const location = locations.get(person.id)
-        return location ? { ...person, lat: location.lat, lng: location.lng, place: location.label } : person
+        return location
+          ? {
+              ...person,
+              lat: location.lat,
+              lng: location.lng,
+              place: location.label,
+              located: true,
+              updatedAt: location.updatedAt,
+            }
+          : { ...person, located: false }
       }),
     [people, locations]
   )

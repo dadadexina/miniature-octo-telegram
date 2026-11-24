@@ -54,6 +54,19 @@ describe('mapGlobe', () => {
     expect(nodes).toHaveLength(2)
   })
 
+  it('构节点时保留位置共享状态与时间', () => {
+    const nodes = buildNodes(
+      [
+        { id: 'a', name: 'A', lat: 31.2, lng: 121.5, located: true, place: '上海', updatedAt: '2026-11-24T10:00:00Z' },
+        { id: 'b', name: 'B', located: false },
+      ],
+      { id: 'me', name: '我', coords: { lat: 39.9, lng: 116.4, label: '北京', updatedAt: '2026-11-24T09:00:00Z' } }
+    )
+    expect(nodes[0]).toMatchObject({ located: true, place: '北京', updatedAt: '2026-11-24T09:00:00Z' })
+    expect(nodes[1]).toMatchObject({ located: true, place: '上海', updatedAt: '2026-11-24T10:00:00Z' })
+    expect(nodes[2]).toMatchObject({ located: false, place: '', updatedAt: '' })
+  })
+
   it('构弧线时忽略未知端点', () => {
     const nodes = [
       { id: 'me', lat: 0, lng: 0 },
