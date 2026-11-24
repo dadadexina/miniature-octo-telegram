@@ -11,14 +11,6 @@ import {
 } from '../lib/mapGlobe'
 import { POI_CATEGORIES, applyPoiLayers } from '../lib/poi'
 import {
-  AMAP_POI_CATEGORIES,
-  AMAP_POI_MIN_ZOOM,
-  amapPoisToGeoJSON,
-  fetchAmapPois,
-  hasAmapPoiKey,
-  outOfChina,
-} from '../lib/amapPoi'
-import {
   bearingDegrees,
   compassLabel,
   coordPlace,
@@ -57,25 +49,6 @@ const DASH_PATTERNS = [
 const EMPTY_FC = { type: 'FeatureCollection', features: [] }
 const ROUTE_COLOR = '#c0332b'
 const ASKED_KEY = 'globe.geoAsked'
-const AMAP_SOURCE_ID = 'amap-poi'
-const AMAP_POI_LAYER_IDS = ['amap-poi-halo', 'amap-poi-dot', 'amap-poi-label']
-
-function escapeHtml(value) {
-  return String(value || '').replace(/[&<>"']/g, (char) => {
-    switch (char) {
-      case '&':
-        return '&amp;'
-      case '<':
-        return '&lt;'
-      case '>':
-        return '&gt;'
-      case '"':
-        return '&quot;'
-      default:
-        return '&#39;'
-    }
-  })
-}
 
 function themeIdOf() {
   return document.documentElement?.dataset?.theme || 'light'
@@ -137,7 +110,6 @@ export default function DiscoverGlobe({
   const navSeqRef = useRef(0)
   const navAbortRef = useRef(null)
   const poiCategoryRef = useRef('all')
-  const amapReloadRef = useRef(null)
 
   const [copied, setCopied] = useState('')
   const [fallback, setFallback] = useState(() => !canUseWebGL())
@@ -157,7 +129,6 @@ export default function DiscoverGlobe({
   const [weather, setWeather] = useState({ status: 'idle', data: null, error: '' })
   const [worldChatOpen, setWorldChatOpen] = useState(false)
   const [poiCategory, setPoiCategory] = useState('all')
-  const [amapPoiStatus, setAmapPoiStatus] = useState({ status: 'idle', count: 0, message: '' })
 
   const locate = useCallback(async () => {
     markAskedLocation()
@@ -405,9 +376,6 @@ export default function DiscoverGlobe({
     let dragging = false
     let markers = []
     let searchSlot = null
-    let poiTimer = null
-    let poiSeq = 0
-    let poiAbort = null
 
     const clearMarkers = () => {
       markers.forEach((marker) => {
@@ -593,164 +561,6 @@ export default function DiscoverGlobe({
       }
       routeSyncRef.current = syncRoute
 
-      const clearAmapPois = () => {
-        try {
-          const source = map?.getSource(AMAP_SOURCE_ID)
-          if (source?.setData) source.setData(EMPTY_FC)
-        } catch {
-          // 数据源尚未建立时忽略
-        }
-      }
-
-      const applyAmapTheme = (theme) => {
-        if (!map || !theme) return
-        try {
-          if (map.getLayer('amap-poi-halo')) {
-            map.setPaintProperty('amap-poi-halo', 'circle-color', theme.labelHalo)
-          }
-          if (map.getLayer('amap-poi-dot')) {
-            map.setPaintProperty('amap-poi-dot', 'circle-color', theme.labelText)
-          }
-          if (map.getLayer('amap-poi-label')) {
-            map.setPaintProperty('amap-poi-label', 'text-color', theme.labelText)
-            map.setPaintProperty('amap-poi-label', 'text-halo-color', theme.labelHalo)
-          }
-        } catch {
-          // 图层未就绪时忽略
-        }
-      }
-
-      const ensureAmapLayers = (theme) => {
-        if (!map) return
-        try {
-          if (!map.getSource(AMAP_SOURCE_ID)) {
-            map.addSource(AMAP_SOURCE_ID, { type: 'geojson', data: EMPTY_FC })
-          }
-          if (!map.getLayer('amap-poi-halo')) {
-            map.addLayer({
-              id: 'amap-poi-halo',
-              type: 'circle',
-              source: AMAP_SOURCE_ID,
-              minzoom: AMAP_POI_MIN_ZOOM,
-              paint: {
-                'circle-radius': 3.6,
-                'circle-color': theme.labelHalo,
-                'circle-opacity': 0.9,
-              },
-            })
-          }
-          if (!map.getLayer('amap-poi-dot')) {
-            map.addLayer({
-              id: 'amap-poi-dot',
-              type: 'circle',
-              source: AMAP_SOURCE_ID,
-              minzoom: AMAP_POI_MIN_ZOOM,
-              paint: {
-                'circle-radius': 2.1,
-                'circle-color': theme.labelText,
-                'circle-opacity': 0.95,
-              },
-            })
-          }
-          if (!map.getLayer('amap-poi-label')) {
-            map.addLayer({
-              id: 'amap-poi-label',
-              type: 'symbol',
-              source: AMAP_SOURCE_ID,
-              minzoom: AMAP_POI_MIN_ZOOM,
-              layout: {
-                'text-field': ['coalesce', ['get', 'name'], ''],
-                'text-size': [
-                  'interpolate',
-                  ['linear'],
-                  ['zoom'],
-                  13.5,
-                  9,
-                  16,
-                  10.5,
-                  18,
-                  12,
-                ],
-                'text-anchor': 'top',
-                'text-offset': [0, 0.35],
-                'text-max-width': 7,
-                'text-padding': 2,
-                'text-allow-overlap': false,
-              },
-              paint: {
-                'text-color': theme.labelText,
-                'text-halo-color': theme.labelHalo,
-                'text-halo-width': 1.3,
-                'text-halo-blur': 0.4,
-              },
-            })
-          }
-          applyAmapTheme(theme)
-        } catch {
-          // 样式未就绪时忽略
-        }
-      }
-
-      const loadAmapPois = async () => {
-        if (!map) return
-        const category = poiCategoryRef.current
-        const zoom = map.getZoom()
-        if (!hasAmapPoiKey()) {
-          clearAmapPois()
-          if (!cancelled) setAmapPoiStatus({ status: 'off', count: 0, message: '未配置高德 Key' })
-          return
-        }
-        if (zoom < AMAP_POI_MIN_ZOOM) {
-          clearAmapPois()
-          if (!cancelled) setAmapPoiStatus({ status: 'idle', count: 0, message: '' })
-          return
-        }
-        const center = map.getCenter()
-        if (outOfChina(center.lat, center.lng)) {
-          clearAmapPois()
-          if (!cancelled) setAmapPoiStatus({ status: 'off', count: 0, message: '海外区域使用 OSM' })
-          return
-        }
-
-        poiAbort?.abort()
-        const controller = new AbortController()
-        poiAbort = controller
-        const seq = (poiSeq += 1)
-        if (!cancelled) setAmapPoiStatus({ status: 'loading', count: 0, message: '高德 POI 加载中' })
-        try {
-          const places = await fetchAmapPois({
-            lat: center.lat,
-            lng: center.lng,
-            zoom,
-            category,
-            signal: controller.signal,
-          })
-          if (cancelled || seq !== poiSeq) return
-          ensureAmapLayers(mapTheme(themeIdOf()))
-          const source = map.getSource(AMAP_SOURCE_ID)
-          if (source?.setData) source.setData(amapPoisToGeoJSON(places))
-          if (!cancelled) {
-            setAmapPoiStatus({
-              status: 'ready',
-              count: places.length,
-              message: `高德 POI ${places.length}`,
-            })
-          }
-        } catch (err) {
-          if (controller.signal.aborted || err?.name === 'AbortError') return
-          if (cancelled || seq !== poiSeq) return
-          clearAmapPois()
-          if (!cancelled) setAmapPoiStatus({ status: 'error', count: 0, message: '高德 POI 暂不可用' })
-        }
-      }
-
-      const scheduleAmapPois = (delay = 650) => {
-        clearTimeout(poiTimer)
-        poiTimer = setTimeout(loadAmapPois, delay)
-      }
-      amapReloadRef.current = () => scheduleAmapPois(0)
-      map.on('moveend', () => scheduleAmapPois())
-
       const applyArcTheme = () => {
         if (!map) return
         const theme = mapTheme(themeIdOf())
@@ -791,8 +601,6 @@ export default function DiscoverGlobe({
         const theme = mapTheme(themeIdOf())
         applyMapTheme(map, themeIdOf())
         applyPoiLayers(map, poiCategoryRef.current, theme)
-        ensureAmapLayers(theme)
-        scheduleAmapPois(0)
         if (!map.getSource('arcs')) {
           map.addSource('arcs', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
           map.addLayer({
@@ -877,37 +685,15 @@ export default function DiscoverGlobe({
 
       map.on('click', (event) => {
         if (!map) return
-        let poi = null
-        try {
-          const layers = AMAP_POI_LAYER_IDS.filter((id) => map.getLayer(id))
-          if (layers.length) {
-            const hits = map.queryRenderedFeatures(event.point, { layers })
-            poi = hits[0]?.properties || null
-          }
-        } catch {
-          // 图层尚未建立时忽略
-        }
         const center = event.lngLat
         try {
-          const popup = new mod.Popup({ closeButton: true, offset: 10, className: 'globe-popup' })
-          if (poi) {
-            const label = AMAP_POI_CATEGORIES[poi.category]?.label || '兴趣点'
-            const detail = [poi.district || poi.city, poi.address].filter(Boolean).join(' · ')
-            popup.setLngLat([center.lng, center.lat]).setHTML(
-              `<div><strong>${escapeHtml(poi.name)}</strong>` +
-                `<div style="opacity:.7;margin-top:2px">${escapeHtml(label)}` +
-                `${poi.rating ? ` · 评分 ${escapeHtml(poi.rating)}` : ''}</div>` +
-                `${detail ? `<div style="opacity:.55;margin-top:2px">${escapeHtml(detail)}</div>` : ''}` +
-                `${poi.openHours ? `<div style="opacity:.55;margin-top:2px">${escapeHtml(poi.openHours)}</div>` : ''}` +
-                `</div>`
-            )
-          } else {
-            popup.setLngLat(center).setHTML(
+          new mod.Popup({ closeButton: true, offset: 10, className: 'globe-popup' })
+            .setLngLat(center)
+            .setHTML(
               `<div style="font-variant-numeric:tabular-nums">${formatCoords(center.lat, center.lng, 4)}` +
                 `<span style="opacity:.55"> · z${map.getZoom().toFixed(2)}</span></div>`
             )
-          }
-          popup.addTo(map)
+            .addTo(map)
         } catch {
           // 弹窗失败时忽略
         }
@@ -957,8 +743,6 @@ export default function DiscoverGlobe({
         const theme = mapTheme(themeIdOf())
         applyMapTheme(map, themeIdOf())
         applyPoiLayers(map, poiCategoryRef.current, theme)
-        ensureAmapLayers(theme)
-        applyAmapTheme(theme)
         applyArcTheme()
       })
       if (document.documentElement) {
@@ -972,9 +756,6 @@ export default function DiscoverGlobe({
       cancelled = true
       syncRef.current = null
       routeSyncRef.current = null
-      amapReloadRef.current = null
-      clearTimeout(poiTimer)
-      poiAbort?.abort()
       if (observer) observer.disconnect()
       if (resizeObserver) resizeObserver.disconnect()
       cancelAnimationFrame(raf)
@@ -1188,7 +969,6 @@ export default function DiscoverGlobe({
     const map = mapRef.current
     if (!map) return
     applyPoiLayers(map, poiCategory, mapTheme(themeIdOf()))
-    amapReloadRef.current?.()
   }, [poiCategory])
 
   return (
@@ -1266,15 +1046,6 @@ export default function DiscoverGlobe({
             )
           })}
         </div>
-      ) : null}
-
-      {!fallback && amapPoiStatus.status !== 'idle' && amapPoiStatus.status !== 'off' ? (
-        <p
-          data-testid="globe-poi-status"
-          className="pointer-events-none absolute right-2 top-[4.6rem] z-20 text-[10px] tracking-[0.04em] text-eink-faint"
-        >
-          {amapPoiStatus.message}
-        </p>
       ) : null}
 
       {searchHost
