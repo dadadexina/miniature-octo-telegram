@@ -9,7 +9,6 @@ import {
   buildRouteLine,
   mapTheme,
 } from '../lib/mapGlobe'
-import { POI_CATEGORIES, applyPoiLayers } from '../lib/poi'
 import {
   bearingDegrees,
   compassLabel,
@@ -109,7 +108,6 @@ export default function DiscoverGlobe({
   const routeRef = useRef(null)
   const navSeqRef = useRef(0)
   const navAbortRef = useRef(null)
-  const poiCategoryRef = useRef('all')
 
   const [copied, setCopied] = useState('')
   const [fallback, setFallback] = useState(() => !canUseWebGL())
@@ -128,7 +126,6 @@ export default function DiscoverGlobe({
   const [viewCenter, setViewCenter] = useState(null)
   const [weather, setWeather] = useState({ status: 'idle', data: null, error: '' })
   const [worldChatOpen, setWorldChatOpen] = useState(false)
-  const [poiCategory, setPoiCategory] = useState('all')
 
   const locate = useCallback(async () => {
     markAskedLocation()
@@ -600,7 +597,6 @@ export default function DiscoverGlobe({
         }
         const theme = mapTheme(themeIdOf())
         applyMapTheme(map, themeIdOf())
-        applyPoiLayers(map, poiCategoryRef.current, theme)
         if (!map.getSource('arcs')) {
           map.addSource('arcs', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
           map.addLayer({
@@ -740,9 +736,7 @@ export default function DiscoverGlobe({
 
       observer = new MutationObserver(() => {
         if (!map) return
-        const theme = mapTheme(themeIdOf())
         applyMapTheme(map, themeIdOf())
-        applyPoiLayers(map, poiCategoryRef.current, theme)
         applyArcTheme()
       })
       if (document.documentElement) {
@@ -964,13 +958,6 @@ export default function DiscoverGlobe({
     }
   }, [viewCenter?.lat, viewCenter?.lng, myPos?.lat, myPos?.lng, meCoords?.lat, meCoords?.lng])
 
-  useEffect(() => {
-    poiCategoryRef.current = poiCategory
-    const map = mapRef.current
-    if (!map) return
-    applyPoiLayers(map, poiCategory, mapTheme(themeIdOf()))
-  }, [poiCategory])
-
   return (
     <div className="relative h-full overflow-hidden bg-eink-paper text-eink-ink">
       <div
@@ -1016,35 +1003,6 @@ export default function DiscoverGlobe({
               <li className="py-10 text-center text-[13px] text-eink-faint">还没有连接的人</li>
             )}
           </ul>
-        </div>
-      ) : null}
-
-      {!fallback ? (
-        <div
-          data-testid="globe-poi-filter"
-          role="group"
-          aria-label="兴趣点分类"
-          className="absolute inset-x-2 top-12 z-20 flex gap-1 overflow-x-auto pb-0.5"
-        >
-          {POI_CATEGORIES.map((category) => {
-            const active = poiCategory === category.id
-            return (
-              <button
-                key={category.id}
-                type="button"
-                data-testid={`globe-poi-${category.id}`}
-                aria-pressed={active}
-                className={`shrink-0 border px-2 py-0.5 text-[10px] tracking-[0.06em] shadow-sm active:bg-eink-surface ${
-                  active
-                    ? 'border-eink-ink bg-eink-bar text-eink-ink'
-                    : 'border-eink-line/30 bg-eink-bar/90 text-eink-sub'
-                }`}
-                onClick={() => setPoiCategory(category.id)}
-              >
-                {category.label}
-              </button>
-            )
-          })}
         </div>
       ) : null}
 
