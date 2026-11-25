@@ -44,20 +44,6 @@ vi.mock('../lib/profiles', () => ({
   fetchProfilesByIds: profileMocks.fetchProfilesByIds,
 }))
 
-const locationMocks = vi.hoisted(() => ({
-  fetchLocations: vi.fn(),
-  saveMyLocation: vi.fn(),
-}))
-
-vi.mock('../lib/locations', async (importOriginal) => {
-  const actual = await importOriginal()
-  return {
-    ...actual,
-    fetchLocations: locationMocks.fetchLocations,
-    saveMyLocation: locationMocks.saveMyLocation,
-  }
-})
-
 const dataExportMock = vi.hoisted(() => ({
   buildMediaArchive: vi.fn(),
   collectUserData: vi.fn(),
@@ -121,11 +107,6 @@ beforeEach(() => {
   authMock.updateUser.mockResolvedValue({ error: null })
   authMock.signOut.mockResolvedValue({ error: null })
   profileMocks.updateProfileSignature.mockResolvedValue({ ok: true, profile: { nickname: '我' } })
-  locationMocks.fetchLocations.mockResolvedValue({ ok: true, locations: [] })
-  locationMocks.saveMyLocation.mockResolvedValue({
-    ok: true,
-    location: { userId: CLOUD_USER_ID, lat: 31.23, lng: 121.47, label: '上海', visible: true },
-  })
   dataExportMock.collectUserData.mockResolvedValue({ ok: true, payload: { counts: {}, storage: {} } })
   dataExportMock.downloadTextFile.mockReturnValue(true)
   dataExportMock.exportFileName.mockReturnValue('zhimo-export.json')
@@ -188,7 +169,7 @@ describe('Settings 设置页', () => {
     setup()
     openView(1)
     expect(screen.getByText('更换朋友圈背景')).toBeTruthy()
-    expect(screen.getByText('自定义发现页顶部背景图')).toBeTruthy()
+    expect(screen.getByText('自定义朋友圈顶部背景')).toBeTruthy()
     expect(screen.getByTestId('settings-change-cover')).toBeTruthy()
   })
 
@@ -604,25 +585,6 @@ describe('Settings 设置页', () => {
       expect.objectContaining({ signature: '云上见' }),
       true
     )
-  })
-
-  it('云端账号可开启城市位置共享', async () => {
-    useCloudAccount()
-    setup()
-    openView(3)
-
-    await waitFor(() => expect(locationMocks.fetchLocations).toHaveBeenCalledWith([CLOUD_USER_ID]))
-    fireEvent.click(screen.getByRole('switch', { name: '位置共享' }))
-    fireEvent.change(screen.getByTestId('settings-location-city'), { target: { value: 'shanghai' } })
-    fireEvent.click(screen.getByTestId('settings-save-location'))
-
-    await waitFor(() =>
-      expect(locationMocks.saveMyLocation).toHaveBeenCalledWith(
-        CLOUD_USER_ID,
-        expect.objectContaining({ label: '上海', lat: 31.23, lng: 121.47, visible: true })
-      )
-    )
-    expect(await screen.findByText('已共享城市位置，好友可在发现页看到')).toBeTruthy()
   })
 
   it('云端账号可导出个人数据并提示结果', async () => {

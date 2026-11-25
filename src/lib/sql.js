@@ -3,7 +3,6 @@ import { UPGRADE_SQL } from './schema_v2'
 import { supabaseUrl } from './supabase'
 import { CLIENT_ERRORS_SQL } from './telemetry'
 import { REAL_NAME_SQL } from './realNameSql'
-import { WORLD_CHAT_SQL } from './worldChatSql'
 
 function deriveSqlEditorUrl(url) {
   const match = /^https:\/\/([^.]+)\.supabase\.co$/.exec(url || '')
@@ -149,42 +148,5 @@ ${CLIENT_ERRORS_SQL}
 
 ${UPGRADE_SQL}
 
-${WORLD_CHAT_SQL}
-
 ${REAL_NAME_SQL}
-
-create table if not exists public.profile_locations (
-  user_id uuid primary key references public.profiles (id) on delete cascade,
-  lat double precision not null check (lat between -90 and 90),
-  lng double precision not null check (lng between -180 and 180),
-  label text not null default '',
-  precision integer not null default 2 check (precision between 0 and 2),
-  visible boolean not null default false,
-  updated_at timestamptz not null default now()
-);
-
-alter table public.profile_locations enable row level security;
-
-drop policy if exists "profile_locations_select_visible" on public.profile_locations;
-create policy "profile_locations_select_visible" on public.profile_locations for select
-to authenticated
-using (
-  user_id = auth.uid()
-  or (visible = true and public.are_contacts(auth.uid(), user_id))
-);
-
-drop policy if exists "profile_locations_insert_own" on public.profile_locations;
-create policy "profile_locations_insert_own" on public.profile_locations for insert
-to authenticated with check (user_id = auth.uid());
-
-drop policy if exists "profile_locations_update_own" on public.profile_locations;
-create policy "profile_locations_update_own" on public.profile_locations for update
-to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
-
-drop policy if exists "profile_locations_delete_own" on public.profile_locations;
-create policy "profile_locations_delete_own" on public.profile_locations for delete
-to authenticated using (user_id = auth.uid());
-
-revoke all on public.profile_locations from anon;
-grant select, insert, update, delete on public.profile_locations to authenticated;
 `

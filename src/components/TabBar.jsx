@@ -4,7 +4,6 @@ import { useStore } from '../store'
 const tabs = [
   { to: '/chats', label: '消息', icon: ChatIcon },
   { to: '/contacts', label: '通讯录', icon: ContactIcon },
-  { to: '/discover', label: '发现', icon: DiscoverIcon },
   { to: '/me', label: '我的', icon: MeIcon },
 ]
 
@@ -49,18 +48,6 @@ function MeIcon({ active }) {
   )
 }
 
-function DiscoverIcon({ active }) {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className={active ? 'text-eink-ink' : 'text-eink-faint'}>
-      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.7" />
-      <path
-        d="M9.2 14.8 10.6 10.6 14.8 9.2 13.4 13.4 9.2 14.8Z"
-        fill="currentColor"
-      />
-    </svg>
-  )
-}
-
 export default function TabBar() {
   const { unreadTotal, requests } = useStore()
   const total = unreadTotal()
@@ -72,7 +59,7 @@ export default function TabBar() {
   }
   return (
     <nav className="safe-bottom shrink-0 border-t border-eink-divider bg-eink-bar">
-      <div className="grid h-[52px] grid-cols-4">
+      <div className="grid h-[52px] grid-cols-3">
         {tabs.map((tab) => (
           <NavLink
             key={tab.to}

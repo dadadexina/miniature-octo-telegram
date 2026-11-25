@@ -6,7 +6,6 @@ describe('resolveRouteKey', () => {
     ['/', 'chats'],
     ['/chats', 'chats'],
     ['/contacts', 'contacts'],
-    ['/discover', 'discover'],
     ['/me', 'me'],
     ['/login', 'login'],
     ['/settings', 'settings'],

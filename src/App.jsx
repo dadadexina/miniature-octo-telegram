@@ -10,7 +10,6 @@ import { isRecoveryCallback } from './lib/recovery'
 
 const Login = lazy(() => import('./pages/Login'))
 const Contacts = lazy(() => import('./pages/Contacts'))
-const Discover = lazy(() => import('./pages/Discover'))
 const ChatDetail = lazy(() => import('./pages/ChatDetail'))
 const EditProfile = lazy(() => import('./pages/EditProfile'))
 const FriendProfile = lazy(() => import('./pages/FriendProfile'))
@@ -81,7 +80,6 @@ export default function App() {
                 <Route path="/" element={<Navigate to="/chats" replace />} />
                 <Route path="/chats" element={<Chats />} />
                 <Route path="/contacts" element={<Contacts />} />
-                <Route path="/discover" element={<Discover />} />
                 <Route path="/me" element={<Profile />} />
               </Route>
               <Route path="/chat/:peerId" element={<ChatDetail />} />

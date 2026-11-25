@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { PLACES, cityWeatherId, searchPlaces } from './places'
+import { PLACES } from './places'
 
 describe('PLACES', () => {
-  it('城市标识唯一且天气 key 稳定', () => {
+  it('城市标识唯一', () => {
     const ids = new Set(PLACES.map((place) => place.id))
     expect(ids.size).toBe(PLACES.length)
-    expect(cityWeatherId(PLACES[0])).toBe(`city-${PLACES[0].id}`)
   })
 
   it('所有坐标都在合法范围内', () => {
@@ -33,14 +32,5 @@ describe('PLACES', () => {
     ;['shenzhen', 'hangzhou', 'nanjing', 'wuhan', 'chengdu', 'sanya', 'guilin', 'dunhuang', 'kashgar'].forEach(
       (id) => expect(ids.has(id)).toBe(true)
     )
-  })
-
-  it('搜索城市名与拼音标识', () => {
-    expect(searchPlaces('西安')[0].id).toBe('xian')
-    expect(searchPlaces('xian')[0].name).toBe('西安')
-    expect(searchPlaces('上海')[0].id).toBe('shanghai')
-    expect(searchPlaces('new')[0].id).toBe('newyork')
-    expect(searchPlaces('不存在的城市')).toEqual([])
-    expect(searchPlaces('   ')).toEqual([])
   })
 })

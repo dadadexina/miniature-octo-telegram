@@ -50,6 +50,7 @@ This file records user instructions, preferences, and teachings for reference in
 - Category: Operations & Deployment
 - Instructions:
   - dev 服务器用 background terminal 跑 `npm run dev`（端口 5173，预览域名 5173-1b428f154a1564ff.monkeycode-ai.online）
+  - **公开预览安全（2026-11-24 实测）**：Vite dev server 直接暴露公网时，`/.monkeycode/MEMORY.md` 与 `/.monkeycode/secrets/amap-key.txt` 会被未认证读取；公开预览必须改用只服务 `dist/` 的静态服务器（保留 `/api/route` 中间件），不得直接把 dev server 绑到公网预览域名
   - 生产验证：`npm run build` 后 `npm run preview -- --port 5173 --host`，验证完杀进程并换回 dev
   - 无浏览器环境的应用冒烟方式：curl 各 `/src/*.jsx` 模块（vite 转换 200 即无编译错误）+ 检查 dev/preview 日志无 error
    - 云端表探测：curl `https://ljlvqnhzewzxpyhgumnp.supabase.co/rest/v1/<table>` 带 anon key；返回 42501 permission denied 属预期（RLS 生效，仅 authenticated 可访问）
@@ -71,7 +72,7 @@ This file records user instructions, preferences, and teachings for reference in
 - Context: Discovered by Agent while closing #6 Auth URL 切换与 #11 备份闭环(用户提供 sbp_ token,交付后已吊销并验证 401;schema v2 改用 psql 直连应用)
 - Category: Operations & Deployment
 - Instructions:
-  - **现状(2026-11-20 起)**:`sbp_` 令牌已吊销,Management API 不可用;数据库唯一自助通道是 psql 直连,连接串在 `.monkeycode/secrets/db-url.txt`(pooler 5432,IPv4 可达);执行 SQL 用 `psql "$DB_URL" -f xx.sql -v ON_ERROR_STOP=1`
+  - **现状(2026-11-20 起)**:`sbp_` 令牌已吊销,Management API 不可用;数据库唯一自助通道是 psql 直连,连接串在 `.monkeycode/secrets/db-url.txt`(pooler 5432,IPv4 可达);执行 SQL 用 `psql "$DB_URL" -f xx.sql -v ON_ERROR_STOP=1`。**2026-11-24 当前工作区该文件缺失,需用户重新上传;pooler 5432 仍可达,但容器无 psql,需先装 postgresql-client**
   - 备份 workflow 用 DB 密码(GH Secret SUPABASE_DB_URL),与已吊销令牌无关,不受影响
   - 历史经验(如用户再提供 token 可复用):认证配置 `GET/PATCH https://api.supabase.com/v1/projects/<ref>/config/auth`;免 SQL Editor 执行 SQL `POST .../database/query`;`pg_dump` 客户端必须 ≥ 服务端(PG 17.12,用 PGDG 源)
   - **连接串勿猜主机**:pooler host 是 aws-1-ap-northeast-1.pooler.supabase.com(Session 模式 5432);`db.<ref>.supabase.co` 仅 IPv6,沙箱与 GH runner 不可达
@@ -88,7 +89,7 @@ This file records user instructions, preferences, and teachings for reference in
   - `*-<scope>.vercel.app` 形式域名返回 302 → vercel.com/sso-api 属 Deployment Protection 行为，与生产主域无关
   - Vercel 官方 agent 接入手册在 https://vercel.com/get-started.md（CLI + vercel/vercel-plugin + MCP https://mcp.vercel.com），已中止安装（域名问题解决后无必要），需要时可按手册继续
   - 待办：Supabase Auth → URL Configuration 需将 Site URL 改为生产域名并追加 `https://miniature-octo-telegram-puce.vercel.app/**`（当前仍指向预览域名 + /login、/reset-password）
-  - **仓库转 private 会拦截 Vercel 部署**（2026-11-20 实测：19:09:38 转私有后,后续 push 的 commit status `Vercel` = failure/"Deployment was blocked",转私有前最后一次部署正常）;GitHub PAT 无法修复(`/user/installations` 403,需 GitHub App 用户令牌),必须由账号主人在 Vercel Dashboard(Project → Settings → Git)或 GitHub(Settings → Applications → Vercel → Configure → Repository access)重新授权私有仓库访问;排查口诀:生产 HTML 的 `age`/`etag` 头 + `GET /repos/<owner>/<repo>/commits/<sha>/status` 看 Vercel context(该仓挂了两个 Vercel 项目:miniature-octo-telegram 与 -mkrx,同因同时被拦截)。**2026-11-22 已按用户要求改回 public**,无需再授权
+  - **仓库转 private 会拦截 Vercel 部署**（2026-11-20 实测：19:09:38 转私有后,后续 push 的 commit status `Vercel` = failure/"Deployment was blocked",转私有前最后一次部署正常）;GitHub PAT 无法修复(`/user/installations` 403,需 GitHub App 用户令牌),必须由账号主人在 Vercel Dashboard(Project → Settings → Git)或 GitHub(Settings → Applications → Vercel → Configure → Repository access)重新授权私有仓库访问;排查口诀:生产 HTML 的 `age`/`etag` 头 + `GET /repos/<owner>/<repo>/commits/<sha>/status` 看 Vercel context(该仓挂了两个 Vercel 项目:miniature-octo-telegram 与 -mkrx,同因同时被拦截)。**2026-11-22 已按用户要求改回 public**,无需再授权。**2026-11-24 补充:Vercel 私有仓库作者校验看 commit 身份,`filter-branch` 只改 `GIT_AUTHOR_*` 不够,`GIT_COMMITTER_*` 也必须改为 dadadexina,否则 GitHub 显示 committed by monkeycode-ai;当前两个待推提交已同时改写 author/committer**
 
 [云端 e2e 账号开通与凭据轮换]
 - Date: 2026-11-20
@@ -181,7 +182,7 @@ This file records user instructions, preferences, and teachings for reference in
 - Category: Environment Configuration
 - Instructions:
   - 生产 Supabase ref `ljlvqnhzewzxpyhgumnp`（ap-northeast-1，org `dlqxyvklimrwdexpspei`）；staging ref `ajwkmlpzgvdekjvypuve`（ap-northeast-2，org `cuiinllsqxcslytifwxz`），已执行基线 SQL；staging Auth `site_url=http://localhost:5173`，开启 `mailer_autoconfirm`；`uri_allow_list` 必须包含预览/生产域名（现已加 `https://*.monkeycode-ai.online/**`），否则 recovery 邮件链接会回落到 `site_url`（localhost），线上打开表现为空白页
-  - 沙箱出网白名单：github/api、npm、supabase、vercel、photon.komoot.io（地名搜索）、routing.openstreetmap.de 与 router.project-osrm.org（开车/步行路线规划，公共 OSRM，CORS 开放）、api.open-meteo.com（实时天气，无需 key，CORS 开放）；`api.supabase.com` 需 `curl -4`；openrelay/peerjs 不可达，WebRTC 成功链路需真实网络双端验证；`.monkeycode/secrets/amap-key.txt` 含 key 与 securityCode 各 32 位，但 REST 与 JSAPI 均返回 INVALID_USER_KEY（2026-11-24 实测），接入高德前需重新申请并确认服务类型
+  - 沙箱出网白名单：github/api、npm、supabase、vercel、photon.komoot.io（地名搜索）、routing.openstreetmap.de 与 router.project-osrm.org（开车/步行路线规划，公共 OSRM，CORS 开放）、api.open-meteo.com（实时天气，无需 key，CORS 开放）；`api.supabase.com` 需 `curl -4`；openrelay/peerjs 不可达，WebRTC 成功链路需真实网络双端验证；`.monkeycode/secrets/amap-key.txt` 含 key 与 securityCode 各 32 位，但 REST 与 JSAPI 均返回 INVALID_USER_KEY（2026-11-24 实测），接入高德前需重新申请并确认服务类型。**2026-11-24 实测该白名单失效:github/api.github.com/api.supabase.com/vercel/OSRM 全部 TLS 重置(curl 000),百度/Gitee/阿里云可达;push、Management API、Vercel 部署均需等网络恢复,SQL 只能走 pooler 直连或 SQL Editor;SSH 22/443 虽 TCP 可连,但 banner 阶段即被断开,无法用 SSH 绕过**
   - GitHub Secrets `VITE_SUPABASE_*` 与 `E2E_USER_A/B_*` 指向 staging；本地 `.env.local` 指 staging，`.env.production.local`（gitignore）指生产
   - e2e 用户名须匹配 `^[A-Za-z0-9]{8,15}$` 且含字母数字，否则 `profiles_fill_public_id` 会替换为随机 ID
   - `scripts/export-cloud-sql.mjs` 必须用函数替换 `.replaceAll(k, () => v)`，否则替换串中的 `$$` 折叠为 `$` 破坏 dollar-quote

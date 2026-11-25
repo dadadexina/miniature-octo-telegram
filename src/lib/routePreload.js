@@ -1,7 +1,6 @@
 const ROUTE_LOADERS = {
   login: () => import('../pages/Login'),
   contacts: () => import('../pages/Contacts'),
-  discover: () => import('../pages/Discover'),
   me: () => import('../pages/Profile'),
   chat: () => import('../pages/ChatDetail'),
   friend: () => import('../pages/FriendProfile'),
@@ -12,7 +11,7 @@ const ROUTE_LOADERS = {
   legal: () => import('../pages/Legal'),
 }
 
-const CORE_KEYS = ['contacts', 'discover', 'me', 'chat']
+const CORE_KEYS = ['contacts', 'me', 'chat']
 
 const started = new Set()
 
@@ -20,7 +19,6 @@ export function resolveRouteKey(pathname = '') {
   const path = String(pathname).split('?')[0].split('#')[0]
   if (path === '/' || path === '/chats') return 'chats'
   if (path === '/contacts') return 'contacts'
-  if (path === '/discover') return 'discover'
   if (path === '/me') return 'me'
   if (path === '/login') return 'login'
   if (path === '/settings') return 'settings'
